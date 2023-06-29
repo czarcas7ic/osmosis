@@ -20,7 +20,7 @@ jobs:
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add go.mod
+          git add .
           git commit -m "Update go.mod with latest osmosis/v16 dependency"
           git push origin ${{ github.ref }}
 
