@@ -18,7 +18,6 @@ jobs:
 
       - name: Commit and push changes
         run: |
-          cd osmosis/tests/cl-go-client/
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add go.mod
