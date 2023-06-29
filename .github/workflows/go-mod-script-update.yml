@@ -13,7 +13,7 @@ jobs:
 
       - name: Update go.mod
         run: |
-          cd osmosis/tests/cl-go-client/
+          cd ./tests/cl-go-client/
           go get -u github.com/osmosis-labs/osmosis/v16@latest
 
       - name: Commit and push changes
