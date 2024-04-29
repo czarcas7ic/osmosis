@@ -20,7 +20,7 @@ jobs:
         env:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
         run: |
-          droplet_id=$(doctl compute droplet create github-runner-droplet --region fra1 --size m3-4vcpu-32gb --image 153426037 --wait --format ID --no-header)
+          droplet_id=$(doctl compute droplet create github-runner-droplet --region fra1 --size m3-4vcpu-32gb --image 153426037 --ssh-keys fb:ce:1d:9a:3d:ee:5f:19:46:85:6c:ff:2c:9c:04:81 --wait --format ID --no-header)
           echo "Droplet ID: $droplet_id"
           echo "DROPLET_ID=$droplet_id" >> $GITHUB_ENV
 
@@ -36,17 +36,19 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          echo "$SSH_PRIVATE_KEY" > /tmp/ssh_key
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/ssh_key
           chmod 600 /tmp/ssh_key
+          echo "Waiting for SSH service to start..."
           until ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key root@${{ env.DROPLET_IP }} "echo 'SSH is now available'"
           do
-              echo "Waiting for SSH..."
-              sleep 10
+             echo "SSH not ready yet, retrying..."
+             sleep 10
           done
 
       - name: Run Script on Droplet
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          scp -o StrictHostKeyChecking=no -i /tmp/ssh_key /root/scripts/join.sh root@${{ env.DROPLET_IP }}:/root/scripts/join.sh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
           ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key root@${{ env.DROPLET_IP }} "bash /root/scripts/join.sh"
