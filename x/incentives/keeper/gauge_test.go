@@ -4,19 +4,62 @@ import (
 	"fmt"
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/osmoutils"
+	appparams "github.com/osmosis-labs/osmosis/v24/app/params"
+	incentiveskeeper "github.com/osmosis-labs/osmosis/v24/x/incentives/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
 )
 
 var _ = suite.TestingSuite(nil)
 
+const (
+	zeroPoolId         = uint64(0)
+	balancerPoolId     = uint64(1)
+	concentratedPoolId = uint64(2)
+	invalidPool        = uint64(3)
+	// 3 are created for balancer pool and 1 for CL.
+	// As a result, the next gauge id should be 5.
+	defaultExpectedGaugeId = uint64(5)
+
+	defaultIsPerpetualParam = false
+
+	defaultNumEpochPaidOver = uint64(10)
+
+	feeDenom = "groupfee"
+)
+
+var (
+	defaultEmptyGaugeInfo = types.InternalGaugeInfo{
+		TotalWeight:  osmomath.ZeroInt(),
+		GaugeRecords: []types.InternalGaugeRecord{},
+	}
+
+	defaultTime = time.Unix(1, 0).UTC()
+
+	defaultGaugeCreationCoins = sdk.NewCoins(
+		sdk.NewCoin("uosmo", osmomath.NewInt(100000)),
+		sdk.NewCoin("atom", osmomath.NewInt(99999)),
+	)
+
+	customGroupCreationFee = sdk.NewCoins(sdk.NewInt64Coin(feeDenom, 1000000))
+
+	errorNoCustomFeeInBalance = fmt.Errorf("0%s is smaller than %s: insufficient funds", feeDenom, customGroupCreationFee)
+)
+
 // TestInvalidDurationGaugeCreationValidation tests error handling for creating a gauge with an invalid duration.
 func (s *KeeperTestSuite) TestInvalidDurationGaugeCreationValidation() {
 	s.SetupTest()
+
+	// Since this test creates or adds to a gauge, we need to ensure a route exists in protorev hot routes.
+	// The pool doesn't need to actually exist for this test, so we can just ensure the denom pair has some entry.
+	for _, coin := range defaultLiquidTokens {
+		s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, coin.Denom, 9999)
+	}
 
 	addrs := s.SetupManyLocks(1, defaultLiquidTokens, defaultLPTokens, defaultLockDuration)
 	distrTo := lockuptypes.QueryCondition{
@@ -35,6 +78,12 @@ func (s *KeeperTestSuite) TestInvalidDurationGaugeCreationValidation() {
 // TestNonExistentDenomGaugeCreation tests error handling for creating a gauge with an invalid denom.
 func (s *KeeperTestSuite) TestNonExistentDenomGaugeCreation() {
 	s.SetupTest()
+
+	// Since this test creates or adds to a gauge, we need to ensure a route exists in protorev hot routes.
+	// The pool doesn't need to actually exist for this test, so we can just ensure the denom pair has some entry.
+	for _, coin := range defaultLiquidTokens {
+		s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, coin.Denom, 9999)
+	}
 
 	addrNoSupply := sdk.AccAddress([]byte("Gauge_Creation_Addr_"))
 	addrs := s.SetupManyLocks(1, defaultLiquidTokens, defaultLPTokens, defaultLockDuration)
@@ -228,7 +277,7 @@ func (s *KeeperTestSuite) TestGaugeOperations() {
 
 			// check rewards estimation
 			rewardsEst = s.App.IncentivesKeeper.GetRewardsEst(s.Ctx, lockOwners[0], []lockuptypes.PeriodLock{}, 100)
-			s.Require().Equal(sdk.Coins(nil), rewardsEst)
+			s.Require().Equal(sdk.Coins{}, rewardsEst)
 
 			// check gauge ids by denom
 			gaugeIdsByDenom = s.App.IncentivesKeeper.GetAllGaugeIDsByDenom(s.Ctx, "lptoken")
@@ -247,52 +296,52 @@ func (s *KeeperTestSuite) TestChargeFeeIfSufficientFeeDenomBalance() {
 
 		expectError bool
 	}{
-		"fee + base denom gauge coin == acount balance, success": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee)),
+		"fee + base denom gauge coin == account balance, success": {
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee)),
 			feeToCharge:          baseFee / 2,
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee/2))),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee/2))),
 		},
-		"fee + base denom gauge coin < acount balance, success": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee)),
+		"fee + base denom gauge coin < account balance, success": {
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee)),
 			feeToCharge:          baseFee/2 - 1,
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee/2))),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee/2))),
 		},
-		"fee + base denom gauge coin > acount balance, error": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee)),
+		"fee + base denom gauge coin > account balance, error": {
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee)),
 			feeToCharge:          baseFee/2 + 1,
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee/2))),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee/2))),
 
 			expectError: true,
 		},
-		"fee + base denom gauge coin < acount balance, custom values, success": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(11793193112)),
+		"fee + base denom gauge coin < account balance, custom values, success": {
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(11793193112)),
 			feeToCharge:          55,
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(328812))),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(328812))),
 		},
 		"account funded with coins other than base denom, error": {
-			accountBalanceToFund: sdk.NewCoin("usdc", sdk.NewInt(baseFee)),
+			accountBalanceToFund: sdk.NewCoin("usdc", osmomath.NewInt(baseFee)),
 			feeToCharge:          baseFee,
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee/2))),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee/2))),
 
 			expectError: true,
 		},
 		"fee == account balance, no gauge coins, success": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee)),
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee)),
 			feeToCharge:          baseFee,
 		},
 		"gauge coins == account balance, no fee, success": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee)),
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee))),
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee)),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee))),
 		},
 		"fee == account balance, gauge coins in denom other than base, success": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee)),
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee)),
 			feeToCharge:          baseFee,
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin("usdc", sdk.NewInt(baseFee*2))),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin("usdc", osmomath.NewInt(baseFee*2))),
 		},
 		"fee + gauge coins == account balance, multiple gauge coins, one in denom other than base, success": {
-			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee)),
+			accountBalanceToFund: sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee)),
 			feeToCharge:          baseFee / 2,
-			gaugeCoins:           sdk.NewCoins(sdk.NewCoin("usdc", sdk.NewInt(baseFee*2)), sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(baseFee/2))),
+			gaugeCoins:           sdk.NewCoins(sdk.NewCoin("usdc", osmomath.NewInt(baseFee*2)), sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(baseFee/2))),
 		},
 	}
 
@@ -312,7 +361,7 @@ func (s *KeeperTestSuite) TestChargeFeeIfSufficientFeeDenomBalance() {
 			oldBalanceAmount := bankKeeper.GetBalance(ctx, testAccount, sdk.DefaultBondDenom).Amount
 
 			// System under test.
-			err := incentivesKeepers.ChargeFeeIfSufficientFeeDenomBalance(ctx, testAccount, sdk.NewInt(tc.feeToCharge), tc.gaugeCoins)
+			err := incentivesKeepers.ChargeFeeIfSufficientFeeDenomBalance(ctx, testAccount, osmomath.NewInt(tc.feeToCharge), tc.gaugeCoins)
 
 			// Assertions.
 			newBalanceAmount := bankKeeper.GetBalance(ctx, testAccount, sdk.DefaultBondDenom).Amount
@@ -325,7 +374,7 @@ func (s *KeeperTestSuite) TestChargeFeeIfSufficientFeeDenomBalance() {
 				s.Require().NoError(err)
 
 				// check account balance changed.
-				expectedNewBalanceAmount := oldBalanceAmount.Sub(sdk.NewInt(tc.feeToCharge))
+				expectedNewBalanceAmount := oldBalanceAmount.Sub(osmomath.NewInt(tc.feeToCharge))
 				s.Require().Equal(expectedNewBalanceAmount.String(), newBalanceAmount.String())
 			}
 		})
@@ -333,6 +382,27 @@ func (s *KeeperTestSuite) TestChargeFeeIfSufficientFeeDenomBalance() {
 }
 
 func (s *KeeperTestSuite) TestAddToGaugeRewards() {
+
+	defaultCoins := sdk.NewCoins(sdk.NewInt64Coin("stake", 12))
+
+	// since most of the same functionality and edge cases are tested by a higher level
+	// AddToGaugeRewards down below, we only include a happy path test for the internal helper.
+	s.Run("internal helper basic happy path test", func() {
+		s.SetupTest()
+		const defaultGaugeId = uint64(1)
+
+		_, _, _, _ = s.SetupNewGauge(true, defaultCoins)
+
+		err := s.App.IncentivesKeeper.AddToGaugeRewardsInternal(s.Ctx, defaultCoins, defaultGaugeId)
+		s.Require().NoError(err)
+
+		gauge, err := s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, defaultGaugeId)
+		s.Require().NoError(err)
+
+		// validate final coins were updated
+		s.Require().Equal(defaultCoins.Add(defaultCoins...), gauge.Coins)
+	})
+
 	testCases := []struct {
 		name               string
 		owner              sdk.AccAddress
@@ -340,14 +410,15 @@ func (s *KeeperTestSuite) TestAddToGaugeRewards() {
 		gaugeId            uint64
 		minimumGasConsumed uint64
 
-		expectErr bool
+		skipSettingRoute bool
+		expectErr        bool
 	}{
 		{
 			name:  "valid case: valid gauge",
 			owner: s.TestAccs[0],
 			coinsToAdd: sdk.NewCoins(
-				sdk.NewCoin("uosmo", sdk.NewInt(100000)),
-				sdk.NewCoin("atom", sdk.NewInt(99999)),
+				sdk.NewCoin("uosmo", osmomath.NewInt(100000)),
+				sdk.NewCoin("atom", osmomath.NewInt(99999)),
 			),
 			gaugeId:            1,
 			minimumGasConsumed: uint64(2 * types.BaseGasFeeForAddRewardToGauge),
@@ -358,14 +429,14 @@ func (s *KeeperTestSuite) TestAddToGaugeRewards() {
 			name:  "valid case: valid gauge with >4 denoms",
 			owner: s.TestAccs[0],
 			coinsToAdd: sdk.NewCoins(
-				sdk.NewCoin("uosmo", sdk.NewInt(100000)),
-				sdk.NewCoin("atom", sdk.NewInt(99999)),
-				sdk.NewCoin("mars", sdk.NewInt(88888)),
-				sdk.NewCoin("akash", sdk.NewInt(77777)),
-				sdk.NewCoin("eth", sdk.NewInt(6666)),
-				sdk.NewCoin("usdc", sdk.NewInt(555)),
-				sdk.NewCoin("dai", sdk.NewInt(4444)),
-				sdk.NewCoin("ust", sdk.NewInt(3333)),
+				sdk.NewCoin("uosmo", osmomath.NewInt(100000)),
+				sdk.NewCoin("atom", osmomath.NewInt(99999)),
+				sdk.NewCoin("mars", osmomath.NewInt(88888)),
+				sdk.NewCoin("akash", osmomath.NewInt(77777)),
+				sdk.NewCoin("eth", osmomath.NewInt(6666)),
+				sdk.NewCoin("usdc", osmomath.NewInt(555)),
+				sdk.NewCoin("dai", osmomath.NewInt(4444)),
+				sdk.NewCoin("ust", osmomath.NewInt(3333)),
 			),
 			gaugeId:            1,
 			minimumGasConsumed: uint64(8 * types.BaseGasFeeForAddRewardToGauge),
@@ -376,20 +447,42 @@ func (s *KeeperTestSuite) TestAddToGaugeRewards() {
 			name:  "invalid case: gauge Id is not valid",
 			owner: s.TestAccs[0],
 			coinsToAdd: sdk.NewCoins(
-				sdk.NewCoin("uosmo", sdk.NewInt(100000)),
-				sdk.NewCoin("atom", sdk.NewInt(99999)),
+				sdk.NewCoin("uosmo", osmomath.NewInt(100000)),
+				sdk.NewCoin("atom", osmomath.NewInt(99999)),
 			),
 			gaugeId:            0,
 			minimumGasConsumed: uint64(0),
 
 			expectErr: true,
 		},
+		{
+			name:  "invalid case: valid gauge, but errors due to no protorev route",
+			owner: s.TestAccs[0],
+			coinsToAdd: sdk.NewCoins(
+				sdk.NewCoin("uosmo", osmomath.NewInt(100000)),
+				sdk.NewCoin("atom", osmomath.NewInt(99999)),
+			),
+			gaugeId:            1,
+			minimumGasConsumed: uint64(2 * types.BaseGasFeeForAddRewardToGauge),
+
+			skipSettingRoute: true,
+			expectErr:        true,
+		},
 	}
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			s.SetupTest()
-			_, _, existingGaugeCoins, _ := s.SetupNewGauge(true, sdk.Coins{sdk.NewInt64Coin("stake", 12)})
+
+			// Since this test creates or adds to a gauge, we need to ensure a route exists in protorev hot routes.
+			// The pool doesn't need to actually exist for this test, so we can just ensure the denom pair has some entry.
+			if !tc.skipSettingRoute {
+				for _, coin := range tc.coinsToAdd {
+					s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, coin.Denom, 9999)
+				}
+			}
+
+			_, _, existingGaugeCoins, _ := s.SetupNewGauge(true, defaultCoins)
 
 			s.FundAcc(tc.owner, tc.coinsToAdd)
 
@@ -407,7 +500,6 @@ func (s *KeeperTestSuite) TestAddToGaugeRewards() {
 
 				// Ensure that at least the minimum amount of gas was charged (based on number of additional gauge coins)
 				gasConsumed := s.Ctx.GasMeter().GasConsumed() - existingGasConsumed
-				fmt.Println(gasConsumed, tc.minimumGasConsumed)
 				s.Require().True(gasConsumed >= tc.minimumGasConsumed)
 
 				// existing coins gets added to the module when we create gauge and add to gauge
@@ -437,28 +529,6 @@ func (s *KeeperTestSuite) TestAddToGaugeRewards() {
 // with NoLockExternalGaugeDenom(<pool id>)
 // - Otherwise, the given pool id must be zero. Errors if not.
 func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
-	const (
-		zeroPoolId         = uint64(0)
-		balancerPoolId     = uint64(1)
-		concentratedPoolId = uint64(2)
-		invalidPool        = uint64(3)
-		// 3 are created for balancer pool and 1 for CL.
-		// As a result, the next gauge id should be 5.
-		defaultExpectedGaugeId = uint64(5)
-
-		defaultIsPerpetualParam = false
-
-		defaultNumEpochPaidOver = uint64(10)
-	)
-
-	var (
-		defaultCoins = sdk.NewCoins(
-			sdk.NewCoin("uosmo", sdk.NewInt(100000)),
-			sdk.NewCoin("atom", sdk.NewInt(99999)),
-		)
-
-		defaultTime = time.Unix(0, 0)
-	)
 	testCases := []struct {
 		name    string
 		distrTo lockuptypes.QueryCondition
@@ -466,6 +536,7 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 
 		expectedGaugeId  uint64
 		expectedDenomSet string
+		skipSettingRoute bool
 		expectErr        bool
 	}{
 		{
@@ -473,7 +544,8 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 			distrTo: lockuptypes.QueryCondition{
 				LockQueryType: lockuptypes.NoLock,
 				// Note: this assumes the gauge is external
-				Denom: "",
+				Denom:    "",
+				Duration: time.Nanosecond,
 			},
 			poolId: concentratedPoolId,
 
@@ -482,11 +554,27 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 			expectErr:        false,
 		},
 		{
+			name: "create valid no lock gauge with CL pool, but errors due to no protorev route",
+			distrTo: lockuptypes.QueryCondition{
+				LockQueryType: lockuptypes.NoLock,
+				// Note: this assumes the gauge is external
+				Denom:    "",
+				Duration: time.Nanosecond,
+			},
+			poolId: concentratedPoolId,
+
+			expectedGaugeId:  defaultExpectedGaugeId,
+			expectedDenomSet: types.NoLockExternalGaugeDenom(concentratedPoolId),
+			skipSettingRoute: true,
+			expectErr:        true,
+		},
+		{
 			name: "create valid no lock gauge with CL pool (denom set to no lock internal prefix)",
 			distrTo: lockuptypes.QueryCondition{
 				LockQueryType: lockuptypes.NoLock,
 				// Note: this assumes the gauge is internal
-				Denom: types.NoLockInternalGaugeDenom(concentratedPoolId),
+				Denom:    types.NoLockInternalGaugeDenom(concentratedPoolId),
+				Duration: s.App.IncentivesKeeper.GetEpochInfo(s.Ctx).Duration,
 			},
 			poolId: concentratedPoolId,
 
@@ -499,7 +587,8 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 			distrTo: lockuptypes.QueryCondition{
 				LockQueryType: lockuptypes.NoLock,
 				// Note: this is invalid for NoLock gauges
-				Denom: "uosmo",
+				Denom:    "uosmo",
+				Duration: time.Nanosecond,
 			},
 			poolId: concentratedPoolId,
 
@@ -509,6 +598,7 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 			name: "fail to create no lock gauge with balancer pool",
 			distrTo: lockuptypes.QueryCondition{
 				LockQueryType: lockuptypes.NoLock,
+				Duration:      defaultNoLockDuration,
 			},
 			poolId: balancerPoolId,
 
@@ -518,6 +608,7 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 			name: "fail to create no lock gauge with non-existent pool",
 			distrTo: lockuptypes.QueryCondition{
 				LockQueryType: lockuptypes.NoLock,
+				Duration:      defaultNoLockDuration,
 			},
 			poolId: invalidPool,
 
@@ -527,8 +618,45 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 			name: "fail to create no lock gauge with zero pool id",
 			distrTo: lockuptypes.QueryCondition{
 				LockQueryType: lockuptypes.NoLock,
+				Duration:      defaultNoLockDuration,
 			},
 			poolId: zeroPoolId,
+
+			expectErr: true,
+		},
+		{
+			name: "fail to create external no lock gauge due to unauthorized uptime",
+			distrTo: lockuptypes.QueryCondition{
+				LockQueryType: lockuptypes.NoLock,
+				// Note: this assumes the gauge is external
+				Denom: "",
+				// 1h is a supported uptime that is not authorized
+				Duration: time.Hour,
+			},
+			poolId:    concentratedPoolId,
+			expectErr: true,
+		},
+		{
+			name: "fail to create external no lock gauge due to entirely invalid uptime",
+			distrTo: lockuptypes.QueryCondition{
+				LockQueryType: lockuptypes.NoLock,
+				// Note: this assumes the gauge is external
+				Denom: "",
+				// 2ns is an uptime that isn't supported at all (i.e. can't even be authorized)
+				Duration: 2 * time.Nanosecond,
+			},
+			poolId:    concentratedPoolId,
+			expectErr: true,
+		},
+		{
+			name: "fail to create an internal gauge with an unexpected duration",
+			distrTo: lockuptypes.QueryCondition{
+				LockQueryType: lockuptypes.NoLock,
+				// Note: this assumes the gauge is internal
+				Denom:    types.NoLockInternalGaugeDenom(concentratedPoolId),
+				Duration: time.Nanosecond,
+			},
+			poolId: concentratedPoolId,
 
 			expectErr: true,
 		},
@@ -539,14 +667,22 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 		s.Run(tc.name, func() {
 			s.SetupTest()
 
+			// Since this test creates or adds to a gauge, we need to ensure a route exists in protorev hot routes.
+			// The pool doesn't need to actually exist for this test, so we can just ensure the denom pair has some entry.
+			if !tc.skipSettingRoute {
+				for _, coin := range defaultGaugeCreationCoins {
+					s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, coin.Denom, 9999)
+				}
+			}
+
 			s.PrepareBalancerPool()
 			s.PrepareConcentratedPool()
 
-			s.FundAcc(s.TestAccs[0], defaultCoins)
+			s.FundAcc(s.TestAccs[0], defaultGaugeCreationCoins)
 
 			// System under test
 			// Note that the default params are used for some inputs since they are not relevant to the test case.
-			gaugeId, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, defaultIsPerpetualParam, s.TestAccs[0], defaultCoins, tc.distrTo, defaultTime, defaultNumEpochPaidOver, tc.poolId)
+			gaugeId, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, defaultIsPerpetualParam, s.TestAccs[0], defaultGaugeCreationCoins, tc.distrTo, defaultTime, defaultNumEpochPaidOver, tc.poolId)
 
 			if tc.expectErr {
 				s.Require().Error(err)
@@ -554,10 +690,6 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 				s.Require().NoError(err)
 
 				s.Require().Equal(tc.expectedGaugeId, gaugeId)
-
-				// Assert that pool id and gauge id link meant for internally incentivized gauges is unset.
-				_, err := s.App.PoolIncentivesKeeper.GetPoolGaugeId(s.Ctx, tc.poolId, tc.distrTo.Duration)
-				s.Require().Error(err)
 
 				// Confirm that the general pool id to gauge id link is set.
 				gaugeIds, err := s.App.PoolIncentivesKeeper.GetNoLockGaugeIdsFromPool(s.Ctx, tc.poolId)
@@ -568,16 +700,257 @@ func (s *KeeperTestSuite) TestCreateGauge_NoLockGauges() {
 
 				s.Require().Equal(tc.expectedGaugeId, gaugeId)
 
-				// Get gauge and check that the denom is set correctly
-				gauge, err := s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, tc.expectedGaugeId)
+				// Validate gauge
+				tc.distrTo.Denom = tc.expectedDenomSet
+				s.validateGauge(types.Gauge{
+					Id:                tc.expectedGaugeId,
+					DistributeTo:      tc.distrTo,
+					IsPerpetual:       defaultIsPerpetualParam,
+					StartTime:         defaultTime.UTC(),
+					Coins:             defaultGaugeCreationCoins,
+					NumEpochsPaidOver: defaultNumEpochPaidOver,
+				})
+			}
+		})
+	}
+}
+
+// Tests that CreateGauge can create ByGroup gauges correctly.
+// Additionally, validates that no ref keys are created for the group gauge.
+func (s *KeeperTestSuite) TestCreateGauge_Group() {
+	testCases := []struct {
+		name              string
+		distrTo           lockuptypes.QueryCondition
+		poolId            uint64
+		isPerpetual       bool
+		numEpochsPaidOver uint64
+
+		expectedGaugeId  uint64
+		expectedDenomSet string
+		skipSettingRoute bool
+		expectErr        error
+	}{
+		{
+			name:              "create valid non-perpetual group gauge",
+			distrTo:           incentiveskeeper.ByGroupQueryCondition,
+			poolId:            zeroPoolId,
+			isPerpetual:       false,
+			numEpochsPaidOver: types.PerpetualNumEpochsPaidOver + 1,
+
+			expectedGaugeId: defaultExpectedGaugeId,
+		},
+		{
+			name:              "create valid perpetual group gauge",
+			distrTo:           incentiveskeeper.ByGroupQueryCondition,
+			poolId:            zeroPoolId,
+			isPerpetual:       true,
+			numEpochsPaidOver: types.PerpetualNumEpochsPaidOver,
+
+			expectedGaugeId: defaultExpectedGaugeId,
+		},
+
+		// error cases
+
+		{
+			name:              "fail to create group gauge due to zero epochs paid over and non-perpetual",
+			distrTo:           incentiveskeeper.ByGroupQueryCondition,
+			poolId:            zeroPoolId,
+			isPerpetual:       false,
+			numEpochsPaidOver: 0,
+
+			expectErr: types.ErrZeroNumEpochsPaidOver,
+		},
+		{
+			name:              "create valid non-perpetual group gauge, but errors due to no protorev route",
+			distrTo:           incentiveskeeper.ByGroupQueryCondition,
+			poolId:            zeroPoolId,
+			isPerpetual:       false,
+			numEpochsPaidOver: types.PerpetualNumEpochsPaidOver + 1,
+
+			skipSettingRoute: true,
+			expectErr:        types.NoRouteForDenomError{Denom: "atom"},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		s.Run(tc.name, func() {
+			s.SetupTest()
+
+			// Since this test creates or adds to a gauge, we need to ensure a route exists in protorev hot routes.
+			// The pool doesn't need to actually exist for this test, so we can just ensure the denom pair has some entry.
+			if !tc.skipSettingRoute {
+				for _, coin := range defaultGaugeCreationCoins {
+					s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, coin.Denom, 9999)
+				}
+			}
+
+			s.PrepareBalancerPool()
+			s.PrepareConcentratedPool()
+
+			s.FundAcc(s.TestAccs[0], defaultGaugeCreationCoins)
+
+			// System under test
+			// Note that the default params are used for some inputs since they are not relevant to the test case.
+			gaugeId, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, tc.isPerpetual, s.TestAccs[0], defaultGaugeCreationCoins, tc.distrTo, defaultTime, tc.numEpochsPaidOver, tc.poolId)
+
+			if tc.expectErr != nil {
+				s.Require().Error(err)
+				s.Require().ErrorIs(err, tc.expectErr)
+			} else {
 				s.Require().NoError(err)
 
-				s.Require().Equal(tc.expectedDenomSet, gauge.DistributeTo.Denom)
-				s.Require().Equal(tc.distrTo.LockQueryType, gauge.DistributeTo.LockQueryType)
-				s.Require().Equal(defaultIsPerpetualParam, gauge.IsPerpetual)
-				s.Require().Equal(defaultCoins, gauge.Coins)
-				s.Require().Equal(defaultTime.UTC(), gauge.StartTime.UTC())
-				s.Require().Equal(defaultNumEpochPaidOver, gauge.NumEpochsPaidOver)
+				s.Require().Equal(tc.expectedGaugeId, gaugeId)
+
+				// Assert that pool id and gauge id link meant for internally incentivized gauges is unset.
+				_, err := s.App.PoolIncentivesKeeper.GetPoolGaugeId(s.Ctx, tc.poolId, tc.distrTo.Duration)
+				s.Require().Error(err)
+
+				// Confirm that for every lockable duration, there is not gauge ID and pool ID link.
+				lockableDurations := s.App.PoolIncentivesKeeper.GetLockableDurations(s.Ctx)
+				s.Require().NotEqual(0, len(lockableDurations))
+				for _, duration := range lockableDurations {
+					_, err = s.App.PoolIncentivesKeeper.GetPoolIdFromGaugeId(s.Ctx, gaugeId, duration)
+					s.Require().Error(err)
+				}
+
+				// Confirm that for incentives epoch duration, there is no gauge ID and pool ID link.
+				incentivesEpochDuration := s.App.IncentivesKeeper.GetEpochInfo(s.Ctx).Duration
+				_, err = s.App.PoolIncentivesKeeper.GetPoolIdFromGaugeId(s.Ctx, gaugeId, incentivesEpochDuration)
+				s.Require().Error(err)
+
+				// Validate gauge
+				s.validateGauge(types.Gauge{
+					Id:                tc.expectedGaugeId,
+					DistributeTo:      incentiveskeeper.ByGroupQueryCondition,
+					IsPerpetual:       tc.isPerpetual,
+					StartTime:         defaultTime.UTC(),
+					Coins:             defaultGaugeCreationCoins,
+					NumEpochsPaidOver: tc.numEpochsPaidOver,
+				})
+
+				// Validate that ref keys are not created for the group gauge
+
+				// No upcoming ref keys
+				upcomingGauges := s.App.IncentivesKeeper.GetUpcomingGauges(s.Ctx)
+				s.validateNoGaugeIDInSlice(upcomingGauges, tc.expectedGaugeId)
+
+				// No active ref keys
+				activeGauges := s.App.IncentivesKeeper.GetActiveGauges(s.Ctx)
+				s.validateNoGaugeIDInSlice(activeGauges, tc.expectedGaugeId)
+
+				// No finished ref keys
+				finishedGauges := s.App.IncentivesKeeper.GetActiveGauges(s.Ctx)
+				s.validateNoGaugeIDInSlice(finishedGauges, tc.expectedGaugeId)
+			}
+		})
+	}
+}
+
+// validates that the expected gauge info equals the actual gauge info
+func (s *KeeperTestSuite) validateGaugeInfo(expected types.InternalGaugeInfo, actual types.InternalGaugeInfo) {
+	s.Require().Equal(expected.TotalWeight.String(), actual.TotalWeight.String())
+	s.Require().Equal(len(expected.GaugeRecords), len(actual.GaugeRecords))
+	for i := range expected.GaugeRecords {
+		s.Require().Equal(expected.GaugeRecords[i].GaugeId, actual.GaugeRecords[i].GaugeId)
+		s.Require().Equal(expected.GaugeRecords[i].CurrentWeight.String(), actual.GaugeRecords[i].CurrentWeight.String())
+		s.Require().Equal(expected.GaugeRecords[i].CumulativeWeight.String(), actual.GaugeRecords[i].CumulativeWeight.String())
+	}
+}
+
+// retrieves the gauge of expectedGauge.ID from state and validates that it matches expectedGauge
+func (s *KeeperTestSuite) validateGauge(expectedGauge types.Gauge) {
+	// Get gauge and check that the denom is set correctly
+	gauge, err := s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, expectedGauge.Id)
+	s.Require().NoError(err)
+
+	// No denom set for group gauges.
+	s.Require().Equal(expectedGauge.DistributeTo.Denom, gauge.DistributeTo.Denom)
+	// ByGroup type set
+	s.Require().Equal(expectedGauge.DistributeTo.LockQueryType, gauge.DistributeTo.LockQueryType)
+	s.Require().Equal(expectedGauge.IsPerpetual, gauge.IsPerpetual)
+	s.Require().Equal(expectedGauge.Coins, gauge.Coins)
+	s.Require().Equal(expectedGauge.StartTime, gauge.StartTime.UTC())
+	s.Require().Equal(expectedGauge.NumEpochsPaidOver, gauge.NumEpochsPaidOver)
+}
+
+// test helper to create a gauge bypassing all checks and restrictions
+// It is useful in edge case tests that rely on invalid gagues written to store (e.g. in Distribute())
+func (s *KeeperTestSuite) createGaugeNoRestrictions(isPerpetual bool, coins sdk.Coins, distrTo lockuptypes.QueryCondition, startTime time.Time, numEpochsPaidOver uint64, poolID uint64) types.Gauge {
+	// Fund incentives module account to simulate transfer from owner to module account
+	s.FundModuleAcc(types.ModuleName, coins)
+	lastGaugeID := s.App.IncentivesKeeper.GetLastGaugeID(s.Ctx)
+	nextGaugeID := lastGaugeID + 1
+	gauge := types.Gauge{
+		Id:                nextGaugeID,
+		IsPerpetual:       isPerpetual,
+		Coins:             coins,
+		DistributeTo:      distrTo,
+		StartTime:         startTime,
+		NumEpochsPaidOver: numEpochsPaidOver,
+	}
+
+	if poolID != 0 {
+		s.App.PoolIncentivesKeeper.SetPoolGaugeIdNoLock(s.Ctx, poolID, nextGaugeID, distrTo.Duration)
+	}
+
+	err := s.App.IncentivesKeeper.SetGauge(s.Ctx, &gauge)
+	s.Require().NoError(err)
+	s.App.IncentivesKeeper.CreateGaugeRefKeys(s.Ctx, &gauge, incentiveskeeper.CombineKeys(types.KeyPrefixUpcomingGauges, incentiveskeeper.GetTimeKeys(startTime)))
+	s.Require().NoError(err)
+
+	// Retrieve from state and return
+	gaugeFromState, err := s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, nextGaugeID)
+	s.Require().NoError(err)
+	return *gaugeFromState
+}
+
+// validates that there is not gauge with the given ID in the slice
+func (s *KeeperTestSuite) validateNoGaugeIDInSlice(slice []types.Gauge, gaugeID uint64) {
+	gaugeMatch := osmoutils.Filter(func(gauge types.Gauge) bool {
+		return gauge.Id == gaugeID
+	}, slice)
+	// No gauge matched ID.
+	s.Require().Empty(gaugeMatch)
+}
+
+func (s *KeeperTestSuite) TestCheckIfDenomsAreDistributable() {
+	s.SetupTest()
+
+	coinWithRouteA := sdk.NewCoin("denom1", sdk.NewInt(100))
+	coinWithRouteB := sdk.NewCoin("denom2", sdk.NewInt(100))
+	coinWithoutRouteC := sdk.NewCoin("denom3", sdk.NewInt(100))
+
+	for _, coin := range []sdk.Coin{coinWithRouteA, coinWithRouteB} {
+		s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, coin.Denom, 9999)
+	}
+
+	testCases := []struct {
+		name        string
+		coins       sdk.Coins
+		expectedErr error
+	}{
+		{
+			name:  "valid case: all denoms are distributable",
+			coins: sdk.NewCoins(coinWithRouteA, coinWithRouteB),
+		},
+		{
+			name:        "invalid case: one denom is not distributable",
+			coins:       sdk.NewCoins(coinWithRouteA, coinWithoutRouteC),
+			expectedErr: types.NoRouteForDenomError{Denom: coinWithoutRouteC.Denom},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		s.Run(tc.name, func() {
+			// System under test
+			err := s.App.IncentivesKeeper.CheckIfDenomsAreDistributable(s.Ctx, tc.coins)
+
+			if tc.expectedErr != nil {
+				s.Require().Error(err)
+			} else {
+				s.Require().NoError(err)
 			}
 		})
 	}

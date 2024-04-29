@@ -5,8 +5,9 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 )
 
 type Hooks struct {
@@ -30,7 +31,7 @@ func (h Hooks) AfterCFMMPoolCreated(ctx sdk.Context, sender sdk.AccAddress, pool
 }
 
 // AfterJoinPool stores swaps to be checked by protorev given the coins entered into the pool.
-func (h Hooks) AfterJoinPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, enterCoins sdk.Coins, shareOutAmount sdk.Int) {
+func (h Hooks) AfterJoinPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, enterCoins sdk.Coins, shareOutAmount osmomath.Int) {
 	// Checked to avoid future unintended behavior based on how the hook is called
 	if len(enterCoins) != 1 {
 		return
@@ -40,7 +41,7 @@ func (h Hooks) AfterJoinPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint
 }
 
 // AfterExitPool stores swaps to be checked by protorev given the coins exited from the pool.
-func (h Hooks) AfterExitPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, shareInAmount sdk.Int, exitCoins sdk.Coins) {
+func (h Hooks) AfterExitPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, shareInAmount osmomath.Int, exitCoins sdk.Coins) {
 	// Added due to ExitSwapShareAmountIn both calling
 	// ExitPoolHook with all denoms of the pool and then also
 	// Swapping which triggers the after swap hook.
@@ -102,21 +103,21 @@ func (k Keeper) StoreSwap(ctx sdk.Context, poolId uint64, tokenIn, tokenOut stri
 	}
 
 	if err := k.AddSwapsToSwapsToBackrun(ctx, []types.Trade{swapToBackrun}); err != nil {
-		ctx.Logger().Error("Protorev error adding swap to backrun from storeSwap", err) // Does not return since logging is last thing in the function
+		ctx.Logger().Error("Protorev error adding swap to backrun from storeSwap: " + err.Error()) // Does not return since logging is last thing in the function
 	}
 }
 
 // GetComparablePoolLiquidity gets the comparable liquidity of a pool by multiplying the amounts of the pool coins.
-func (k Keeper) GetComparablePoolLiquidity(ctx sdk.Context, poolId uint64) (comparableLiquidity sdk.Int, err error) {
+func (k Keeper) GetComparablePoolLiquidity(ctx sdk.Context, poolId uint64) (comparableLiquidity osmomath.Int, err error) {
 	coins, err := k.poolmanagerKeeper.GetTotalPoolLiquidity(ctx, poolId)
 	if err != nil {
-		return sdk.Int{}, err
+		return osmomath.Int{}, err
 	}
 
 	// Recover from overflow panic
 	defer func() {
 		if r := recover(); r != nil {
-			comparableLiquidity = sdk.Int{}
+			comparableLiquidity = osmomath.Int{}
 			err = errors.New("Int overflow in GetComparablePoolLiquidity")
 		}
 	}()
@@ -155,7 +156,7 @@ func (k Keeper) StoreJoinExitPoolSwaps(ctx sdk.Context, sender sdk.AccAddress, p
 func (k Keeper) AfterPoolCreatedWithCoins(ctx sdk.Context, poolId uint64) {
 	baseDenoms, err := k.GetAllBaseDenoms(ctx)
 	if err != nil {
-		ctx.Logger().Error("Protorev error getting base denoms in AfterCFMMPoolCreated hook", err)
+		ctx.Logger().Error("Protorev error getting base denoms in AfterCFMMPoolCreated hook: " + err.Error())
 		return
 	}
 
@@ -166,13 +167,13 @@ func (k Keeper) AfterPoolCreatedWithCoins(ctx sdk.Context, poolId uint64) {
 
 	pool, err := k.poolmanagerKeeper.GetPool(ctx, poolId)
 	if err != nil {
-		ctx.Logger().Error("Protorev error getting pool in AfterCFMMPoolCreated hook", err)
+		ctx.Logger().Error("Protorev error getting pool in AfterCFMMPoolCreated hook: " + err.Error())
 		return
 	}
 
 	denoms, err := k.poolmanagerKeeper.RouteGetPoolDenoms(ctx, poolId)
 	if err != nil {
-		ctx.Logger().Error("Protorev error getting pool liquidity in afterPoolCreated", err)
+		ctx.Logger().Error("Protorev error getting pool liquidity in afterPoolCreated: " + err.Error())
 		return
 	}
 
@@ -204,14 +205,14 @@ func (k Keeper) CompareAndStorePool(ctx sdk.Context, poolId uint64, baseDenom, o
 	// Get comparable liquidity for the new pool
 	newPoolLiquidity, err := k.GetComparablePoolLiquidity(ctx, poolId)
 	if err != nil {
-		ctx.Logger().Error("Protorev error getting newPoolLiquidity in compareAndStorePool", err)
+		ctx.Logger().Error("Protorev error getting newPoolLiquidity in compareAndStorePool: " + err.Error())
 		return
 	}
 
 	// Get comparable liquidity for the stored pool
 	storedPoolLiquidity, err := k.GetComparablePoolLiquidity(ctx, storedPoolId)
 	if err != nil {
-		ctx.Logger().Error("Protorev error getting storedPoolLiquidity in compareAndStorePool", err)
+		ctx.Logger().Error("Protorev error getting storedPoolLiquidity in compareAndStorePool: " + err.Error())
 		return
 	}
 

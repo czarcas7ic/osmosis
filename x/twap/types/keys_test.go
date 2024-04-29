@@ -5,9 +5,10 @@ import (
 	"testing"
 	time "time"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/require"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 )
 
 func TestFormatMostRecentTWAPKey(t *testing.T) {
@@ -45,9 +46,7 @@ func TestFormatHistoricalTwapKeys(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			gotTimeKey := FormatHistoricalTimeIndexTWAPKey(tt.time, tt.poolId, tt.denom1, tt.denom2)
 			gotPoolKey := FormatHistoricalPoolIndexTWAPKey(tt.poolId, tt.denom1, tt.denom2, tt.time)
-			require.Equal(t, tt.wantTimeIndex, string(gotTimeKey))
 			require.Equal(t, tt.wantPoolIndex, string(gotPoolKey))
 
 			poolIndexPrefix := FormatHistoricalPoolIndexTimePrefix(tt.poolId, tt.denom1, tt.denom2)
@@ -67,13 +66,14 @@ func TestParseTwapFromBz(t *testing.T) {
 		Asset1Denom:                 "A",
 		Height:                      1,
 		Time:                        baseTime,
-		P0LastSpotPrice:             sdk.NewDecWithPrec(1, 5),
-		P1LastSpotPrice:             sdk.NewDecWithPrec(2, 5), // inconsistent value
-		P0ArithmeticTwapAccumulator: sdk.ZeroDec(),
-		P1ArithmeticTwapAccumulator: sdk.ZeroDec(),
+		P0LastSpotPrice:             osmomath.NewDecWithPrec(1, 5),
+		P1LastSpotPrice:             osmomath.NewDecWithPrec(2, 5), // inconsistent value
+		P0ArithmeticTwapAccumulator: osmomath.ZeroDec(),
+		P1ArithmeticTwapAccumulator: osmomath.ZeroDec(),
+		GeometricTwapAccumulator:    osmomath.ZeroDec(),
 	}
 
-	withGeomAcc := func(r TwapRecord, acc sdk.Dec) TwapRecord {
+	withGeomAcc := func(r TwapRecord, acc osmomath.Dec) TwapRecord {
 		r.GeometricTwapAccumulator = acc
 		return r
 	}
@@ -87,11 +87,11 @@ func TestParseTwapFromBz(t *testing.T) {
 			false,
 		},
 		"with nil geometric twap accumulator -> set to zero": {
-			withGeomAcc(baseParseRecord, sdk.Dec{}),
+			withGeomAcc(baseParseRecord, osmomath.Dec{}),
 			true,
 		},
 		"with non-nil geometric twap accumulator -> not overwritten": {
-			withGeomAcc(baseParseRecord, sdk.OneDec()),
+			withGeomAcc(baseParseRecord, osmomath.OneDec()),
 			false,
 		},
 	}
@@ -104,7 +104,7 @@ func TestParseTwapFromBz(t *testing.T) {
 			require.NoError(t, err)
 
 			if tt.isGeometricAccumNil {
-				tt.record.GeometricTwapAccumulator = sdk.ZeroDec()
+				tt.record.GeometricTwapAccumulator = osmomath.ZeroDec()
 			}
 
 			require.Equal(t, tt.record, record)

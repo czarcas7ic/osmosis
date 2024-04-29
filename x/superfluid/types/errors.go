@@ -6,7 +6,8 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
 )
 
 // x/superfluid module errors.
@@ -73,6 +74,15 @@ func (e MigrateMoreSharesThanLockHasError) Error() string {
 	return fmt.Sprintf("cannot migrate more shares (%s) than lock has (%s)", e.SharesToMigrate, e.SharesInLock)
 }
 
+type MigratePartialSharesError struct {
+	SharesToMigrate string
+	SharesInLock    string
+}
+
+func (e MigratePartialSharesError) Error() string {
+	return fmt.Sprintf("cannot partial migrate shares (%s). The lock has (%s)", e.SharesToMigrate, e.SharesInLock)
+}
+
 type TwoTokenBalancerPoolError struct {
 	NumberOfTokens int
 }
@@ -105,4 +115,13 @@ type UnexpectedDenomError struct {
 
 func (e UnexpectedDenomError) Error() string {
 	return fmt.Sprintf("provided denom (%s) was expected to be formatted as follows: %s", e.ProvidedDenom, e.ExpectedDenom)
+}
+
+type TokenConvertedLessThenDesiredStakeError struct {
+	ActualTotalAmtToStake   osmomath.Int
+	ExpectedTotalAmtToStake osmomath.Int
+}
+
+func (e TokenConvertedLessThenDesiredStakeError) Error() string {
+	return fmt.Sprintf("actual amount converted to stake (%s) is less then minimum amount expected to be staked (%s)", e.ActualTotalAmtToStake, e.ExpectedTotalAmtToStake)
 }

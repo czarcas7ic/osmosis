@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	tmjson "github.com/cometbft/cometbft/libs/json"
 	"github.com/cosmos/cosmos-sdk/server"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -14,24 +15,25 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	govtypesv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	staketypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/gogo/protobuf/proto"
-	tmjson "github.com/tendermint/tendermint/libs/json"
+	"github.com/cosmos/gogoproto/proto"
 
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/balancer"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	incentivestypes "github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	minttypes "github.com/osmosis-labs/osmosis/v16/x/mint/types"
-	poolitypes "github.com/osmosis-labs/osmosis/v16/x/pool-incentives/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
-	protorevtypes "github.com/osmosis-labs/osmosis/v16/x/protorev/types"
-	twaptypes "github.com/osmosis-labs/osmosis/v16/x/twap/types"
-	txfeestypes "github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	incentivestypes "github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	minttypes "github.com/osmosis-labs/osmosis/v24/x/mint/types"
+	poolitypes "github.com/osmosis-labs/osmosis/v24/x/pool-incentives/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
+	protorevtypes "github.com/osmosis-labs/osmosis/v24/x/protorev/types"
+	twaptypes "github.com/osmosis-labs/osmosis/v24/x/twap/types"
+	txfeestypes "github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 	epochtypes "github.com/osmosis-labs/osmosis/x/epochs/types"
 
 	types1 "github.com/cosmos/cosmos-sdk/codec/types"
 
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/util"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/util"
 )
 
 // NodeConfig is a confiuration for the node supplied from the test runner
@@ -89,9 +91,9 @@ const (
 )
 
 var (
-	StakeAmountIntA  = sdk.NewInt(StakeAmountA)
+	StakeAmountIntA  = osmomath.NewInt(StakeAmountA)
 	StakeAmountCoinA = sdk.NewCoin(OsmoDenom, StakeAmountIntA)
-	StakeAmountIntB  = sdk.NewInt(StakeAmountB)
+	StakeAmountIntB  = osmomath.NewInt(StakeAmountB)
 	StakeAmountCoinB = sdk.NewCoin(OsmoDenom, StakeAmountIntB)
 
 	DaiOsmoPoolBalances = fmt.Sprintf("%s%s", DaiBalanceA, DaiDenom)
@@ -102,7 +104,7 @@ var (
 	StakeToken      = sdk.NewInt64Coin(StakeDenom, IbcSendAmount) // 3,300ustake
 	tenOsmo         = sdk.Coins{sdk.NewInt64Coin(OsmoDenom, 10_000_000)}
 	fiftyOsmo       = sdk.Coins{sdk.NewInt64Coin(OsmoDenom, 50_000_000)}
-	WalletFeeTokens = sdk.NewCoin(E2EFeeToken, sdk.NewInt(WalletFeeBalance))
+	WalletFeeTokens = sdk.NewCoin(E2EFeeToken, osmomath.NewInt(WalletFeeBalance))
 )
 
 func addAccount(path, moniker, amountStr string, accAddr sdk.AccAddress, forkHeight int) error {
@@ -116,7 +118,7 @@ func addAccount(path, moniker, amountStr string, accAddr sdk.AccAddress, forkHei
 	if err != nil {
 		return fmt.Errorf("failed to parse coins: %w", err)
 	}
-	coins = coins.Add(sdk.NewCoin(E2EFeeToken, sdk.NewInt(GenesisFeeBalance)))
+	coins = coins.Add(sdk.NewCoin(E2EFeeToken, osmomath.NewInt(GenesisFeeBalance)))
 
 	balances := banktypes.Balance{Address: accAddr.String(), Coins: coins.Sort()}
 	genAccount := authtypes.NewBaseAccount(accAddr, nil, 0, 0)
@@ -199,12 +201,16 @@ func initGenesis(chain *internalChain, votingPeriod, expeditedVotingPeriod time.
 	// initialize a genesis file
 	configDir := chain.nodes[0].configDir()
 	for _, val := range chain.nodes {
+		addr, err := val.keyInfo.GetAddress()
+		if err != nil {
+			return err
+		}
 		if chain.chainMeta.Id == ChainAID {
-			if err := addAccount(configDir, "", InitBalanceStrA+","+DaiOsmoPoolBalances, val.keyInfo.GetAddress(), forkHeight); err != nil {
+			if err := addAccount(configDir, "", InitBalanceStrA+","+DaiOsmoPoolBalances, addr, forkHeight); err != nil {
 				return err
 			}
 		} else if chain.chainMeta.Id == ChainBID {
-			if err := addAccount(configDir, "", InitBalanceStrB+","+DaiOsmoPoolBalances, val.keyInfo.GetAddress(), forkHeight); err != nil {
+			if err := addAccount(configDir, "", InitBalanceStrB+","+DaiOsmoPoolBalances, addr, forkHeight); err != nil {
 				return err
 			}
 		}
@@ -288,7 +294,7 @@ func initGenesis(chain *internalChain, votingPeriod, expeditedVotingPeriod time.
 		return err
 	}
 
-	err = updateModuleGenesis(appGenState, govtypes.ModuleName, &govtypes.GenesisState{}, updateGovGenesis(votingPeriod, expeditedVotingPeriod))
+	err = updateModuleGenesis(appGenState, govtypes.ModuleName, &govtypesv1.GenesisState{}, updateGovGenesis(votingPeriod, expeditedVotingPeriod))
 	if err != nil {
 		return err
 	}
@@ -363,7 +369,7 @@ func updateStakeGenesis(stakeGenState *staketypes.GenesisState) {
 		MaxEntries:        7,
 		HistoricalEntries: 10000,
 		UnbondingTime:     240000000000,
-		MinCommissionRate: sdk.ZeroDec(),
+		MinCommissionRate: osmomath.ZeroDec(),
 	}
 }
 
@@ -384,9 +390,8 @@ func updateIncentivesGenesis(incentivesGenState *incentivestypes.GenesisState) {
 		time.Second * 120,
 		time.Second * 240,
 	}
-	incentivesGenState.Params = incentivestypes.Params{
-		DistrEpochIdentifier: "day",
-	}
+	incentivesGenState = incentivestypes.DefaultGenesis()
+	incentivesGenState.Params.DistrEpochIdentifier = "day"
 }
 
 func updateMintGenesis(mintGenState *minttypes.GenesisState) {
@@ -438,10 +443,10 @@ func updatePoolManagerGenesis(appGenState map[string]json.RawMessage) func(*pool
 
 func updateEpochGenesis(epochGenState *epochtypes.GenesisState) {
 	epochGenState.Epochs = []epochtypes.EpochInfo{
-		// override week epochs which are in default integrations, to be 2min
-		epochtypes.NewGenesisEpochInfo("week", time.Second*120),
-		// override day epochs which are in default integrations, to be 1min
-		epochtypes.NewGenesisEpochInfo("day", time.Second*60),
+		// override week epochs which are in default integrations, to be 60 seconds
+		epochtypes.NewGenesisEpochInfo("week", time.Second*60),
+		// override day epochs which are in default integrations, to be 5 seconds
+		epochtypes.NewGenesisEpochInfo("day", time.Second*5),
 	}
 }
 
@@ -450,7 +455,7 @@ func updateTWAPGenesis(appGenState map[string]json.RawMessage) func(twapGenState
 		gammGenState := &gammtypes.GenesisState{}
 		util.Cdc.MustUnmarshalJSON(appGenState[gammtypes.ModuleName], gammGenState)
 
-		// Lower keep period from defaults to allos us to test pruning.
+		// Lower keep period from defaults to allows us to test pruning.
 		twapGenState.Params.RecordHistoryKeepPeriod = time.Second * 15
 
 		for _, poolAny := range gammGenState.Pools {
@@ -480,16 +485,17 @@ func updateTWAPGenesis(appGenState map[string]json.RawMessage) func(twapGenState
 				}
 
 				twapRecord := twaptypes.TwapRecord{
-					PoolId:                      balancerPool.Id,
-					Asset0Denom:                 denomPair.Denom0,
-					Asset1Denom:                 denomPair.Denom0,
-					Height:                      1,
-					Time:                        time.Date(2023, 0o2, 1, 0, 0, 0, 0, time.UTC), // some time in the past.
-					P0LastSpotPrice:             sp0,
-					P1LastSpotPrice:             sp1,
-					P0ArithmeticTwapAccumulator: sdk.ZeroDec(),
-					P1ArithmeticTwapAccumulator: sdk.ZeroDec(),
-					GeometricTwapAccumulator:    sdk.ZeroDec(),
+					PoolId:      balancerPool.Id,
+					Asset0Denom: denomPair.Denom0,
+					Asset1Denom: denomPair.Denom1,
+					Height:      1,
+					Time:        time.Date(2023, 0o2, 1, 0, 0, 0, 0, time.UTC), // some time in the past.
+					// Note: truncation is acceptable as x/twap is guaranteed to work only on pools with spot prices > 10^-18.
+					P0LastSpotPrice:             sp0.Dec(),
+					P1LastSpotPrice:             sp1.Dec(),
+					P0ArithmeticTwapAccumulator: osmomath.ZeroDec(),
+					P1ArithmeticTwapAccumulator: osmomath.ZeroDec(),
+					GeometricTwapAccumulator:    osmomath.ZeroDec(),
 					LastErrorTime:               time.Time{}, // no previous error
 				}
 				twapGenState.Twaps = append(twapGenState.Twaps, twapRecord)
@@ -502,12 +508,13 @@ func updateCrisisGenesis(crisisGenState *crisistypes.GenesisState) {
 	crisisGenState.ConstantFee.Denom = OsmoDenom
 }
 
-func updateGovGenesis(votingPeriod, expeditedVotingPeriod time.Duration) func(*govtypes.GenesisState) {
-	return func(govGenState *govtypes.GenesisState) {
-		govGenState.VotingParams.VotingPeriod = votingPeriod
-		govGenState.VotingParams.ExpeditedVotingPeriod = expeditedVotingPeriod
-		govGenState.DepositParams.MinDeposit = tenOsmo
-		govGenState.DepositParams.MinExpeditedDeposit = fiftyOsmo
+//nolint:unparam
+func updateGovGenesis(votingPeriod, expeditedVotingPeriod time.Duration) func(*govtypesv1.GenesisState) {
+	return func(govGenState *govtypesv1.GenesisState) {
+		govGenState.Params.VotingPeriod = &votingPeriod
+		govGenState.Params.ExpeditedVotingPeriod = &expeditedVotingPeriod
+		govGenState.Params.MinDeposit = tenOsmo
+		govGenState.Params.ExpeditedMinDeposit = fiftyOsmo
 	}
 }
 
@@ -525,18 +532,20 @@ func updateGenUtilGenesis(c *internalChain) func(*genutiltypes.GenesisState) {
 				stakeAmountCoin = StakeAmountCoinB
 			}
 			createValmsg, err := node.buildCreateValidatorMsg(stakeAmountCoin)
+
+			const genesisSetupFailed = "genutil genesis setup failed: "
 			if err != nil {
-				panic("genutil genesis setup failed: " + err.Error())
+				panic(genesisSetupFailed + err.Error())
 			}
 
 			signedTx, err := node.signMsg(createValmsg)
 			if err != nil {
-				panic("genutil genesis setup failed: " + err.Error())
+				panic(genesisSetupFailed + err.Error())
 			}
 
 			txRaw, err := util.Cdc.MarshalJSON(signedTx)
 			if err != nil {
-				panic("genutil genesis setup failed: " + err.Error())
+				panic(genesisSetupFailed + err.Error())
 			}
 			genTxs = append(genTxs, txRaw)
 		}
@@ -567,15 +576,15 @@ func setDenomMetadata(genState *banktypes.GenesisState, denom string) {
 // sets up a pool with 1% fee, equal weights, and given denoms with supply of 100000000000,
 // and a given pool id.
 func setupPool(poolId uint64, denomA, denomB string) *types1.Any {
-	feePoolParams := balancer.NewPoolParams(sdk.MustNewDecFromStr("0.01"), sdk.ZeroDec(), nil)
+	feePoolParams := balancer.NewPoolParams(osmomath.MustNewDecFromStr("0.01"), osmomath.ZeroDec(), nil)
 	feePoolAssets := []balancer.PoolAsset{
 		{
-			Weight: sdk.NewInt(100),
-			Token:  sdk.NewCoin(denomA, sdk.NewInt(100000000000)),
+			Weight: osmomath.NewInt(100),
+			Token:  sdk.NewCoin(denomA, osmomath.NewInt(100000000000)),
 		},
 		{
-			Weight: sdk.NewInt(100),
-			Token:  sdk.NewCoin(denomB, sdk.NewInt(100000000000)),
+			Weight: osmomath.NewInt(100),
+			Token:  sdk.NewCoin(denomB, osmomath.NewInt(100000000000)),
 		},
 	}
 	pool1, err := balancer.NewBalancerPool(poolId, feePoolParams, feePoolAssets, "", time.Unix(0, 0))

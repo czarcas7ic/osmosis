@@ -3,19 +3,23 @@ package keeper
 import (
 	"fmt"
 
-	"github.com/tendermint/tendermint/libs/log"
+	"github.com/cometbft/cometbft/libs/log"
 
 	"github.com/cosmos/cosmos-sdk/store/prefix"
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/tokenfactory/types"
+	"github.com/osmosis-labs/osmosis/v24/x/tokenfactory/types"
 
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 type (
 	Keeper struct {
-		storeKey sdk.StoreKey
+		storeKey  storetypes.StoreKey
+		permAddrs map[string]authtypes.PermissionsForAddress
 
 		paramSpace paramtypes.Subspace
 
@@ -29,8 +33,9 @@ type (
 
 // NewKeeper returns a new instance of the x/tokenfactory keeper
 func NewKeeper(
-	storeKey sdk.StoreKey,
+	storeKey storetypes.StoreKey,
 	paramSpace paramtypes.Subspace,
+	maccPerms map[string][]string,
 	accountKeeper types.AccountKeeper,
 	bankKeeper types.BankKeeper,
 	communityPoolKeeper types.CommunityPoolKeeper,
@@ -39,9 +44,15 @@ func NewKeeper(
 		paramSpace = paramSpace.WithKeyTable(types.ParamKeyTable())
 	}
 
+	permAddrs := make(map[string]authtypes.PermissionsForAddress)
+	for name, perms := range maccPerms {
+		permAddrs[name] = authtypes.NewPermissionsForAddress(name, perms)
+	}
+
 	return Keeper{
 		storeKey:   storeKey,
 		paramSpace: paramSpace,
+		permAddrs:  permAddrs,
 
 		accountKeeper:       accountKeeper,
 		bankKeeper:          bankKeeper,

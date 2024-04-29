@@ -6,14 +6,15 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	osmosimtypes "github.com/osmosis-labs/osmosis/v16/simulation/simtypes"
-	valsetkeeper "github.com/osmosis-labs/osmosis/v16/x/valset-pref"
-	"github.com/osmosis-labs/osmosis/v16/x/valset-pref/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	osmosimtypes "github.com/osmosis-labs/osmosis/v24/simulation/simtypes"
+	valsetkeeper "github.com/osmosis-labs/osmosis/v24/x/valset-pref"
+	"github.com/osmosis-labs/osmosis/v24/x/valset-pref/types"
 )
 
 func RandomMsgSetValSetPreference(k valsetkeeper.Keeper, sim *osmosimtypes.SimCtx, ctx sdk.Context) (*types.MsgSetValidatorSetPreference, error) {
 	// Start with a weight of 1
-	remainingWeight := sdk.NewDec(1)
+	remainingWeight := osmomath.NewDec(1)
 
 	preferences, err := GetRandomValAndWeights(ctx, k, sim, remainingWeight)
 	if err != nil {
@@ -45,7 +46,7 @@ func RandomMsgDelegateToValSet(k valsetkeeper.Keeper, sim *osmosimtypes.SimCtx, 
 
 	return &types.MsgDelegateToValidatorSet{
 		Delegator: delegator.Address.String(),
-		Coin:      sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(int64(delegationCoin))),
+		Coin:      sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(int64(delegationCoin))),
 	}, nil
 }
 
@@ -68,13 +69,13 @@ func RandomMsgUnDelegateFromValSet(k valsetkeeper.Keeper, sim *osmosimtypes.SimC
 		return nil, fmt.Errorf("validator address not formatted")
 	}
 
-	validator, found := sim.StakingKeeper().GetValidator(ctx, val)
+	validator, found := sim.SDKStakingKeeper().GetValidator(ctx, val)
 	if !found {
 		return nil, fmt.Errorf("Validator not found")
 	}
 
 	// check if the user has delegated tokens to the valset
-	del, found := sim.StakingKeeper().GetDelegation(ctx, delAddr, val)
+	del, found := sim.SDKStakingKeeper().GetDelegation(ctx, delAddr, val)
 	if !found {
 		return nil, fmt.Errorf("user hasn't delegated tokens to the validator, %s", val.String())
 	}
@@ -88,7 +89,7 @@ func RandomMsgUnDelegateFromValSet(k valsetkeeper.Keeper, sim *osmosimtypes.SimC
 
 	return &types.MsgUndelegateFromValidatorSet{
 		Delegator: delAddr.String(),
-		Coin:      sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(int64(undelegationCoin))),
+		Coin:      sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(int64(undelegationCoin))),
 	}, nil
 }
 
@@ -109,23 +110,23 @@ func RandomMsgReDelegateToValSet(k valsetkeeper.Keeper, sim *osmosimtypes.SimCtx
 			return nil, fmt.Errorf("validator address not formatted")
 		}
 
-		if sim.StakingKeeper().HasReceivingRedelegation(ctx, delAddr, val) {
+		if sim.SDKStakingKeeper().HasReceivingRedelegation(ctx, delAddr, val) {
 			return nil, fmt.Errorf("receiving redelegation is not allowed for source validators")
 		}
 
-		if sim.StakingKeeper().HasMaxUnbondingDelegationEntries(ctx, delAddr, val) {
+		if sim.SDKStakingKeeper().HasMaxUnbondingDelegationEntries(ctx, delAddr, val) {
 			return nil, fmt.Errorf("keeper does have a max unbonding delegation entries")
 		}
 
 		// check if the user has delegated tokens to the valset
-		_, found := sim.StakingKeeper().GetDelegation(ctx, delAddr, val)
+		_, found := sim.SDKStakingKeeper().GetDelegation(ctx, delAddr, val)
 		if !found {
 			return nil, fmt.Errorf("user hasn't delegated tokens to the validator, %s", val.String())
 		}
 	}
 
 	// new delegations to redelegate to
-	remainingWeight := sdk.NewDec(1)
+	remainingWeight := osmomath.NewDec(1)
 	preferences, err := GetRandomValAndWeights(ctx, k, sim, remainingWeight)
 	if err != nil {
 		return nil, err
@@ -138,12 +139,12 @@ func RandomMsgReDelegateToValSet(k valsetkeeper.Keeper, sim *osmosimtypes.SimCtx
 			return nil, fmt.Errorf("validator address not formatted")
 		}
 
-		if sim.StakingKeeper().HasMaxUnbondingDelegationEntries(ctx, delAddr, val) {
+		if sim.SDKStakingKeeper().HasMaxUnbondingDelegationEntries(ctx, delAddr, val) {
 			return nil, fmt.Errorf("keeper does have a max unbonding delegation entries")
 		}
 
-		if sim.StakingKeeper().HasReceivingRedelegation(ctx, delAddr, val) {
-			return nil, fmt.Errorf("receveing redelegation is not allowed for target validators")
+		if sim.SDKStakingKeeper().HasReceivingRedelegation(ctx, delAddr, val) {
+			return nil, fmt.Errorf("receiving redelegation is not allowed for target validators")
 		}
 	}
 
@@ -156,7 +157,7 @@ func RandomMsgReDelegateToValSet(k valsetkeeper.Keeper, sim *osmosimtypes.SimCtx
 func RandomValidator(ctx sdk.Context, sim *osmosimtypes.SimCtx) *stakingtypes.Validator {
 	rand := sim.GetRand()
 
-	validators := sim.StakingKeeper().GetAllValidators(ctx)
+	validators := sim.SDKStakingKeeper().GetAllValidators(ctx)
 	if len(validators) == 0 {
 		return nil
 	}
@@ -164,7 +165,7 @@ func RandomValidator(ctx sdk.Context, sim *osmosimtypes.SimCtx) *stakingtypes.Va
 	return &validators[rand.Intn(len(validators))]
 }
 
-func GetRandomValAndWeights(ctx sdk.Context, k valsetkeeper.Keeper, sim *osmosimtypes.SimCtx, remainingWeight sdk.Dec) ([]types.ValidatorPreference, error) {
+func GetRandomValAndWeights(ctx sdk.Context, k valsetkeeper.Keeper, sim *osmosimtypes.SimCtx, remainingWeight osmomath.Dec) ([]types.ValidatorPreference, error) {
 	var preferences []types.ValidatorPreference
 
 	// Generate random validators with random weights that sums to 1
@@ -185,14 +186,14 @@ func GetRandomValAndWeights(ctx sdk.Context, k valsetkeeper.Keeper, sim *osmosim
 		}
 	}
 
-	totalWeight := sdk.ZeroDec()
+	totalWeight := osmomath.ZeroDec()
 	// check if all the weights in preferences equal 1
 	for _, prefs := range preferences {
 		totalWeight = totalWeight.Add(prefs.Weight)
 	}
 
-	if !totalWeight.Equal(sdk.OneDec()) {
-		return nil, fmt.Errorf("generated weights donot equal 1 got: %d", totalWeight)
+	if !totalWeight.Equal(osmomath.OneDec()) {
+		return nil, fmt.Errorf("generated weights do not equal 1 got: %d", totalWeight)
 	}
 
 	return preferences, nil

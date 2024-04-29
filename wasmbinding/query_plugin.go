@@ -6,21 +6,25 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 	wasmvmtypes "github.com/CosmWasm/wasmvm/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	abci "github.com/tendermint/tendermint/abci/types"
 
-	"github.com/osmosis-labs/osmosis/v16/wasmbinding/bindings"
+	"github.com/osmosis-labs/osmosis/v24/wasmbinding/bindings"
 )
 
 // StargateQuerier dispatches whitelisted stargate queries
 func StargateQuerier(queryRouter baseapp.GRPCQueryRouter, cdc codec.Codec) func(ctx sdk.Context, request *wasmvmtypes.StargateQuery) ([]byte, error) {
 	return func(ctx sdk.Context, request *wasmvmtypes.StargateQuery) ([]byte, error) {
-		protoResponseType, err := GetWhitelistedQuery(request.Path)
+		protoResponseType, err := getWhitelistedQuery(request.Path)
 		if err != nil {
 			return nil, err
 		}
+
+		// no matter what happens after this point, we must return
+		// the response type to prevent sync.Pool from leaking.
+		defer returnStargateResponseToPool(request.Path, protoResponseType)
 
 		route := queryRouter.Route(request.Path)
 		if route == nil {
@@ -33,6 +37,10 @@ func StargateQuerier(queryRouter baseapp.GRPCQueryRouter, cdc codec.Codec) func(
 		})
 		if err != nil {
 			return nil, err
+		}
+
+		if res.Value == nil {
+			return nil, fmt.Errorf("Res returned from abci query route is nil")
 		}
 
 		bz, err := ConvertProtoToJSONMarshal(protoResponseType, res.Value, cdc)

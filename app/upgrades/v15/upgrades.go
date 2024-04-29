@@ -1,9 +1,9 @@
 package v15
 
 import (
-	packetforwardtypes "github.com/strangelove-ventures/packet-forward-middleware/v4/router/types"
+	packetforwardtypes "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v7/packetforward/types"
 
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -12,22 +12,22 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
-	icqkeeper "github.com/cosmos/ibc-apps/modules/async-icq/v4/keeper"
-	icqtypes "github.com/cosmos/ibc-apps/modules/async-icq/v4/types"
+	icqkeeper "github.com/cosmos/ibc-apps/modules/async-icq/v7/keeper"
+	icqtypes "github.com/cosmos/ibc-apps/modules/async-icq/v7/types"
 
-	"github.com/osmosis-labs/osmosis/v16/wasmbinding"
-	ibcratelimit "github.com/osmosis-labs/osmosis/v16/x/ibc-rate-limit"
-	ibcratelimittypes "github.com/osmosis-labs/osmosis/v16/x/ibc-rate-limit/types"
+	"github.com/osmosis-labs/osmosis/v24/wasmbinding"
+	ibcratelimit "github.com/osmosis-labs/osmosis/v24/x/ibc-rate-limit"
+	ibcratelimittypes "github.com/osmosis-labs/osmosis/v24/x/ibc-rate-limit/types"
 
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
-	"github.com/osmosis-labs/osmosis/v16/app/keepers"
-	appParams "github.com/osmosis-labs/osmosis/v16/app/params"
-	"github.com/osmosis-labs/osmosis/v16/app/upgrades"
-	gammkeeper "github.com/osmosis-labs/osmosis/v16/x/gamm/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/stableswap"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	"github.com/osmosis-labs/osmosis/v16/x/poolmanager"
+	"github.com/osmosis-labs/osmosis/v24/app/keepers"
+	appParams "github.com/osmosis-labs/osmosis/v24/app/params"
+	"github.com/osmosis-labs/osmosis/v24/app/upgrades"
+	gammkeeper "github.com/osmosis-labs/osmosis/v24/x/gamm/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/stableswap"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	"github.com/osmosis-labs/osmosis/v24/x/poolmanager"
 )
 
 func CreateUpgradeHandler(
@@ -37,9 +37,11 @@ func CreateUpgradeHandler(
 	keepers *keepers.AppKeepers,
 ) upgradetypes.UpgradeHandler {
 	return func(ctx sdk.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-		poolmanagerParams := poolmanagertypes.NewParams(keepers.GAMMKeeper.GetParams(ctx).PoolCreationFee)
+		poolmanagerParams := keepers.PoolManagerKeeper.GetParams(ctx)
+		poolmanagerParams.PoolCreationFee = keepers.GAMMKeeper.GetParams(ctx).PoolCreationFee
 
 		keepers.PoolManagerKeeper.SetParams(ctx, poolmanagerParams)
+		//nolint:errcheck
 		keepers.PacketForwardKeeper.SetParams(ctx, packetforwardtypes.DefaultParams())
 		setICQParams(ctx, keepers.ICQKeeper)
 
@@ -63,7 +65,7 @@ func CreateUpgradeHandler(
 
 		// Stride stXXX/XXX pools are being migrated from the standard balancer curve to the
 		// solidly stable curve.
-		migrateBalancerPoolsToSolidlyStable(ctx, keepers.GAMMKeeper, keepers.PoolManagerKeeper, keepers.BankKeeper)
+		migrateBalancerPoolsToSolidlyStable(ctx, keepers.GAMMKeeper, keepers.BankKeeper)
 
 		setRateLimits(ctx, keepers.AccountKeeper, keepers.RateLimitingICS4Wrapper, keepers.WasmKeeper)
 
@@ -76,18 +78,19 @@ func setICQParams(ctx sdk.Context, icqKeeper *icqkeeper.Keeper) {
 	icqparams.AllowQueries = wasmbinding.GetStargateWhitelistedPaths()
 	// Adding SmartContractState query to allowlist
 	icqparams.AllowQueries = append(icqparams.AllowQueries, "/cosmwasm.wasm.v1.Query/SmartContractState")
+	//nolint:errcheck
 	icqKeeper.SetParams(ctx, icqparams)
 }
 
-func migrateBalancerPoolsToSolidlyStable(ctx sdk.Context, gammKeeper *gammkeeper.Keeper, poolmanagerKeeper *poolmanager.Keeper, bankKeeper bankkeeper.Keeper) {
+func migrateBalancerPoolsToSolidlyStable(ctx sdk.Context, gammKeeper *gammkeeper.Keeper, bankKeeper bankkeeper.Keeper) {
 	// migrate stOSMO_OSMOPoolId, stJUNO_JUNOPoolId, stSTARS_STARSPoolId
 	pools := []uint64{stOSMO_OSMOPoolId, stJUNO_JUNOPoolId, stSTARS_STARSPoolId}
 	for _, poolId := range pools {
-		migrateBalancerPoolToSolidlyStable(ctx, gammKeeper, poolmanagerKeeper, bankKeeper, poolId)
+		migrateBalancerPoolToSolidlyStable(ctx, gammKeeper, bankKeeper, poolId)
 	}
 }
 
-func migrateBalancerPoolToSolidlyStable(ctx sdk.Context, gammKeeper *gammkeeper.Keeper, poolmanagerKeeper *poolmanager.Keeper, bankKeeper bankkeeper.Keeper, poolId uint64) {
+func migrateBalancerPoolToSolidlyStable(ctx sdk.Context, gammKeeper *gammkeeper.Keeper, bankKeeper bankkeeper.Keeper, poolId uint64) {
 	// fetch the pool with the given poolId
 	balancerPool, err := gammKeeper.GetCFMMPool(ctx, poolId)
 	if err != nil {

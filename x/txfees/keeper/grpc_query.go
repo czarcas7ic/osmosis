@@ -9,7 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	mempool1559 "github.com/osmosis-labs/osmosis/v24/x/txfees/keeper/mempool-1559"
+	"github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 )
 
 var _ types.QueryServer = Querier{}
@@ -18,6 +19,7 @@ var _ types.QueryServer = Querier{}
 // handlers.
 type Querier struct {
 	Keeper
+	mempool1559.EipState
 }
 
 func NewQuerier(k Keeper) Querier {
@@ -51,7 +53,8 @@ func (q Querier) DenomSpotPrice(ctx context.Context, req *types.QueryDenomSpotPr
 		return nil, err
 	}
 
-	return &types.QueryDenomSpotPriceResponse{PoolID: feeToken.PoolID, SpotPrice: spotPrice}, nil
+	// TODO: remove truncation before https://github.com/osmosis-labs/osmosis/issues/6064 is fully complete.
+	return &types.QueryDenomSpotPriceResponse{PoolID: feeToken.PoolID, SpotPrice: spotPrice.Dec()}, nil
 }
 
 func (q Querier) DenomPoolId(ctx context.Context, req *types.QueryDenomPoolIdRequest) (*types.QueryDenomPoolIdResponse, error) {
@@ -81,4 +84,9 @@ func (q Querier) BaseDenom(ctx context.Context, _ *types.QueryBaseDenomRequest) 
 	}
 
 	return &types.QueryBaseDenomResponse{BaseDenom: baseDenom}, nil
+}
+
+func (q Querier) GetEipBaseFee(_ context.Context, _ *types.QueryEipBaseFeeRequest) (*types.QueryEipBaseFeeResponse, error) {
+	response := mempool1559.CurEipState.GetCurBaseFee()
+	return &types.QueryEipBaseFeeResponse{BaseFee: response}, nil
 }

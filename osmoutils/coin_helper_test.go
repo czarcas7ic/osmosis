@@ -1,24 +1,27 @@
 package osmoutils_test
 
 import (
+	"reflect"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils"
+	"github.com/osmosis-labs/osmosis/osmoutils/osmoassert"
 )
 
 var (
 	emptyCoins      = sdk.DecCoins(nil)
-	fiftyFoo        = sdk.NewDecCoin("foo", sdk.NewInt(50))
-	fiftyBar        = sdk.NewDecCoin("bar", sdk.NewInt(50))
-	hundredFoo      = sdk.NewDecCoin("foo", sdk.NewInt(100))
-	hundredBar      = sdk.NewDecCoin("bar", sdk.NewInt(100))
-	hundredFiftyFoo = sdk.NewDecCoin("foo", sdk.NewInt(150))
-	hundredFiftyBar = sdk.NewDecCoin("bar", sdk.NewInt(150))
-	twoHundredFoo   = sdk.NewDecCoin("foo", sdk.NewInt(200))
-	twoHundredBar   = sdk.NewDecCoin("bar", sdk.NewInt(200))
+	fiftyFoo        = sdk.NewDecCoin("foo", osmomath.NewInt(50))
+	fiftyBar        = sdk.NewDecCoin("bar", osmomath.NewInt(50))
+	hundredFoo      = sdk.NewDecCoin("foo", osmomath.NewInt(100))
+	hundredBar      = sdk.NewDecCoin("bar", osmomath.NewInt(100))
+	hundredFiftyFoo = sdk.NewDecCoin("foo", osmomath.NewInt(150))
+	hundredFiftyBar = sdk.NewDecCoin("bar", osmomath.NewInt(150))
+	twoHundredFoo   = sdk.NewDecCoin("foo", osmomath.NewInt(200))
+	twoHundredBar   = sdk.NewDecCoin("bar", osmomath.NewInt(200))
 
 	fiftyEach        = sdk.NewDecCoins(fiftyFoo, fiftyBar)
 	hundredEach      = sdk.NewDecCoins(hundredFoo, hundredBar)
@@ -32,6 +35,8 @@ func TestSubDecCoins(t *testing.T) {
 
 		expectedOutput []sdk.DecCoins
 		expectError    bool
+		// whether unsafe subtraction should panic
+		expectPanicUnsafe bool
 	}{
 		"[[100foo, 100bar], [100foo, 100bar]] - [[50foo, 50bar], [50foo, 100bar]]": {
 			firstInput:  []sdk.DecCoins{hundredEach, hundredEach},
@@ -69,19 +74,42 @@ func TestSubDecCoins(t *testing.T) {
 			expectedOutput: []sdk.DecCoins{},
 			expectError:    true,
 		},
+
+		"negative result": {
+			firstInput:  []sdk.DecCoins{fiftyEach},
+			secondInput: []sdk.DecCoins{hundredEach},
+
+			expectedOutput:    []sdk.DecCoins{{sdk.DecCoin{Denom: "bar", Amount: osmomath.NewDec(-50)}, sdk.DecCoin{Denom: "foo", Amount: osmomath.NewDec(-50)}}},
+			expectPanicUnsafe: true,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			actualOutput, err := osmoutils.SubDecCoinArrays(tc.firstInput, tc.secondInput)
+
+			var (
+				actualOutput []sdk.DecCoins
+				err1         error
+			)
+			osmoassert.ConditionalPanic(t, tc.expectPanicUnsafe, func() {
+				actualOutput, err1 = osmoutils.SubDecCoinArrays(tc.firstInput, tc.secondInput)
+			})
+
+			actualOutputSafe, err2 := osmoutils.SafeSubDecCoinArrays(tc.firstInput, tc.secondInput)
 
 			if tc.expectError {
-				require.Error(t, err)
+				require.Error(t, err1)
+				require.Error(t, err2)
 				require.Equal(t, tc.expectedOutput, actualOutput)
+				require.Equal(t, tc.expectedOutput, actualOutputSafe)
 				return
 			}
 
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedOutput, actualOutput)
+			require.NoError(t, err1)
+			require.NoError(t, err2)
+			if !tc.expectPanicUnsafe {
+				require.Equal(t, tc.expectedOutput, actualOutput)
+			}
+			require.Equal(t, tc.expectedOutput, actualOutputSafe)
 		})
 	}
 }
@@ -207,13 +235,13 @@ func TestConvertCoinsToDecCoins(t *testing.T) {
 		},
 		{
 			name:             "Single coin",
-			inputCoins:       sdk.NewCoins(sdk.NewCoin("atom", sdk.NewInt(100000000))),
-			expectedDecCoins: sdk.NewDecCoins(sdk.NewDecCoin("atom", sdk.NewInt(100000000))),
+			inputCoins:       sdk.NewCoins(sdk.NewCoin("atom", osmomath.NewInt(100000000))),
+			expectedDecCoins: sdk.NewDecCoins(sdk.NewDecCoin("atom", osmomath.NewInt(100000000))),
 		},
 		{
 			name:             "Multiple coins",
-			inputCoins:       sdk.NewCoins(sdk.NewCoin("atom", sdk.NewInt(100000000)), sdk.NewCoin("usdc", sdk.NewInt(500000000))),
-			expectedDecCoins: sdk.NewDecCoins(sdk.NewDecCoin("atom", sdk.NewInt(100000000)), sdk.NewDecCoin("usdc", sdk.NewInt(500000000))),
+			inputCoins:       sdk.NewCoins(sdk.NewCoin("atom", osmomath.NewInt(100000000)), sdk.NewCoin("usdc", osmomath.NewInt(500000000))),
+			expectedDecCoins: sdk.NewDecCoins(sdk.NewDecCoin("atom", osmomath.NewInt(100000000)), sdk.NewDecCoin("usdc", osmomath.NewInt(500000000))),
 		},
 	}
 
@@ -221,6 +249,76 @@ func TestConvertCoinsToDecCoins(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			result := osmoutils.ConvertCoinsToDecCoins(test.inputCoins)
 			require.Equal(t, result, test.expectedDecCoins)
+
+		})
+	}
+}
+
+func TestMergeCoinMaps(t *testing.T) {
+	// Test case 1: Merging two empty maps should result in an empty map.
+	t.Run("Merge Empty Maps", func(t *testing.T) {
+		currentMap := map[string]sdk.Coins{}
+		poolMap := map[string]sdk.Coins{}
+		mergedMap := osmoutils.MergeCoinMaps(currentMap, poolMap)
+
+		if len(mergedMap) != 0 {
+			t.Errorf("Expected an empty map, but got a map with %d elements", len(mergedMap))
+		}
+	})
+
+	// Test case 2: Merging maps with overlapping keys.
+	t.Run("Merge Maps with Overlapping Keys", func(t *testing.T) {
+		currentMap := map[string]sdk.Coins{
+			"pool1": sdk.NewCoins(sdk.NewCoin("token1", sdk.NewInt(100))),
+			"pool2": sdk.NewCoins(sdk.NewCoin("token2", sdk.NewInt(200))),
+		}
+
+		poolMap := map[string]sdk.Coins{
+			"pool2": sdk.NewCoins(sdk.NewCoin("token2", sdk.NewInt(300))),
+			"pool3": sdk.NewCoins(sdk.NewCoin("token3", sdk.NewInt(400))),
+		}
+
+		expectedMergedMap := map[string]sdk.Coins{
+			"pool1": sdk.NewCoins(sdk.NewCoin("token1", sdk.NewInt(100))),
+			"pool2": sdk.NewCoins(sdk.NewCoin("token2", sdk.NewInt(500))), // 200 + 300
+			"pool3": sdk.NewCoins(sdk.NewCoin("token3", sdk.NewInt(400))),
+		}
+
+		mergedMap := osmoutils.MergeCoinMaps(currentMap, poolMap)
+
+		if !reflect.DeepEqual(mergedMap, expectedMergedMap) {
+			t.Errorf("MergeCoinMaps result is not as expected.\nExpected: %+v\nActual:   %+v", expectedMergedMap, mergedMap)
+		}
+	})
+}
+
+func TestConvertCoinArrayToCoins(t *testing.T) {
+	tests := []struct {
+		name          string
+		coinArray     []sdk.Coin
+		expectedCoins sdk.Coins
+	}{
+		{
+			name:          "Empty input",
+			coinArray:     []sdk.Coin{},
+			expectedCoins: sdk.NewCoins(),
+		},
+		{
+			name:          "Single coin",
+			coinArray:     []sdk.Coin{sdk.NewCoin("atom", osmomath.NewInt(100000000))},
+			expectedCoins: sdk.NewCoins(sdk.NewCoin("atom", osmomath.NewInt(100000000))),
+		},
+		{
+			name:          "Multiple coins",
+			coinArray:     []sdk.Coin{sdk.NewCoin("atom", osmomath.NewInt(100000000)), sdk.NewCoin("usdc", osmomath.NewInt(500000000))},
+			expectedCoins: sdk.NewCoins(sdk.NewCoin("atom", osmomath.NewInt(100000000)), sdk.NewCoin("usdc", osmomath.NewInt(500000000))),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := osmoutils.ConvertCoinArrayToCoins(test.coinArray)
+			require.Equal(t, result, test.expectedCoins)
 
 		})
 	}

@@ -9,22 +9,19 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/gov/client/cli"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	govcli "github.com/cosmos/cosmos-sdk/x/gov/client/cli"
+	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	govtypesv1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 
 	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
-	"github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	"github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 )
 
 const FlagFeeTokens = "fee-tokens"
 
 func NewTxCmd() *cobra.Command {
 	txCmd := osmocli.TxIndexCmd(types.ModuleName)
-	txCmd.AddCommand(
-		NewCmdSubmitUpdateFeeTokenProposal(),
-	)
 	return txCmd
 }
 
@@ -41,44 +38,32 @@ Ex) uosmo,1,uion,2,ufoo,0 -> [Adds uosmo<>pool1, uion<>pool2, Removes ufoo as a 
 
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clientCtx, err := client.GetClientTxContext(cmd)
+			clientCtx, proposalTitle, summary, deposit, isExpedited, authority, err := osmocli.GetProposalInfo(cmd)
 			if err != nil {
 				return err
 			}
+
 			content, err := parseFeeTokenRecordsArgsToContent(cmd)
 			if err != nil {
 				return err
 			}
 
-			from := clientCtx.GetFromAddress()
-
-			depositStr, err := cmd.Flags().GetString(cli.FlagDeposit)
-			if err != nil {
-				return err
-			}
-			deposit, err := sdk.ParseCoinsNormalized(depositStr)
+			contentMsg, err := v1.NewLegacyContent(content, authority.String())
 			if err != nil {
 				return err
 			}
 
-			msg, err := govtypes.NewMsgSubmitProposal(content, deposit, from)
+			msg := v1.NewMsgExecLegacyContent(contentMsg.Content, authority.String())
+
+			proposalMsg, err := v1.NewMsgSubmitProposal([]sdk.Msg{msg}, deposit, clientCtx.GetFromAddress().String(), "", proposalTitle, summary, isExpedited)
 			if err != nil {
 				return err
 			}
 
-			if err = msg.ValidateBasic(); err != nil {
-				return err
-			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), proposalMsg)
 		},
 	}
-
-	cmd.Flags().String(cli.FlagTitle, "", "title of proposal")
-	cmd.Flags().String(cli.FlagDescription, "", "description of proposal")
-	cmd.Flags().String(cli.FlagDeposit, "", "deposit of proposal")
-	cmd.Flags().Bool(cli.FlagIsExpedited, false, "If true, makes the proposal an expedited one")
-	cmd.Flags().String(cli.FlagProposal, "", "Proposal file path (if this path is given, other proposal flags are ignored)")
+	osmocli.AddCommonProposalFlags(cmd)
 	cmd.Flags().String(FlagFeeTokens, "", "The fee token records array")
 
 	return cmd
@@ -117,13 +102,13 @@ func parseFeeTokenRecords(cmd *cobra.Command) ([]types.FeeToken, error) {
 	return feeTokenRecords, nil
 }
 
-func parseFeeTokenRecordsArgsToContent(cmd *cobra.Command) (govtypes.Content, error) {
-	title, err := cmd.Flags().GetString(cli.FlagTitle)
+func parseFeeTokenRecordsArgsToContent(cmd *cobra.Command) (govtypesv1beta1.Content, error) {
+	title, err := cmd.Flags().GetString(govcli.FlagTitle)
 	if err != nil {
 		return nil, err
 	}
 
-	description, err := cmd.Flags().GetString(cli.FlagDescription)
+	description, err := cmd.Flags().GetString(govcli.FlagSummary)
 	if err != nil {
 		return nil, err
 	}

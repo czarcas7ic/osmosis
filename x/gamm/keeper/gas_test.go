@@ -3,9 +3,11 @@ package keeper_test
 import (
 	"fmt"
 	"strconv"
+	"time"
 
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/balancer"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -13,13 +15,13 @@ import (
 var (
 	defaultAddr       sdk.AccAddress = sdk.AccAddress([]byte("addr1---------------"))
 	defaultCoins      sdk.Coins      = sdk.Coins{}
-	minShareOutAmount sdk.Int        = types.OneShare.MulRaw(50)
+	minShareOutAmount osmomath.Int   = types.OneShare.MulRaw(50)
 )
 
 func (s *KeeperTestSuite) measureJoinPoolGas(
 	addr sdk.AccAddress,
 	poolID uint64,
-	shareOutAmountMax sdk.Int, maxCoins sdk.Coins,
+	shareOutAmountMax osmomath.Int, maxCoins sdk.Coins,
 ) uint64 {
 	alreadySpent := s.Ctx.GasMeter().GasConsumed()
 	_, _, err := s.App.GAMMKeeper.JoinPoolNoSwap(s.Ctx, addr, poolID, shareOutAmountMax, maxCoins)
@@ -35,7 +37,7 @@ func (s *KeeperTestSuite) measureAvgAndMaxJoinPoolGas(
 	numIterations int,
 	addr sdk.AccAddress,
 	poolIDFn func(int) uint64,
-	shareOutAmountMaxFn func(int) sdk.Int,
+	shareOutAmountMaxFn func(int) osmomath.Int,
 	maxCoinsFn func(int) sdk.Coins,
 ) (avg uint64, maxGas uint64) {
 	runningTotal := uint64(0)
@@ -57,21 +59,22 @@ func (s *KeeperTestSuite) TestJoinPoolGas() {
 	poolId := s.PrepareBalancerPool()
 
 	poolIDFn := func(int) uint64 { return poolId }
-	minShareOutAmountFn := func(int) sdk.Int { return minShareOutAmount }
+	minShareOutAmountFn := func(int) osmomath.Int { return minShareOutAmount }
 	maxCoinsFn := func(int) sdk.Coins { return defaultCoins }
 	startAveragingAt := 1000
-	totalNumJoins := 10000
+	totalNumJoins := 5000
 
 	// mint some assets to the accounts
 	s.FundAcc(defaultAddr, sdk.NewCoins(
-		sdk.NewCoin("uosmo", sdk.NewInt(10000000000000)),
-		sdk.NewCoin("foo", sdk.NewInt(10000000000000000)),
-		sdk.NewCoin("bar", sdk.NewInt(10000000000000000)),
-		sdk.NewCoin("baz", sdk.NewInt(10000000000000000)),
+		sdk.NewCoin("uosmo", osmomath.NewInt(10000000000000)),
+		sdk.NewCoin("foo", osmomath.NewInt(10000000000000000)),
+		sdk.NewCoin("bar", osmomath.NewInt(10000000000000000)),
+		sdk.NewCoin("baz", osmomath.NewInt(10000000000000000)),
 	))
 
 	firstJoinGas := s.measureJoinPoolGas(defaultAddr, poolId, minShareOutAmount, defaultCoins)
-	s.Assert().LessOrEqual(int(firstJoinGas), 100000)
+	// UNFORKINGNOTE: This used to be capped at LessOrEqual to 100000, but unforking increased this value.
+	s.Assert().LessOrEqual(int(firstJoinGas), 113000)
 
 	for i := 1; i < startAveragingAt; i++ {
 		_, _, err := s.App.GAMMKeeper.JoinPoolNoSwap(s.Ctx, defaultAddr, poolId, minShareOutAmount, sdk.Coins{})
@@ -80,14 +83,17 @@ func (s *KeeperTestSuite) TestJoinPoolGas() {
 
 	avgGas, maxGas := s.measureAvgAndMaxJoinPoolGas(totalNumJoins, defaultAddr, poolIDFn, minShareOutAmountFn, maxCoinsFn)
 	fmt.Printf("test deets: total %d of pools joined, begin average at %d\n", totalNumJoins, startAveragingAt)
-	s.Assert().LessOrEqual(int(avgGas), 101000, "average gas / join pool")
-	s.Assert().LessOrEqual(int(maxGas), 101000, "max gas / join pool")
+	s.Assert().LessOrEqual(int(avgGas), 112000, "average gas / join pool")
+	s.Assert().LessOrEqual(int(maxGas), 112000, "max gas / join pool")
 }
+
+var hundredInt = osmomath.NewInt(100)
+var tenInt = osmomath.NewInt(10)
 
 func (s *KeeperTestSuite) TestRepeatedJoinPoolDistinctDenom() {
 	// mint some usomo to account
 	s.FundAcc(defaultAddr, sdk.NewCoins(
-		sdk.NewCoin("uosmo", sdk.NewInt(1000000000000000000)),
+		sdk.NewCoin("uosmo", osmomath.NewInt(1000000000000000000)),
 	))
 
 	// number of distinct denom to test
@@ -95,32 +101,33 @@ func (s *KeeperTestSuite) TestRepeatedJoinPoolDistinctDenom() {
 
 	// create pools prior to testing JoinPool using distinct denom
 	coins := sdk.NewCoins(
-		sdk.NewCoin("randToken1", sdk.NewInt(100)),
+		sdk.NewCoin("randToken1", osmomath.NewInt(100)),
 	)
 	s.FundAcc(defaultAddr, coins)
 	defaultPoolParams := balancer.PoolParams{
-		SwapFee: sdk.NewDec(0),
-		ExitFee: sdk.NewDec(0),
+		SwapFee: osmomath.NewDec(0),
+		ExitFee: osmomath.NewDec(0),
 	}
 	for i := 1; i <= denomNumber; i++ {
 		randToken := "randToken" + strconv.Itoa(i+1)
 		prevRandToken := "randToken" + strconv.Itoa(i)
-		coins := sdk.NewCoins(sdk.NewCoin(randToken, sdk.NewInt(100)))
+		coins := sdk.NewCoins(sdk.NewCoin(randToken, hundredInt))
 
 		s.FundAcc(defaultAddr, coins)
 
 		poolAssets := []balancer.PoolAsset{
 			{
-				Weight: sdk.NewInt(100),
-				Token:  sdk.NewCoin(prevRandToken, sdk.NewInt(10)),
+				Weight: hundredInt,
+				Token:  sdk.NewCoin(prevRandToken, tenInt),
 			},
 			{
-				Weight: sdk.NewInt(100),
-				Token:  sdk.NewCoin(randToken, sdk.NewInt(10)),
+				Weight: hundredInt,
+				Token:  sdk.NewCoin(randToken, tenInt),
 			},
 		}
 		msg := balancer.NewMsgCreateBalancerPool(defaultAddr, defaultPoolParams, poolAssets, "")
 		_, err := s.App.PoolManagerKeeper.CreatePool(s.Ctx, msg)
+		s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(time.Millisecond))
 		s.Require().NoError(err)
 	}
 

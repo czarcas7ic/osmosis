@@ -5,8 +5,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	clmodel "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/model"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
+	clmodel "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/model"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
 )
 
 type msgServer struct {
@@ -43,7 +45,6 @@ func (server msgServer) CreateConcentratedPool(goCtx context.Context, msg *clmod
 	return &clmodel.MsgCreateConcentratedPoolResponse{PoolID: poolId}, nil
 }
 
-// TODO: tests, including events
 func (server msgServer) CreatePosition(goCtx context.Context, msg *types.MsgCreatePosition) (*types.MsgCreatePositionResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -52,22 +53,14 @@ func (server msgServer) CreatePosition(goCtx context.Context, msg *types.MsgCrea
 		return nil, err
 	}
 
-	positionId, actualAmount0, actualAmount1, liquidityCreated, lowerTick, upperTick, err := server.keeper.createPosition(ctx, msg.PoolId, sender, msg.TokensProvided, msg.TokenMinAmount0, msg.TokenMinAmount1, msg.LowerTick, msg.UpperTick)
+	positionData, err := server.keeper.CreatePosition(ctx, msg.PoolId, sender, msg.TokensProvided, msg.TokenMinAmount0, msg.TokenMinAmount1, msg.LowerTick, msg.UpperTick)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx.EventManager().EmitEvents(sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-	})
-
 	// Note: create position event is emitted in keeper.createPosition(...)
 
-	return &types.MsgCreatePositionResponse{PositionId: positionId, Amount0: actualAmount0, Amount1: actualAmount1, LiquidityCreated: liquidityCreated, LowerTick: lowerTick, UpperTick: upperTick}, nil
+	return &types.MsgCreatePositionResponse{PositionId: positionData.ID, Amount0: positionData.Amount0, Amount1: positionData.Amount1, LiquidityCreated: positionData.Liquidity, LowerTick: positionData.LowerTick, UpperTick: positionData.UpperTick}, nil
 }
 
 func (server msgServer) AddToPosition(goCtx context.Context, msg *types.MsgAddToPosition) (*types.MsgAddToPositionResponse, error) {
@@ -79,24 +72,16 @@ func (server msgServer) AddToPosition(goCtx context.Context, msg *types.MsgAddTo
 	}
 
 	if msg.TokenMinAmount0.IsNil() {
-		msg.TokenMinAmount0 = sdk.ZeroInt()
+		msg.TokenMinAmount0 = osmomath.ZeroInt()
 	}
 	if msg.TokenMinAmount1.IsNil() {
-		msg.TokenMinAmount1 = sdk.ZeroInt()
+		msg.TokenMinAmount1 = osmomath.ZeroInt()
 	}
 
 	positionId, actualAmount0, actualAmount1, err := server.keeper.addToPosition(ctx, sender, msg.PositionId, msg.Amount0, msg.Amount1, msg.TokenMinAmount0, msg.TokenMinAmount1)
 	if err != nil {
 		return nil, err
 	}
-
-	ctx.EventManager().EmitEvents(sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-	})
 
 	return &types.MsgAddToPositionResponse{PositionId: positionId, Amount0: actualAmount0, Amount1: actualAmount1}, nil
 }
@@ -114,14 +99,6 @@ func (server msgServer) WithdrawPosition(goCtx context.Context, msg *types.MsgWi
 	if err != nil {
 		return nil, err
 	}
-
-	ctx.EventManager().EmitEvents(sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-	})
 
 	// Note: withdraw position event is emitted in keeper.withdrawPosition(...)
 
@@ -149,11 +126,6 @@ func (server msgServer) CollectSpreadRewards(goCtx context.Context, msg *types.M
 
 	ctx.EventManager().EmitEvents(sdk.Events{
 		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-		sdk.NewEvent(
 			types.TypeEvtTotalCollectSpreadRewards,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
 			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
@@ -176,7 +148,7 @@ func (server msgServer) CollectIncentives(goCtx context.Context, msg *types.MsgC
 	totalCollectedIncentives := sdk.NewCoins()
 	totalForefeitedIncentives := sdk.NewCoins()
 	for _, positionId := range msg.PositionIds {
-		collectedIncentives, forfeitedIncentives, err := server.keeper.collectIncentives(ctx, sender, positionId)
+		collectedIncentives, forfeitedIncentives, _, err := server.keeper.collectIncentives(ctx, sender, positionId)
 		if err != nil {
 			return nil, err
 		}
@@ -186,11 +158,6 @@ func (server msgServer) CollectIncentives(goCtx context.Context, msg *types.MsgC
 
 	ctx.EventManager().EmitEvents(sdk.Events{
 		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-		sdk.NewEvent(
 			types.TypeEvtTotalCollectIncentives,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
 			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
@@ -199,4 +166,35 @@ func (server msgServer) CollectIncentives(goCtx context.Context, msg *types.MsgC
 	})
 
 	return &types.MsgCollectIncentivesResponse{CollectedIncentives: totalCollectedIncentives, ForfeitedIncentives: totalForefeitedIncentives}, nil
+}
+
+func (server msgServer) TransferPositions(goCtx context.Context, msg *types.MsgTransferPositions) (*types.MsgTransferPositionsResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	sender, err := sdk.AccAddressFromBech32(msg.Sender)
+	if err != nil {
+		return nil, err
+	}
+
+	newOwner, err := sdk.AccAddressFromBech32(msg.NewOwner)
+	if err != nil {
+		return nil, err
+	}
+
+	err = server.keeper.transferPositions(ctx, msg.PositionIds, sender, newOwner)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx.EventManager().EmitEvents(sdk.Events{
+		sdk.NewEvent(
+			types.TypeEvtTransferPositions,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
+			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
+			sdk.NewAttribute(types.AttributeNewOwner, msg.NewOwner),
+			sdk.NewAttribute(types.AttributeInputPositionIds, osmocli.ParseUint64SliceToString(msg.PositionIds)),
+		),
+	})
+
+	return &types.MsgTransferPositionsResponse{}, nil
 }

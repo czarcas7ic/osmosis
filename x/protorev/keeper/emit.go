@@ -7,13 +7,14 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/tendermint/tendermint/crypto/tmhash"
+	"github.com/cometbft/cometbft/crypto/tmhash"
 
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 )
 
 // EmitBackrunEvent updates and emits a backrunEvent
-func EmitBackrunEvent(ctx sdk.Context, pool SwapToBackrun, inputCoin sdk.Coin, profit, tokenOutAmount sdk.Int, remainingTxPoolPoints, remainingBlockPoolPoints uint64) {
+func EmitBackrunEvent(ctx sdk.Context, pool SwapToBackrun, inputCoin sdk.Coin, profit, tokenOutAmount osmomath.Int, remainingTxPoolPoints, remainingBlockPoolPoints uint64) {
 	// Get tx hash
 	txHash := strings.ToUpper(hex.EncodeToString(tmhash.Sum(ctx.TxBytes())))
 	// Update the backrun event and add it to the context

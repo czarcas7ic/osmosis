@@ -8,8 +8,8 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	grpc1 "github.com/gogo/protobuf/grpc"
-	"github.com/gogo/protobuf/proto"
+	grpc1 "github.com/cosmos/gogoproto/grpc"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -37,6 +37,18 @@ type QueryDescriptor struct {
 
 	ModuleName string
 	numArgs    int
+}
+
+var _ Descriptor = &QueryDescriptor{}
+
+// Implement Descriptor interface
+func (desc QueryDescriptor) GetCustomFlagOverrides() map[string]string {
+	return desc.CustomFlagOverrides
+}
+
+// Implement Descriptor interface
+func (desc *QueryDescriptor) AttachToUse(str string) {
+	desc.Use += str
 }
 
 func QueryIndexCmd(moduleName string) *cobra.Command {
@@ -89,6 +101,7 @@ func BuildQueryCli[reqP proto.Message, querier any](desc *QueryDescriptor, newQu
 		}
 	}
 
+	attachFieldsToUse[reqP](desc)
 	cmd := &cobra.Command{
 		Use:   desc.Use,
 		Short: desc.Short,

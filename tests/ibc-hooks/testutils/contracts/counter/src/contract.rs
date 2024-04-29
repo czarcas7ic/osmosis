@@ -28,7 +28,9 @@ pub fn instantiate(
         total_funds: vec![],
         owner: info.sender.clone(),
     };
+    deps.api.debug(&format!("initial_counter: {:?}", initial_counter));
     COUNTERS.save(deps.storage, info.sender.clone(), &initial_counter)?;
+    deps.api.debug(&format!("instantiate saved. Initial msg: {:?}", msg));
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -77,6 +79,7 @@ pub fn execute(
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
+    deps.api.debug(&format!("execute {msg:?}"));
     match msg {
         ExecuteMsg::Increment {} => execute::increment(deps, info),
         ExecuteMsg::Reset { count } => execute::reset(deps, info, count),
@@ -87,6 +90,7 @@ pub mod execute {
     use super::*;
 
     pub fn increment(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
+        deps.api.debug(&format!("increment"));
         utils::update_counter(
             deps,
             info.sender,
@@ -216,6 +220,7 @@ fn coin_addition() {
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    deps.api.debug(&format!("query {msg:?}"));
     match msg {
         QueryMsg::GetCount { addr } => to_binary(&query::count(deps, addr)?),
         QueryMsg::GetTotalFunds { addr } => to_binary(&query::total_funds(deps, addr)?),
@@ -366,12 +371,12 @@ mod tests {
         // No acks
         query(deps.as_ref(), env.clone(), get_msg.clone()).unwrap_err();
 
-        let msg = SudoMsg::ReceiveAck {
+        let msg = SudoMsg::IBCLifecycleComplete(IBCLifecycleComplete::IBCAck {
             channel: format!("channel-0"),
             sequence: 1,
             ack: String::new(),
             success: true,
-        };
+        });
         let _res = sudo(deps.as_mut(), env.clone(), msg).unwrap();
 
         // should increase counter by 1
@@ -379,12 +384,12 @@ mod tests {
         let value: GetCountResponse = from_binary(&res).unwrap();
         assert_eq!(1, value.count);
 
-        let msg = SudoMsg::ReceiveAck {
+        let msg = SudoMsg::IBCLifecycleComplete(IBCLifecycleComplete::IBCAck {
             channel: format!("channel-0"),
             sequence: 1,
             ack: String::new(),
             success: true,
-        };
+        });
         let _res = sudo(deps.as_mut(), env.clone(), msg).unwrap();
 
         // should increase counter by 1

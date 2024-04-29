@@ -8,7 +8,7 @@ import (
 
 	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
 
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 )
 
 // NewCmdQuery returns the cli query commands for this module
@@ -28,8 +28,9 @@ func NewCmdQuery() *cobra.Command {
 	osmocli.AddQueryCmd(cmd, types.NewQueryClient, NewQueryMaxPoolPointsPerBlockCmd)
 	osmocli.AddQueryCmd(cmd, types.NewQueryClient, NewQueryBaseDenomsCmd)
 	osmocli.AddQueryCmd(cmd, types.NewQueryClient, NewQueryEnabledCmd)
-	osmocli.AddQueryCmd(cmd, types.NewQueryClient, NewQueryPoolWeightsCmd)
+	osmocli.AddQueryCmd(cmd, types.NewQueryClient, NewQueryInfoByPoolTypeCmd)
 	osmocli.AddQueryCmd(cmd, types.NewQueryClient, NewQueryPoolCmd)
+	osmocli.AddQueryCmd(cmd, types.NewQueryClient, NewQueryAllProtocolRevenueCmd)
 
 	return cmd
 }
@@ -53,7 +54,7 @@ func NewQueryNumberOfTradesCmd() (*osmocli.QueryDescriptor, *types.QueryGetProto
 // NewQueryProfitsByDenomCmd returns the command to query the profits of protorev by denom
 func NewQueryProfitsByDenomCmd() (*osmocli.QueryDescriptor, *types.QueryGetProtoRevProfitsByDenomRequest) {
 	return &osmocli.QueryDescriptor{
-		Use:   "profits-by-denom [denom]",
+		Use:   "profits-by-denom",
 		Short: "Query the profits of protorev by denom",
 		Long:  `{{.Short}}{{.ExampleHeader}}{{.CommandPrefix}} profits-by-denom uosmo`,
 	}, &types.QueryGetProtoRevProfitsByDenomRequest{}
@@ -70,9 +71,9 @@ func NewQueryAllProfitsCmd() (*osmocli.QueryDescriptor, *types.QueryGetProtoRevA
 // NewQueryStatisticsByRoute returns the command to query the statistics of protorev by route
 func NewQueryStatisticsByRouteCmd() (*osmocli.QueryDescriptor, *types.QueryGetProtoRevStatisticsByRouteRequest) {
 	return &osmocli.QueryDescriptor{
-		Use:                "statistics-by-route [route]",
+		Use:                "statistics-by-route",
 		Short:              "Query statistics about a specific arbitrage route",
-		Long:               `{{.Short}}{{.ExampleHeader}}{{.CommandPrefix}} statistics-by-route [1,2,3]`,
+		Long:               `{{.Short}}{{.ExampleHeader}}{{.CommandPrefix}} statistics-by-route [1,2,3] `,
 		CustomFieldParsers: map[string]osmocli.CustomFieldParserFn{"Route": parseRoute},
 	}, &types.QueryGetProtoRevStatisticsByRouteRequest{}
 }
@@ -141,23 +142,33 @@ func NewQueryEnabledCmd() (*osmocli.QueryDescriptor, *types.QueryGetProtoRevEnab
 	}, &types.QueryGetProtoRevEnabledRequest{}
 }
 
-// NewQueryPoolWeightsCmd returns the command to query the pool weights of protorev
-func NewQueryPoolWeightsCmd() (*osmocli.QueryDescriptor, *types.QueryGetProtoRevPoolWeightsRequest) {
+// NewQueryInfoByPoolTypeCmd returns the command to query the pool type info of protorev
+func NewQueryInfoByPoolTypeCmd() (*osmocli.QueryDescriptor, *types.QueryGetProtoRevInfoByPoolTypeRequest) {
 	return &osmocli.QueryDescriptor{
-		Use:   "pool-weights",
-		Short: "Query the pool weights used to determine how computationally expensive a route is",
-	}, &types.QueryGetProtoRevPoolWeightsRequest{}
+		Use:   "info-by-pool-type",
+		Short: "Query the pool info used to determine how computationally expensive a route is",
+	}, &types.QueryGetProtoRevInfoByPoolTypeRequest{}
 }
 
 // NewQueryPoolCmd returns the command to query the pool id for a given denom pair stored via the highest liquidity method in ProtoRev
 func NewQueryPoolCmd() (*osmocli.QueryDescriptor, *types.QueryGetProtoRevPoolRequest) {
 	return &osmocli.QueryDescriptor{
-		Use:   "pool [base_denom] [other_denom]",
+		Use:   "pool",
 		Short: "Query the pool id for a given denom pair stored via the highest liquidity method in ProtoRev",
 	}, &types.QueryGetProtoRevPoolRequest{}
 }
 
+// NewQueryAllProtocolRevenueCmd returns the command to query protocol revenue across all modules
+func NewQueryAllProtocolRevenueCmd() (*osmocli.QueryDescriptor, *types.QueryGetAllProtocolRevenueRequest) {
+	return &osmocli.QueryDescriptor{
+		Use:   "all-proto-rev",
+		Short: "Query protocol revenue across all modules",
+	}, &types.QueryGetAllProtocolRevenueRequest{}
+}
+
 // convert a string array "[1,2,3]" to []uint64
+//
+//nolint:unparam
 func parseRoute(arg string, _ *pflag.FlagSet) (any, osmocli.FieldReadLocation, error) {
 	var route []uint64
 	err := json.Unmarshal([]byte(arg), &route)

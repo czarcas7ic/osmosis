@@ -6,9 +6,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	cl "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity"
-	clquery "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/client/queryproto"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/model"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	cl "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity"
+	clquery "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/client/queryproto"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/model"
 )
 
 // Querier defines a wrapper around the x/concentrated-liquidity keeper providing gRPC method
@@ -112,7 +113,7 @@ func (q Querier) Params(ctx sdk.Context, req clquery.ParamsRequest) (*clquery.Pa
 // LiquidityPerTickRange returns the amount of liquidity per every tick range
 // existing within the given pool. The amounts are returned as a slice of ranges with their liquidity depths.
 func (q Querier) LiquidityPerTickRange(ctx sdk.Context, req clquery.LiquidityPerTickRangeRequest) (*clquery.LiquidityPerTickRangeResponse, error) {
-	liquidity, err := q.Keeper.GetTickLiquidityForFullRange(
+	liquidity, bucketIndex, err := q.Keeper.GetTickLiquidityForFullRange(
 		ctx,
 		req.PoolId,
 	)
@@ -120,23 +121,23 @@ func (q Querier) LiquidityPerTickRange(ctx sdk.Context, req clquery.LiquidityPer
 		return nil, err
 	}
 
-	return &clquery.LiquidityPerTickRangeResponse{Liquidity: liquidity}, nil
+	return &clquery.LiquidityPerTickRangeResponse{Liquidity: liquidity, BucketIndex: bucketIndex}, nil
 }
 
-// LiquidityNetInDirection returns an array of LiquidityDepthWithRange, which contains the range(lower tick and upper tick) and the liquidity amount in the range.
+// LiquidityNetInDirection returns an array of LiquidityDepthWithRange, which contains the range(lower tick and upper tick), the liquidity amount in the range, and current sqrt price.
 func (q Querier) LiquidityNetInDirection(ctx sdk.Context, req clquery.LiquidityNetInDirectionRequest) (*clquery.LiquidityNetInDirectionResponse, error) {
 	if req.TokenIn == "" {
 		return nil, status.Error(codes.InvalidArgument, "tokenIn is empty")
 	}
 
-	var startTick sdk.Int
+	var startTick osmomath.Int
 	if !req.UseCurTick {
-		startTick = sdk.NewInt(req.StartTick)
+		startTick = osmomath.NewInt(req.StartTick)
 	}
 
-	var boundTick sdk.Int
+	var boundTick osmomath.Int
 	if !req.UseNoBound {
-		boundTick = sdk.NewInt(req.BoundTick)
+		boundTick = osmomath.NewInt(req.BoundTick)
 	}
 
 	liquidityDepths, err := q.Keeper.GetTickLiquidityNetInDirection(
@@ -155,7 +156,7 @@ func (q Querier) LiquidityNetInDirection(ctx sdk.Context, req clquery.LiquidityN
 		return nil, err
 	}
 
-	return &clquery.LiquidityNetInDirectionResponse{LiquidityDepths: liquidityDepths, CurrentLiquidity: pool.GetLiquidity(), CurrentTick: pool.GetCurrentTick()}, nil
+	return &clquery.LiquidityNetInDirectionResponse{LiquidityDepths: liquidityDepths, CurrentLiquidity: pool.GetLiquidity(), CurrentTick: pool.GetCurrentTick(), CurrentSqrtPrice: pool.GetCurrentSqrtPrice()}, nil
 }
 
 func (q Querier) ClaimableSpreadRewards(ctx sdk.Context, req clquery.ClaimableSpreadRewardsRequest) (*clquery.ClaimableSpreadRewardsResponse, error) {
@@ -188,12 +189,22 @@ func (q Querier) PoolAccumulatorRewards(ctx sdk.Context, req clquery.PoolAccumul
 		return nil, status.Error(codes.InvalidArgument, "pool id is zero")
 	}
 
-	spreadRewardsAcc, err := q.Keeper.GetSpreadRewardAccumulator(ctx, req.PoolId)
+	// We utilize a cache context here as we need to update the global uptime accumulators but
+	// we don't want to persist the changes to the store.
+	cacheCtx, _ := ctx.CacheContext()
+
+	// Sync global uptime accumulators to ensure the uptime tracker init values are up to date.
+	err := q.Keeper.UpdatePoolUptimeAccumulatorsToNow(cacheCtx, req.PoolId)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	uptimeAccValues, err := q.Keeper.GetUptimeAccumulatorValues(ctx, req.PoolId)
+	spreadRewardsAcc, err := q.Keeper.GetSpreadRewardAccumulator(cacheCtx, req.PoolId)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	uptimeAccValues, err := q.Keeper.GetUptimeAccumulatorValues(cacheCtx, req.PoolId)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -251,5 +262,76 @@ func (q Querier) CFMMPoolIdLinkFromConcentratedPoolId(ctx sdk.Context, req clque
 
 	return &clquery.CFMMPoolIdLinkFromConcentratedPoolIdResponse{
 		CfmmPoolId: cfmmPoolId,
+	}, nil
+}
+
+// UserUnbodingPositions returns all the unbonding concentrated liquidity positions along with their respective period lock.
+func (q Querier) UserUnbondingPositions(ctx sdk.Context, req clquery.UserUnbondingPositionsRequest) (*clquery.UserUnbondingPositionsResponse, error) {
+	sdkAddr, err := sdk.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	cfmmPoolId, err := q.Keeper.GetUserUnbondingPositions(ctx, sdkAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clquery.UserUnbondingPositionsResponse{
+		PositionsWithPeriodLock: cfmmPoolId,
+	}, nil
+}
+
+// GetTotalLiquidity returns the total liquidity across all concentrated liquidity pools.
+func (q Querier) GetTotalLiquidity(ctx sdk.Context, req clquery.GetTotalLiquidityRequest) (*clquery.GetTotalLiquidityResponse, error) {
+	totalLiquidity, err := q.Keeper.GetTotalLiquidity(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clquery.GetTotalLiquidityResponse{
+		TotalLiquidity: totalLiquidity,
+	}, nil
+}
+
+// NumNextInitializedTicks returns an array of LiquidityDepthWithRange, which contains the user defined number of next initialized ticks in the direction
+// of swapping in the given tokenInDenom.
+func (q Querier) NumNextInitializedTicks(ctx sdk.Context, req clquery.NumNextInitializedTicksRequest) (*clquery.NumNextInitializedTicksResponse, error) {
+	if req.TokenInDenom == "" {
+		return nil, status.Error(codes.InvalidArgument, "tokenIn is empty")
+	}
+
+	liquidityDepths, err := q.Keeper.GetNumNextInitializedTicks(
+		ctx,
+		req.PoolId,
+		req.NumNextInitializedTicks,
+		req.TokenInDenom,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	pool, err := q.Keeper.GetConcentratedPoolById(ctx, req.PoolId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clquery.NumNextInitializedTicksResponse{LiquidityDepths: liquidityDepths, CurrentLiquidity: pool.GetLiquidity(), CurrentTick: pool.GetCurrentTick()}, nil
+}
+
+// NumPoolPositions returns the number of positions in a pool.
+func (q Querier) NumPoolPositions(ctx sdk.Context, req clquery.NumPoolPositionsRequest) (*clquery.NumPoolPositionsResponse, error) {
+	if req.PoolId == 0 {
+		return nil, status.Error(codes.InvalidArgument, "pool id is zero")
+	}
+
+	// Get all position IDs for the pool
+	positionIDs, err := q.Keeper.GetPositionIDsByPoolID(ctx, req.PoolId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clquery.NumPoolPositionsResponse{
+		PositionCount: uint64(len(positionIDs)),
 	}, nil
 }

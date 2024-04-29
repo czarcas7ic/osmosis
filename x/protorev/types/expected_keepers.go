@@ -3,8 +3,9 @@ package types
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 	epochtypes "github.com/osmosis-labs/osmosis/x/epochs/types"
 )
 
@@ -20,6 +21,8 @@ type BankKeeper interface {
 	SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
 	MintCoins(ctx sdk.Context, moduleName string, amt sdk.Coins) error
 	BurnCoins(ctx sdk.Context, name string, amt sdk.Coins) error
+	GetAllBalances(ctx sdk.Context, addr sdk.AccAddress) sdk.Coins
+	GetBalance(ctx sdk.Context, addr sdk.AccAddress, denom string) sdk.Coin
 }
 
 // GAMMKeeper defines the Gamm contract that must be fulfilled when
@@ -36,13 +39,18 @@ type PoolManagerKeeper interface {
 		sender sdk.AccAddress,
 		routes []poolmanagertypes.SwapAmountInRoute,
 		tokenIn sdk.Coin,
-		tokenOutMinAmount sdk.Int) (tokenOutAmount sdk.Int, err error)
+		tokenOutMinAmount osmomath.Int) (tokenOutAmount osmomath.Int, err error)
 
-	MultihopEstimateOutGivenExactAmountIn(
+	MultihopEstimateOutGivenExactAmountInNoTakerFee(
 		ctx sdk.Context,
 		routes []poolmanagertypes.SwapAmountInRoute,
 		tokenIn sdk.Coin,
-	) (tokenOutAmount sdk.Int, err error)
+	) (tokenOutAmount osmomath.Int, err error)
+
+	MultihopEstimateInGivenExactAmountOut(
+		ctx sdk.Context,
+		routes []poolmanagertypes.SwapAmountOutRoute,
+		tokenOut sdk.Coin) (tokenInAmount osmomath.Int, err error)
 
 	AllPools(
 		ctx sdk.Context,
@@ -51,13 +59,34 @@ type PoolManagerKeeper interface {
 		ctx sdk.Context,
 		poolId uint64,
 	) (poolmanagertypes.PoolI, error)
+	GetPoolType(ctx sdk.Context, poolId uint64) (poolmanagertypes.PoolType, error)
 	GetPoolModule(ctx sdk.Context, poolId uint64) (poolmanagertypes.PoolModuleI, error)
 	GetTotalPoolLiquidity(ctx sdk.Context, poolId uint64) (sdk.Coins, error)
 	RouteGetPoolDenoms(ctx sdk.Context, poolId uint64) ([]string, error)
+	GetTakerFeeTrackerForStakers(ctx sdk.Context) []sdk.Coin
+	GetTakerFeeTrackerForCommunityPool(ctx sdk.Context) []sdk.Coin
+	GetTakerFeeTrackerStartHeight(ctx sdk.Context) int64
 }
 
 // EpochKeeper defines the Epoch contract that must be fulfilled when
 // creating a x/protorev keeper.
 type EpochKeeper interface {
 	GetEpochInfo(ctx sdk.Context, identifier string) epochtypes.EpochInfo
+}
+
+// ConcentratedLiquidityKeeper defines the ConcentratedLiquidity contract that must be fulfilled when
+// creating a x/protorev keeper.
+type ConcentratedLiquidityKeeper interface {
+	ComputeMaxInAmtGivenMaxTicksCrossed(
+		ctx sdk.Context,
+		poolId uint64,
+		tokenInDenom string,
+		maxTicksCrossed uint64,
+	) (maxTokenIn, resultingTokenOut sdk.Coin, err error)
+}
+
+// DistributionKeeper defines the distribution contract that must be fulfilled when
+// creating a x/protorev keeper.
+type DistributionKeeper interface {
+	FundCommunityPool(ctx sdk.Context, amount sdk.Coins, sender sdk.AccAddress) error
 }

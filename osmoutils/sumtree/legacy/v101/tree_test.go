@@ -7,24 +7,27 @@ import (
 	"os"
 	"testing"
 
+	"cosmossdk.io/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 
 	"github.com/cosmos/iavl"
 
-	dbm "github.com/tendermint/tm-db"
+	dbm "github.com/cometbft/cometbft-db"
 
 	iavlstore "github.com/cosmos/cosmos-sdk/store/iavl"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils/sumtree"
 	v101 "github.com/osmosis-labs/osmosis/osmoutils/sumtree/legacy/v101"
+	"github.com/osmosis-labs/osmosis/osmoutils/wrapper"
 )
 
 func setupStore() sdk.KVStore {
-	db := dbm.NewMemDB()
-	tree, _ := iavl.NewMutableTree(db, 100, false)
+	db := wrapper.NewIAVLDB(dbm.NewMemDB())
+	tree := iavl.NewMutableTree(db, 100, false, log.NewNopLogger())
 	_, _, err := tree.SaveVersion()
 	if err != nil {
 		panic(err)
@@ -56,7 +59,7 @@ func compareBranch(oldValueBz []byte, valueBz []byte) (err error) {
 }
 
 func compareLeaf(oldValueBz []byte, valueBz []byte) (err error) {
-	oldValue := sdk.ZeroInt()
+	oldValue := osmomath.ZeroInt()
 	value := sumtree.Leaf{}
 	err = json.Unmarshal(oldValueBz, &oldValue)
 	if err != nil {

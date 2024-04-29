@@ -11,16 +11,18 @@ on:
       - "v[0-9]**"
   workflow_dispatch:
 
-env:
-  GO_VERSION: '1.20.5'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 
 jobs:
   get_diff:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       -
         name: Check out repository code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Get git diff
         uses: technote-space/get-diff-action@v6.1.2
@@ -33,71 +35,84 @@ jobs:
             Makefile
             Dockerfile
             .github/workflows/test.yml
+      -
+        name: Set output
+        id: vars
+        run: echo "git_diff=$GIT_DIFF" >> $GITHUB_OUTPUT
     outputs:
-      git_diff: ${{ env.GIT_DIFF }}
+      git_diff: ${{ steps.vars.outputs.git_diff }}
 
   go-split-test-files:
     needs: get_diff
-    if: needs.get_diff.outputs.git_diff
-    runs-on: ubuntu-latest
+    if: ${{ needs.get_diff.outputs.git_diff || github.actor == 'dependabot[bot]' || github.actor == 'mergify[bot]' }}
+    runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
       -
-        name: Check out repository code
-        uses: actions/checkout@v3
+        name: Check out repository
+        uses: actions/checkout@v4
       -
         name: 🐿 Setup Golang
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{env.GO_VERSION}}
+          go-version-file: go.mod
       -
         name: Create a file with all core Cosmos SDK pkgs
-        run: go list ./... ./osmomath/... ./osmoutils/... ./x/ibc-hooks/... ./x/epochs | grep -E -v 'tests/simulator|e2e' > pkgs.txt
+        run: |
+          go list \
+            ./... \
+            ./osmomath/... \
+            ./osmoutils/... \
+            ./x/ibc-hooks/...\
+            ./x/epochs \
+            | grep -E -v 'tests/simulator|e2e' \
+            > pkgs.txt
       -
         name: Split pkgs into 4 files
-        run: split -d -n l/4 pkgs.txt pkgs.txt.part.
+        run: |
+          split -d -n l/4 pkgs.txt pkgs.txt.part.
       -
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: "${{ github.sha }}-00"
           path: ./pkgs.txt.part.00
       -
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: "${{ github.sha }}-01"
           path: ./pkgs.txt.part.01
       -
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: "${{ github.sha }}-02"
           path: ./pkgs.txt.part.02
       -
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: "${{ github.sha }}-03"
           path: ./pkgs.txt.part.03
 
   go:
     needs: [go-split-test-files, get_diff]
-    if: needs.get_diff.outputs.git_diff
-    runs-on: ubuntu-latest
+    if: ${{ needs.get_diff.outputs.git_diff || github.actor == 'dependabot[bot]' || github.actor == 'mergify[bot]' }}
+    runs-on: buildjet-4vcpu-ubuntu-2204
     strategy:
       fail-fast: false
       matrix:
         part: ["00", "01", "02", "03"]
     steps:
       -
-        name: Check out repository code
-        uses: actions/checkout@v3
+        name: Check out repository
+        uses: actions/checkout@v4
       -
         name: 🐿 Setup Golang
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{env.GO_VERSION}}
+          go-version-file: go.mod
       -
         name: Display go version
         run: go version
       -
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: "${{ github.sha }}-${{ matrix.part }}"
       -
@@ -105,44 +120,47 @@ jobs:
         run: |
           VERSION=$(echo $(git describe --tags) | sed 's/^v//') || VERSION=${GITHUB_SHA}
           TESTS=$(cat pkgs.txt.part.${{ matrix.part }})
-
-          VERSION=$VERSION SKIP_WASM_WSL_TESTS="false" go test -mod=readonly -tags='ledger test_ledger_mock norace' $TESTS
+          VERSION=$VERSION SKIP_WASM_WSL_TESTS="false" go test -race -mod=readonly -tags='ledger test_ledger_mock norace' $TESTS
 
   e2e:
     needs: get_diff
-    if: needs.get_diff.outputs.git_diff
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    if: ${{ needs.get_diff.outputs.git_diff || github.actor == 'dependabot[bot]' || github.actor == 'mergify[bot]' }}
+    runs-on: buildjet-4vcpu-ubuntu-2204
+    timeout-minutes: 20
     steps:
       -
-        name: Check out repository code
-        uses: actions/checkout@v3
+        name: Check out repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       -
-        name: 🐿 Setup Golang
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{env.GO_VERSION}}
-      -
         name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v3
+        if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'mergify[bot]' }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: 🐿 Setup Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       -
         name: Build e2e image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           load: true
           context: .
           tags: osmosis:debug
-          # Use experimental Cache backend API: 
-          # https://github.com/docker/build-push-action/blob/master/docs/advanced/cache.md#cache-backend-api
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           build-args: |
             BASE_IMG_TAG=debug
+            BUILD_TAGS="netgo,muslc,excludeIncrement"
       -
         name: Test e2e and Upgrade
         run: make test-e2e-ci
@@ -155,15 +173,12 @@ jobs:
       -
         name: Tar logs
         if: failure()
-        run: tar cvzf ./logs.tgz ./logs
+        run: |
+          tar cvzf ./logs.tgz ./logs
       -
         name: Upload logs to GitHub
-        uses: actions/upload-artifact@v3
+        if: failure()
+        uses: actions/upload-artifact@v4
         with:
           name: logs.tgz
           path: ./logs.tgz
-        if: failure()
-      -
-        name: 🧹 Clean up Osmosis Home
-        if: always()
-        run: rm -rf $HOME/.osmosisd/ || true

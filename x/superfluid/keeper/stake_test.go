@@ -3,15 +3,20 @@ package keeper_test
 import (
 	"time"
 
-	abci "github.com/tendermint/tendermint/abci/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/osmoutils"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -27,37 +32,37 @@ func (s *KeeperTestSuite) TestSuperfluidDelegate() {
 		name               string
 		validatorStats     []stakingtypes.BondStatus
 		superDelegations   []superfluidDelegation
-		expInterDelegation []sdk.Dec
+		expInterDelegation []osmomath.Dec
 	}{
 		{
 			"with single validator and single superfluid delegation",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
-			[]sdk.Dec{sdk.NewDec(10000000)}, // 50% x 20 x 1000000
+			[]osmomath.Dec{osmomath.NewDec(10000000)}, // 50% x 20 x 1000000
 		},
 		{
 			"with single validator and additional superfluid delegations",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {0, 0, 0, 1000000}},
-			[]sdk.Dec{sdk.NewDec(20000000)}, // 50% x 20 x 1000000 x 2
+			[]osmomath.Dec{osmomath.NewDec(20000000)}, // 50% x 20 x 1000000 x 2
 		},
 		{
 			"with multiple validators and multiple superfluid delegations",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
-			[]sdk.Dec{sdk.NewDec(10000000), sdk.NewDec(10000000)}, // 50% x 20 x 1000000
+			[]osmomath.Dec{osmomath.NewDec(10000000), osmomath.NewDec(10000000)}, // 50% x 20 x 1000000
 		},
 		{
 			"add unbonding validator",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Unbonding},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
-			[]sdk.Dec{sdk.NewDec(10000000), sdk.NewDec(10000000)}, // 50% x 20 x 1000000
+			[]osmomath.Dec{osmomath.NewDec(10000000), osmomath.NewDec(10000000)}, // 50% x 20 x 1000000
 		},
 		{
 			"add unbonded validator",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Unbonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
-			[]sdk.Dec{sdk.NewDec(10000000), sdk.NewDec(10000000)}, // 50% x 20 x 1000000
+			[]osmomath.Dec{osmomath.NewDec(10000000), osmomath.NewDec(10000000)}, // 50% x 20 x 1000000
 		},
 	}
 
@@ -70,9 +75,9 @@ func (s *KeeperTestSuite) TestSuperfluidDelegate() {
 			// setup validators
 			valAddrs := s.SetupValidators(tc.validatorStats)
 
-			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
-			// get pre-superfluid delgations osmo supply and supplyWithOffset
+			// get pre-superfluid delegations osmo supply and supplyWithOffset
 			presupply := s.App.BankKeeper.GetSupply(s.Ctx, bondDenom)
 			presupplyWithOffset := s.App.BankKeeper.GetSupplyWithOffset(s.Ctx, bondDenom)
 
@@ -166,7 +171,7 @@ func (s *KeeperTestSuite) TestValidateLockForSFDelegate() {
 			name: "valid gamm lock",
 			lock: &lockuptypes.PeriodLock{
 				Owner:    lockOwner.String(),
-				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, sdk.NewInt(100))),
+				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, osmomath.NewInt(100))),
 				Duration: time.Hour * 24 * 21,
 				ID:       1,
 			},
@@ -177,7 +182,7 @@ func (s *KeeperTestSuite) TestValidateLockForSFDelegate() {
 			name: "valid cl lock",
 			lock: &lockuptypes.PeriodLock{
 				Owner:    lockOwner.String(),
-				Coins:    sdk.NewCoins(sdk.NewCoin(cltypes.GetConcentratedLockupDenomFromPoolId(1), sdk.NewInt(100))),
+				Coins:    sdk.NewCoins(sdk.NewCoin(cltypes.GetConcentratedLockupDenomFromPoolId(1), osmomath.NewInt(100))),
 				Duration: time.Hour * 24 * 21,
 				ID:       1,
 			},
@@ -188,7 +193,7 @@ func (s *KeeperTestSuite) TestValidateLockForSFDelegate() {
 			name: "invalid lock - not superfluid asset",
 			lock: &lockuptypes.PeriodLock{
 				Owner:    lockOwner.String(),
-				Coins:    sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100))),
+				Coins:    sdk.NewCoins(sdk.NewCoin("uosmo", osmomath.NewInt(100))),
 				Duration: time.Hour * 24 * 21,
 				ID:       1,
 			},
@@ -199,7 +204,7 @@ func (s *KeeperTestSuite) TestValidateLockForSFDelegate() {
 			name: "invalid lock - unbonding lockup not supported",
 			lock: &lockuptypes.PeriodLock{
 				Owner:    lockOwner.String(),
-				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, sdk.NewInt(100))),
+				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, osmomath.NewInt(100))),
 				Duration: time.Hour * 24 * 21,
 				ID:       1,
 				EndTime:  time.Now().Add(time.Hour * 24),
@@ -211,7 +216,7 @@ func (s *KeeperTestSuite) TestValidateLockForSFDelegate() {
 			name: "invalid lock - not enough lockup duration",
 			lock: &lockuptypes.PeriodLock{
 				Owner:    lockOwner.String(),
-				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, sdk.NewInt(100))),
+				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, osmomath.NewInt(100))),
 				Duration: time.Hour * 24,
 				ID:       1,
 			},
@@ -224,7 +229,7 @@ func (s *KeeperTestSuite) TestValidateLockForSFDelegate() {
 			name: "invalid lock - already used superfluid lockup",
 			lock: &lockuptypes.PeriodLock{
 				Owner:    lockOwner.String(),
-				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, sdk.NewInt(100))),
+				Coins:    sdk.NewCoins(sdk.NewCoin(DefaultGammAsset, osmomath.NewInt(100))),
 				Duration: time.Hour * 24 * 21,
 				ID:       1,
 			},
@@ -264,7 +269,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 		superUnbondingLockIds []uint64
 		expSuperUnbondingErr  []bool
 		// expected amount of delegation to intermediary account
-		expInterDelegation []sdk.Dec
+		expInterDelegation []osmomath.Dec
 	}{
 		{
 			"with single validator and single superfluid delegation and single undelegation",
@@ -272,7 +277,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
 			[]uint64{1},
 			[]bool{false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		// {
 		// 	"with single validator, single superfluid delegation, add more tokens to the lock, and single undelegation",
@@ -281,7 +286,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 		// 	[]uint64{1},
 		// 	[]uint64{1},
 		// 	[]bool{false},
-		// 	[]sdk.Dec{sdk.ZeroDec()},
+		// 	[]osmomath.Dec{osmomath.ZeroDec()},
 		// },
 		{
 			"with single validator and additional superfluid delegations and single undelegation",
@@ -289,7 +294,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {0, 0, 0, 1000000}},
 			[]uint64{1},
 			[]bool{false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"with multiple validators and multiple superfluid delegations and multiple undelegations",
@@ -297,7 +302,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
 			[]uint64{1, 2},
 			[]bool{false, false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"add unbonding validator",
@@ -305,7 +310,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
 			[]uint64{1, 2},
 			[]bool{false, false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"add unbonded validator",
@@ -313,7 +318,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
 			[]uint64{1, 2},
 			[]bool{false, false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"undelegating not available lock id",
@@ -321,7 +326,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
 			[]uint64{2},
 			[]bool{true},
-			[]sdk.Dec{},
+			[]osmomath.Dec{},
 		},
 		{
 			"try undelegating twice for same lock id",
@@ -329,7 +334,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
 			[]uint64{1, 1},
 			[]bool{false, true},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 	}
 
@@ -343,7 +348,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 			// setup validators
 			valAddrs := s.SetupValidators(tc.validatorStats)
 
-			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 			// setup superfluid delegations
 			_, intermediaryAccs, _ := s.setupSuperfluidDelegations(valAddrs, tc.superDelegations, denoms)
@@ -360,7 +365,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegate() {
 					lock = &lockuptypes.PeriodLock{}
 				}
 
-				// get pre-superfluid delgations osmo supply and supplyWithOffset
+				// get pre-superfluid delegations osmo supply and supplyWithOffset
 				presupply := s.App.BankKeeper.GetSupply(s.Ctx, bondDenom)
 				presupplyWithOffset := s.App.BankKeeper.GetSupplyWithOffset(s.Ctx, bondDenom)
 
@@ -437,7 +442,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 		superUnbondingLockIds []uint64
 		expSuperUnbondingErr  []bool
 		// expected amount of delegation to intermediary account
-		expInterDelegation []sdk.Dec
+		expInterDelegation []osmomath.Dec
 	}{
 		{
 			"with single validator and single superfluid delegation and single undelegation",
@@ -445,7 +450,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
 			[]uint64{1},
 			[]bool{false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"with single validator and additional superfluid delegations and single undelegation",
@@ -453,7 +458,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {0, 0, 0, 1000000}},
 			[]uint64{1},
 			[]bool{false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"with multiple validators and multiple superfluid delegations and multiple undelegations",
@@ -461,7 +466,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
 			[]uint64{1, 2},
 			[]bool{false, false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"add unbonding validator",
@@ -469,7 +474,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
 			[]uint64{1, 2},
 			[]bool{false, false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"add unbonded validator",
@@ -477,7 +482,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
 			[]uint64{1, 2},
 			[]bool{false, false},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 		{
 			"undelegating not available lock id",
@@ -485,7 +490,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
 			[]uint64{2},
 			[]bool{true},
-			[]sdk.Dec{},
+			[]osmomath.Dec{},
 		},
 		{
 			"try undelegating twice for same lock id",
@@ -493,7 +498,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
 			[]uint64{1, 1},
 			[]bool{false, true},
-			[]sdk.Dec{sdk.ZeroDec()},
+			[]osmomath.Dec{osmomath.ZeroDec()},
 		},
 	}
 
@@ -507,7 +512,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 			// setup validators
 			valAddrs := s.SetupValidators(tc.validatorStats)
 
-			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 			// setup superfluid delegations
 			_, intermediaryAccs, _ := s.setupSuperfluidDelegations(valAddrs, tc.superDelegations, denoms)
@@ -524,7 +529,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateToConcentratedPosition() {
 					lock = &lockuptypes.PeriodLock{}
 				}
 
-				// get pre-superfluid delgations osmo supply and supplyWithOffset
+				// get pre-superfluid delegations osmo supply and supplyWithOffset
 				presupply := s.App.BankKeeper.GetSupply(s.Ctx, bondDenom)
 				presupplyWithOffset := s.App.BankKeeper.GetSupplyWithOffset(s.Ctx, bondDenom)
 
@@ -602,7 +607,7 @@ func (s *KeeperTestSuite) TestSuperfluidUnbondLock() {
 	// setup validators
 	valAddrs := s.SetupValidators([]stakingtypes.BondStatus{stakingtypes.Bonded})
 
-	denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+	denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 	// setup superfluid delegations
 	_, intermediaryAccs, locks := s.setupSuperfluidDelegations(valAddrs, []superfluidDelegation{{0, 0, 0, 1000000}}, denoms)
@@ -646,7 +651,7 @@ func (s *KeeperTestSuite) TestSuperfluidUnbondLock() {
 		s.Require().NoError(err)
 		s.Require().True(updatedLock.IsUnlocking())
 
-		// check if finsihed unlocking synth lock did not increase balance
+		// check if finished unlocking synth lock did not increase balance
 		balances = s.App.BankKeeper.GetAllBalances(s.Ctx, lock.OwnerAddress())
 		s.Require().Equal(0, balances.Len())
 
@@ -670,7 +675,7 @@ func (s *KeeperTestSuite) TestSuperfluidUnbondLock() {
 		balances = s.App.BankKeeper.GetAllBalances(s.Ctx, lock.OwnerAddress())
 		s.Require().Equal(1, balances.Len())
 		s.Require().Equal(denoms[0], balances[0].Denom)
-		s.Require().Equal(sdk.NewInt(1000000), balances[0].Amount)
+		s.Require().Equal(osmomath.NewInt(1000000), balances[0].Amount)
 
 		// check invariant is fine
 		reason, broken := keeper.AllInvariants(*s.App.SuperfluidKeeper)(s.Ctx)
@@ -683,7 +688,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 	testCases := []struct {
 		name            string
 		testInvalidLock bool
-		unlockAmount    sdk.Int
+		unlockAmount    osmomath.Int
 		expectErr       bool
 		splitLockId     bool
 		undelegating    bool
@@ -692,7 +697,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		{
 			name:            "lock doesn't exist",
 			testInvalidLock: true,
-			unlockAmount:    sdk.NewInt(0),
+			unlockAmount:    osmomath.NewInt(0),
 			expectErr:       true,
 			splitLockId:     false,
 			undelegating:    false,
@@ -701,7 +706,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		{
 			name:            "unlock amount = 0",
 			testInvalidLock: false,
-			unlockAmount:    sdk.NewInt(0),
+			unlockAmount:    osmomath.NewInt(0),
 			expectErr:       true,
 			splitLockId:     false,
 			undelegating:    false,
@@ -710,7 +715,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		{
 			name:            "unlock amount > locked amount",
 			testInvalidLock: false,
-			unlockAmount:    sdk.NewInt(lockAmount + 1),
+			unlockAmount:    osmomath.NewInt(lockAmount + 1),
 			expectErr:       true,
 			splitLockId:     false,
 			undelegating:    false,
@@ -719,7 +724,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		{
 			name:            "lock is not split if unlock amount = locked amount",
 			testInvalidLock: false,
-			unlockAmount:    sdk.NewInt(lockAmount),
+			unlockAmount:    osmomath.NewInt(lockAmount),
 			expectErr:       false,
 			splitLockId:     false,
 			undelegating:    false,
@@ -728,7 +733,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		{
 			name:            "lock is split if unlock amount < locked amount",
 			testInvalidLock: false,
-			unlockAmount:    sdk.NewInt(lockAmount / 2),
+			unlockAmount:    osmomath.NewInt(lockAmount / 2),
 			expectErr:       false,
 			splitLockId:     true,
 			undelegating:    false,
@@ -737,7 +742,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		{
 			name:            "undelegate and unbond an undelegating lock",
 			testInvalidLock: false,
-			unlockAmount:    sdk.NewInt(1),
+			unlockAmount:    osmomath.NewInt(1),
 			expectErr:       true,
 			splitLockId:     false,
 			undelegating:    true,
@@ -746,7 +751,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		{
 			name:            "undelegate and unbond an unlocking lock",
 			testInvalidLock: false,
-			unlockAmount:    sdk.NewInt(1),
+			unlockAmount:    osmomath.NewInt(1),
 			expectErr:       true,
 			splitLockId:     false,
 			undelegating:    true,
@@ -761,7 +766,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 			// setup validators
 			valAddrs := s.SetupValidators([]stakingtypes.BondStatus{stakingtypes.Bonded})
 
-			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 			// setup superfluid delegations
 			_, intermediaryAccs, locks := s.setupSuperfluidDelegations(valAddrs, []superfluidDelegation{{0, 0, 0, lockAmount}}, denoms)
@@ -771,7 +776,7 @@ func (s *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 			// test invalid lock
 			if tc.testInvalidLock {
 				lock := lockuptypes.PeriodLock{}
-				_, err := s.App.SuperfluidKeeper.SuperfluidUndelegateAndUnbondLock(s.Ctx, lock.ID, lock.GetOwner(), sdk.NewInt(1))
+				_, err := s.App.SuperfluidKeeper.SuperfluidUndelegateAndUnbondLock(s.Ctx, lock.ID, lock.GetOwner(), osmomath.NewInt(1))
 				s.Require().Error(err)
 				return
 			}
@@ -894,49 +899,49 @@ func (s *KeeperTestSuite) TestRefreshIntermediaryDelegationAmounts() {
 		validatorStats   []stakingtypes.BondStatus
 		superDelegations []superfluidDelegation
 		// denom of the superfluid asset is the key, multiplier is the value
-		multipliersByDenom map[string]sdk.Dec
+		multipliersByDenom map[string]osmomath.Dec
 	}{
 		{
 			"with single validator and single delegation",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
-			map[string]sdk.Dec{DefaultGammAsset: sdk.NewDec(10)},
+			map[string]osmomath.Dec{DefaultGammAsset: osmomath.NewDec(10)},
 		},
 		{
 			"with single validator and additional delegations",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {0, 0, 0, 1000000}},
-			map[string]sdk.Dec{DefaultGammAsset: sdk.NewDec(10)},
+			map[string]osmomath.Dec{DefaultGammAsset: osmomath.NewDec(10)},
 		},
 		{
 			"with multiple validator and multiple superfluid delegations",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
-			map[string]sdk.Dec{DefaultGammAsset: sdk.NewDec(10)},
+			map[string]osmomath.Dec{DefaultGammAsset: osmomath.NewDec(10)},
 		},
 		{
 			"with single validator and multiple denom superfluid delegations",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {0, 0, 1, 1000000}},
-			map[string]sdk.Dec{DefaultGammAsset: sdk.NewDec(10), "gamm/pool/2": sdk.NewDec(10)},
+			map[string]osmomath.Dec{DefaultGammAsset: osmomath.NewDec(10), "gamm/pool/2": osmomath.NewDec(10)},
 		},
 		{
 			"with multiple validators and multiple denom superfluid delegations",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}, {0, 1, 1, 1000000}},
-			map[string]sdk.Dec{DefaultGammAsset: sdk.NewDec(10), "gamm/pool/2": sdk.NewDec(10)},
+			map[string]osmomath.Dec{DefaultGammAsset: osmomath.NewDec(10), "gamm/pool/2": osmomath.NewDec(10)},
 		},
 		{
 			"zero price multiplier check",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
-			map[string]sdk.Dec{DefaultGammAsset: sdk.NewDec(0)},
+			map[string]osmomath.Dec{DefaultGammAsset: osmomath.NewDec(0)},
 		},
 		{
 			"dust price multiplier check",
 			[]stakingtypes.BondStatus{stakingtypes.Bonded},
 			[]superfluidDelegation{{0, 0, 0, 1000000}},
-			map[string]sdk.Dec{DefaultGammAsset: sdk.NewDecWithPrec(1, 10)}, // 10^-10
+			map[string]osmomath.Dec{DefaultGammAsset: osmomath.NewDecWithPrec(1, 10)}, // 10^-10
 		},
 	}
 
@@ -948,7 +953,7 @@ func (s *KeeperTestSuite) TestRefreshIntermediaryDelegationAmounts() {
 			// setup validators
 			valAddrs := s.SetupValidators(tc.validatorStats)
 
-			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 			// setup superfluid delegations
 			_, intermediaryAccs, locks := s.setupSuperfluidDelegations(valAddrs, tc.superDelegations, denoms)
@@ -956,7 +961,7 @@ func (s *KeeperTestSuite) TestRefreshIntermediaryDelegationAmounts() {
 
 			// we make a map of intermediary account to delegation shares to store delegation share
 			// before refreshing intermediary account delegations on epoch
-			interAccIndexToDenomShare := make(map[int]sdk.Dec)
+			interAccIndexToDenomShare := make(map[int]osmomath.Dec)
 			for accIndex, intermediaryAcc := range intermediaryAccs {
 				valAddr, err := sdk.ValAddressFromBech32(intermediaryAcc.ValAddr)
 				s.Require().NoError(err)
@@ -970,15 +975,16 @@ func (s *KeeperTestSuite) TestRefreshIntermediaryDelegationAmounts() {
 				s.App.SuperfluidKeeper.SetOsmoEquivalentMultiplier(s.Ctx, 2, denom, multiplier)
 			}
 
-			s.App.SuperfluidKeeper.RefreshIntermediaryDelegationAmounts(s.Ctx)
+			accs := s.App.SuperfluidKeeper.GetAllIntermediaryAccounts(s.Ctx)
+			s.App.SuperfluidKeeper.RefreshIntermediaryDelegationAmounts(s.Ctx, accs)
 
-			originalMultiplier := sdk.NewDec(20)
+			originalMultiplier := osmomath.NewDec(20)
 			for interAccIndex, intermediaryAcc := range intermediaryAccs {
 				multiplier := tc.multipliersByDenom[intermediaryAcc.Denom]
 				oldDelegation := interAccIndexToDenomShare[interAccIndex]
 				expDelegation := oldDelegation.Mul(multiplier).Quo(originalMultiplier)
-				lpTokenAmount := sdk.NewInt(1000000)
-				decAmt := multiplier.Mul(lpTokenAmount.ToDec())
+				lpTokenAmount := osmomath.NewInt(1000000)
+				decAmt := multiplier.Mul(lpTokenAmount.ToLegacyDec())
 				denom := intermediaryAcc.Denom
 				_, err := s.App.SuperfluidKeeper.GetSuperfluidAsset(s.Ctx, denom)
 				s.Require().NoError(err)
@@ -1017,7 +1023,8 @@ func (s *KeeperTestSuite) TestRefreshIntermediaryDelegationAmounts() {
 			}
 
 			// refresh intermediary account delegations
-			s.App.SuperfluidKeeper.RefreshIntermediaryDelegationAmounts(s.Ctx)
+			accs = s.App.SuperfluidKeeper.GetAllIntermediaryAccounts(s.Ctx)
+			s.App.SuperfluidKeeper.RefreshIntermediaryDelegationAmounts(s.Ctx, accs)
 
 			for _, intermediaryAcc := range intermediaryAccs {
 				// check unbonded amount is removed after refresh operation
@@ -1028,164 +1035,710 @@ func (s *KeeperTestSuite) TestRefreshIntermediaryDelegationAmounts() {
 	}
 }
 
-func (suite *KeeperTestSuite) TestPartialSuperfluidUndelegateToConcentratedPosition() {
-	testCases := []struct {
-		name                  string
-		validatorStats        []stakingtypes.BondStatus
-		superDelegations      []superfluidDelegation
-		undelegateAmounts     []sdk.Coin
-		superUnbondingLockIds []uint64
-		expSuperUnbondingErr  []bool
-		// expected amount of delegation to intermediary account
-		expInterDelegation []sdk.Dec
-	}{
-		{
-			"with single validator and single superfluid delegation and single undelegation",
-			[]stakingtypes.BondStatus{stakingtypes.Bonded},
-			[]superfluidDelegation{{0, 0, 0, 1000000}},
-			[]sdk.Coin{sdk.NewCoin("gamm/pool/1", sdk.NewInt(400000))},
-			[]uint64{1},
-			[]bool{false},
-			[]sdk.Dec{sdk.NewDec(6000000)},
+func (s *KeeperTestSuite) TestUnbondConvertAndStake() {
+	defaultJoinTime := s.Ctx.BlockTime()
+	type tc struct {
+		notSuperfluidDelegated bool
+		superfluidUndelegating bool
+		unlocking              bool
+		unlocked               bool
+		testCLLock             bool
+		expectedError          error
+	}
+	testCases := map[string]tc{
+		"lock that is superfluid delegated": {},
+		"lock that is superfluid undelegating": {
+			superfluidUndelegating: true,
 		},
-		{
-			"with single validator and additional superfluid delegations and single undelegation",
-			[]stakingtypes.BondStatus{stakingtypes.Bonded},
-			[]superfluidDelegation{{0, 0, 0, 1000000}, {0, 0, 0, 1000000}},
-			[]sdk.Coin{sdk.NewCoin("gamm/pool/1", sdk.NewInt(900000))},
-			[]uint64{1},
-			[]bool{false},
-			[]sdk.Dec{sdk.NewDec(11000000)},
+		"bonded lock, not superfluid delegated": {
+			notSuperfluidDelegated: true,
 		},
-		{
-			"with multiple validators and multiple superfluid delegations and multiple undelegations",
-			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Bonded},
-			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
-			[]sdk.Coin{sdk.NewCoin("gamm/pool/1", sdk.NewInt(600000)), sdk.NewCoin("gamm/pool/1", sdk.NewInt(400000))},
-			[]uint64{1, 2},
-			[]bool{false, false},
-			[]sdk.Dec{sdk.NewDec(4000000), sdk.NewDec(6000000)},
+		"lock that is unlocking": {
+			unlocking:              true,
+			superfluidUndelegating: true,
 		},
-		{
-			"add unbonding validator",
-			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Unbonding},
-			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
-			[]sdk.Coin{sdk.NewCoin("gamm/pool/1", sdk.NewInt(600000)), sdk.NewCoin("gamm/pool/1", sdk.NewInt(400000))},
-			[]uint64{1, 2},
-			[]bool{false, false},
-			[]sdk.Dec{sdk.NewDec(4000000), sdk.NewDec(6000000)},
+		"unlocked gamm shares": {
+			notSuperfluidDelegated: true,
+			unlocked:               true,
 		},
-		{
-			"add unbonded validator",
-			[]stakingtypes.BondStatus{stakingtypes.Bonded, stakingtypes.Unbonded},
-			[]superfluidDelegation{{0, 0, 0, 1000000}, {1, 1, 0, 1000000}},
-			[]sdk.Coin{sdk.NewCoin("gamm/pool/1", sdk.NewInt(600000)), sdk.NewCoin("gamm/pool/1", sdk.NewInt(400000))},
-			[]uint64{1, 2},
-			[]bool{false, false},
-			[]sdk.Dec{sdk.NewDec(4000000), sdk.NewDec(6000000)},
-		},
-		{
-			"undelegating not available lock id",
-			[]stakingtypes.BondStatus{stakingtypes.Bonded},
-			[]superfluidDelegation{{0, 0, 0, 1000000}},
-			[]sdk.Coin{sdk.NewCoin("gamm/pool/1", sdk.NewInt(600000))},
-			[]uint64{2},
-			[]bool{true},
-			[]sdk.Dec{},
+		"error: concentrated lock should fail": {
+			testCLLock: true,
+			expectedError: types.SharesToMigrateDenomPrefixError{
+				Denom:               "cl/pool/2",
+				ExpectedDenomPrefix: "gamm/pool/",
+			},
 		},
 	}
 
-	for _, tc := range testCases {
-		tc := tc
-		suite.Run(tc.name, func() {
-			suite.SetupTest()
+	for name, tc := range testCases {
+		s.Run(name, func() {
+			s.SetupTest()
+			s.Ctx = s.Ctx.WithBlockTime(defaultJoinTime)
 
-			bondDenom := suite.App.StakingKeeper.GetParams(suite.Ctx).BondDenom
-
-			// setup validators
-			valAddrs := suite.SetupValidators(tc.validatorStats)
-
-			denoms, _ := suite.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
-
-			// setup superfluid delegations
-			_, intermediaryAccs, _ := suite.setupSuperfluidDelegations(valAddrs, tc.superDelegations, denoms)
-			suite.checkIntermediaryAccountDelegations(intermediaryAccs)
-
-			suite.Greater(len(tc.superUnbondingLockIds), 0)
-			for index, lockId := range tc.superUnbondingLockIds {
-				// get intermediary account
-				accAddr := suite.App.SuperfluidKeeper.GetLockIdIntermediaryAccountConnection(suite.Ctx, lockId)
-				intermediaryAcc := suite.App.SuperfluidKeeper.GetIntermediaryAccount(suite.Ctx, accAddr)
-				valAddr := intermediaryAcc.ValAddr
-
-				lock, err := suite.App.LockupKeeper.GetLockByID(suite.Ctx, lockId)
-				if tc.expSuperUnbondingErr[index] {
-					// manually set the lock to nil if we expect an error so we don't fail early
-					suite.Require().Error(err)
-					lock = &lockuptypes.PeriodLock{}
-				} else {
-					suite.Require().NoError(err)
-				}
-
-				// get pre-superfluid delgations osmo supply and supplyWithOffset
-				presupply := suite.App.BankKeeper.GetSupply(suite.Ctx, bondDenom)
-				presupplyWithOffset := suite.App.BankKeeper.GetSupplyWithOffset(suite.Ctx, bondDenom)
-
-				// superfluid undelegate
-				intermediaryAcc, newLock, err := suite.App.SuperfluidKeeper.PartialSuperfluidUndelegateToConcentratedPosition(suite.Ctx, lock.Owner, lockId, tc.undelegateAmounts[index])
-				if tc.expSuperUnbondingErr[index] {
-					suite.Require().Error(err)
-					continue
-				}
-				suite.Require().NoError(err)
-
-				// the new lock should be equal to the amount we partially undelegated
-				suite.Require().Equal(tc.undelegateAmounts[index].Amount.String(), newLock.Coins[0].Amount.String())
-
-				// ensure post-superfluid delegations osmo supplywithoffset is the same while supply is not
-				postsupply := suite.App.BankKeeper.GetSupply(suite.Ctx, bondDenom)
-				postsupplyWithOffset := suite.App.BankKeeper.GetSupplyWithOffset(suite.Ctx, bondDenom)
-
-				suite.Require().Equal(presupply.Amount.Sub(tc.undelegateAmounts[index].Amount.Mul(sdk.NewInt(10))).String(), postsupply.Amount.String())
-				suite.Require().Equal(presupplyWithOffset, postsupplyWithOffset)
-
-				// check lockId and intermediary account connection is not deleted
-				addr := suite.App.SuperfluidKeeper.GetLockIdIntermediaryAccountConnection(suite.Ctx, lockId)
-				suite.Require().Equal(intermediaryAcc.GetAccAddress().String(), addr.String())
-
-				// check bonding synthetic lockup is not deleted
-				_, err = suite.App.LockupKeeper.GetSyntheticLockup(suite.Ctx, lockId, keeper.StakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
-				suite.Require().NoError(err)
-
-				// check unbonding synthetic lockup creation
-				// since this is the concentrated liquidity path, no new synthetic lockup should be created
-				synthLock, err := suite.App.LockupKeeper.GetSyntheticLockup(suite.Ctx, lockId, keeper.UnstakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
-				suite.Require().Error(err)
-				suite.Require().Nil(synthLock)
-				synthLock, err = suite.App.LockupKeeper.GetSyntheticLockup(suite.Ctx, newLock.ID, keeper.UnstakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
-				suite.Require().Error(err)
-				suite.Require().Nil(synthLock)
+			var (
+				lock             *lockuptypes.PeriodLock
+				lockId           uint64
+				joinPoolAcc      sdk.AccAddress
+				originalValAddr  sdk.ValAddress
+				balancerShareOut sdk.Coin
+			)
+			// we use migration setup for testing with cl lock
+			if tc.testCLLock {
+				_, _, lock, _, joinPoolAcc, _, _, balancerShareOut, originalValAddr = s.SetupMigrationTest(s.Ctx, !tc.notSuperfluidDelegated, tc.superfluidUndelegating, tc.unlocking, tc.unlocked, osmomath.MustNewDecFromStr("1"))
+				synthLockBeforeMigration, _, err := s.App.SuperfluidKeeper.GetMigrationType(s.Ctx, int64(lock.ID))
+				s.Require().NoError(err)
+				_, lockId, _, err = s.App.SuperfluidKeeper.MigrateSuperfluidBondedBalancerToConcentrated(s.Ctx, joinPoolAcc, lock.ID, lock.Coins[0], synthLockBeforeMigration.SynthDenom, sdk.NewCoins())
+				s.Require().NoError(err)
+			} else {
+				// We bundle all migration setup into a single function to avoid repeating the same code for each test case.
+				_, _, lock, _, joinPoolAcc, _, balancerShareOut, originalValAddr = s.SetupUnbondConvertAndStakeTest(s.Ctx, !tc.notSuperfluidDelegated, tc.superfluidUndelegating, tc.unlocking, tc.unlocked)
+				lockId = lock.ID
 			}
 
-			// check invariant is fine
-			reason, broken := keeper.AllInvariants(*suite.App.SuperfluidKeeper)(suite.Ctx)
-			suite.Require().False(broken, reason)
+			sender := sdk.MustAccAddressFromBech32(joinPoolAcc.String())
+			valAddr := s.SetupValidator(stakingtypes.Bonded)
+			minAmountToStake := osmomath.ZeroInt()
+			sharesToConvert := sdk.NewInt64Coin("foo", 0)
+			if tc.unlocked {
+				sharesToConvert = balancerShareOut
+			}
 
-			// check remaining intermediary account delegation
-			for index, expDelegation := range tc.expInterDelegation {
-				acc := intermediaryAccs[index]
-				valAddr, err := sdk.ValAddressFromBech32(acc.ValAddr)
-				suite.Require().NoError(err)
-				delegation, found := suite.App.StakingKeeper.GetDelegation(suite.Ctx, acc.GetAccAddress(), valAddr)
-				if expDelegation.IsZero() {
-					suite.Require().False(found, "expected no delegation, found delegation w/ %d shares", delegation.Shares)
-				} else {
-					suite.Require().True(found)
-					suite.Require().Equal(expDelegation, delegation.Shares)
+			// only test with test related denoms
+			balanceBeforeConvertLockToStake := osmoutils.FilterDenoms(s.App.BankKeeper.GetAllBalances(s.Ctx, sender), []string{"foo", "stake", "uosmo"})
+
+			// system under test
+			totalAmtConverted, err := s.App.SuperfluidKeeper.UnbondConvertAndStake(s.Ctx, lockId, sender.String(), valAddr.String(), minAmountToStake, sharesToConvert)
+			if tc.expectedError != nil {
+				s.Require().Equal(err.Error(), tc.expectedError.Error())
+				s.Require().Error(err)
+				return
+			}
+			s.Require().NoError(err)
+
+			// Staking & Delegation check
+			s.delegationCheck(sender, originalValAddr, valAddr, totalAmtConverted)
+
+			// Bank check
+			balanceAfterConvertLockToStake := osmoutils.FilterDenoms(s.App.BankKeeper.GetAllBalances(s.Ctx, sender), []string{"foo", "stake", "uosmo"})
+			s.Require().True(balanceBeforeConvertLockToStake.IsEqual(balanceAfterConvertLockToStake))
+
+			// if unlocked, no need to check locks since there is no lock existing
+			if tc.unlocked {
+				return
+			}
+
+			// lock check
+			s.lockCheck(*lock, valAddr.String())
+		})
+	}
+}
+
+func (s *KeeperTestSuite) TestConvertLockToStake() {
+	defaultJoinTime := s.Ctx.BlockTime()
+	type tc struct {
+		superfluidUndelegating bool
+		unlocking              bool
+		notSuperfluidDelegated bool
+
+		useMinAmountToStake    bool
+		senderIsNotOwnerOfLock bool
+		useNonBalancerLock     bool
+
+		expectedError error
+	}
+	testCases := map[string]tc{
+		"lock that is superfluid delegated": {},
+		"lock that is superfluid undelegating": {
+			unlocking:              true,
+			superfluidUndelegating: true,
+		},
+		"lock that is unlocking": {
+			unlocking:              true,
+			superfluidUndelegating: false,
+		},
+		"bonded lock, not superfluid delegated": {
+			notSuperfluidDelegated: true,
+		},
+		// error cases
+		"error: min amount to stake greater than actual amount": {
+			useMinAmountToStake: true,
+			expectedError: types.TokenConvertedLessThenDesiredStakeError{
+				ActualTotalAmtToStake:   osmomath.NewInt(8309),
+				ExpectedTotalAmtToStake: osmomath.NewInt(999999999),
+			},
+		},
+		"error: use non balancer lock": {
+			useNonBalancerLock: true,
+			expectedError: types.SharesToMigrateDenomPrefixError{
+				Denom:               "foo",
+				ExpectedDenomPrefix: "gamm/pool/",
+			},
+		},
+		"error: sender is not owner of lock ": {
+			senderIsNotOwnerOfLock: true,
+			expectedError: types.LockOwnerMismatchError{
+				LockId:        1,
+				LockOwner:     s.TestAccs[0].String(),
+				ProvidedOwner: s.TestAccs[1].String(),
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		s.Run(name, func() {
+			s.SetupTest()
+			s.Ctx = s.Ctx.WithBlockTime(defaultJoinTime)
+			// We bundle all migration setup into a single function to avoid repeating the same code for each test case.
+			_, _, lock, _, _, _, _, originalValAddr := s.SetupUnbondConvertAndStakeTest(s.Ctx, !tc.notSuperfluidDelegated, tc.superfluidUndelegating, false, false)
+
+			// testing params
+			sender := sdk.MustAccAddressFromBech32(lock.Owner)
+			if tc.senderIsNotOwnerOfLock {
+				sender = s.TestAccs[1]
+			}
+
+			if tc.useNonBalancerLock {
+				nonBalancerShareDenomCoins := sdk.NewCoins(sdk.NewCoin("foo", osmomath.NewInt(100)))
+				s.FundAcc(sender, nonBalancerShareDenomCoins)
+				newLock, err := s.App.LockupKeeper.CreateLock(s.Ctx, sender, nonBalancerShareDenomCoins, time.Second)
+				s.Require().NoError(err)
+				lock = &newLock
+			}
+
+			valAddr := s.SetupValidator(stakingtypes.Bonded)
+			minAmountToStake := osmomath.ZeroInt()
+			if tc.useMinAmountToStake {
+				minAmountToStake = osmomath.NewInt(999999999)
+			}
+
+			balanceBeforeConvertLockToStake := s.App.BankKeeper.GetAllBalances(s.Ctx, sender)
+
+			// system under test
+			totalAmtConverted, err := s.App.SuperfluidKeeper.ConvertLockToStake(s.Ctx, sender, valAddr.String(), lock.ID, minAmountToStake)
+			if tc.expectedError != nil {
+				s.Require().Error(err)
+				// TODO: come back to this specific err case
+				// err check for LockOwnerMismatchError needs further refactoring for all these test cases
+				// since lock owner is not know-able at the time of test creation
+				if !tc.senderIsNotOwnerOfLock {
+					s.Require().Equal(err.Error(), tc.expectedError.Error())
 				}
+				return
+			}
+			s.Require().NoError(err)
+
+			// Staking & Delegation check
+			s.delegationCheck(sender, originalValAddr, valAddr, totalAmtConverted)
+
+			// Lock check
+			s.lockCheck(*lock, valAddr.String())
+
+			// Bank check
+			balanceAfterConvertLockToStake := s.App.BankKeeper.GetAllBalances(s.Ctx, sender)
+			s.Require().True(balanceBeforeConvertLockToStake.IsEqual(balanceAfterConvertLockToStake))
+		})
+	}
+}
+
+func (s *KeeperTestSuite) TestConvertUnlockedToStake() {
+	defaultJoinTime := s.Ctx.BlockTime()
+	type tc struct {
+		usePartialShares    bool
+		useMinAmountToStake bool
+		useNonGammPrefix    bool
+		expectedError       error
+	}
+	testCases := map[string]tc{
+		"convert unlocked gamm shares": {},
+		"convert partial shares": {
+			usePartialShares: true,
+		},
+		"min amount to stake exceeds exit pool amount": {
+			useMinAmountToStake: true,
+			expectedError: types.TokenConvertedLessThenDesiredStakeError{
+				ActualTotalAmtToStake:   osmomath.NewInt(8309),
+				ExpectedTotalAmtToStake: osmomath.NewInt(999999999),
+			},
+		},
+		"error: use non gamm prefix": {
+			useNonGammPrefix: true,
+			expectedError: types.TokenConvertedLessThenDesiredStakeError{
+				ActualTotalAmtToStake:   osmomath.NewInt(8309),
+				ExpectedTotalAmtToStake: osmomath.NewInt(999999999),
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		s.Run(name, func() {
+			s.SetupTest()
+			s.Ctx = s.Ctx.WithBlockTime(defaultJoinTime)
+
+			// We bundle all migration setup into a single function to avoid repeating the same code for each test case.
+			_, _, _, _, sender, poolId, shareOut, _ := s.SetupUnbondConvertAndStakeTest(s.Ctx, false, false, false, true)
+
+			// testing params
+			valAddr := s.SetupValidator(stakingtypes.Bonded)
+			minAmtToStake := osmomath.ZeroInt()
+			if tc.useMinAmountToStake {
+				minAmtToStake = osmomath.NewInt(9999999999)
+			}
+			sharesToStake := shareOut
+			if tc.usePartialShares {
+				sharesToStake.Amount = sharesToStake.Amount.Quo(osmomath.NewInt(2))
+			}
+			if tc.useNonGammPrefix {
+				sharesToStake = sdk.NewInt64Coin("foo", 10)
+			}
+
+			balanceBeforeConvert := s.App.BankKeeper.GetBalance(s.Ctx, sender, shareOut.Denom)
+			s.Require().True(!balanceBeforeConvert.Amount.IsZero())
+
+			bondDenom := s.App.StakingKeeper.BondDenom(s.Ctx)
+			totalPoolLiquidityBeforeConvert, err := s.App.GAMMKeeper.GetTotalPoolLiquidity(s.Ctx, poolId)
+			s.Require().NoError(err)
+			bondDenomPoolAmtBeforeConvert := totalPoolLiquidityBeforeConvert.AmountOf(bondDenom)
+
+			var expectedBondDenomAmt osmomath.Int
+			// check expected bond denom pool liquidity amount after conversion(only for non error cases)
+			if tc.expectedError == nil {
+				expectedBondDenomAmt = s.getExpectedBondDenomPoolAmtAfterConvert(sender, poolId, sharesToStake)
+			}
+
+			// system under test
+			totalAmtConverted, err := s.App.SuperfluidKeeper.ConvertUnlockedToStake(s.Ctx, sender, valAddr.String(), sharesToStake, minAmtToStake)
+			if tc.expectedError != nil {
+				s.Require().Error(err)
+				return
+			}
+			s.Require().NoError(err)
+
+			// gamm check
+			totalPoolLiquidityAfterConvert, err := s.App.GAMMKeeper.GetTotalPoolLiquidity(s.Ctx, poolId)
+			s.Require().NoError(err)
+			// check that pool liquidity have reduced
+			bondDenomPoolAmtAfterConvert := totalPoolLiquidityAfterConvert.AmountOf(bondDenom)
+			s.Require().True(bondDenomPoolAmtAfterConvert.LT(bondDenomPoolAmtBeforeConvert))
+			s.Require().True(expectedBondDenomAmt.Equal(bondDenomPoolAmtAfterConvert))
+
+			// Staking & Delegation check
+			s.delegationCheck(sender, sdk.ValAddress{}, valAddr, totalAmtConverted)
+
+			// Bank check
+			balanceAfterConvertLockToStake := s.App.BankKeeper.GetBalance(s.Ctx, sender, shareOut.Denom)
+			if tc.usePartialShares {
+				s.Require().True(balanceAfterConvertLockToStake.Amount.Equal(sharesToStake.Amount))
+			} else {
+				s.Require().True(balanceAfterConvertLockToStake.IsZero())
 			}
 		})
 	}
+}
+
+func (s *KeeperTestSuite) TestConvertGammSharesToOsmoAndStake() {
+	type tc struct {
+		useInvalidValAddr        bool
+		useMinAmtToStake         bool
+		useValSetPrefSingleVal   bool
+		useValSetPrefMultipleVal bool
+		useSuperfluid            bool
+
+		expectedError string
+	}
+	testCases := map[string]tc{
+		"superfluid staked, provide validator address": {},
+		"use val set preference (single validator)": {
+			useValSetPrefSingleVal: true,
+		},
+		"multiple validator returned from valset pref": {
+			useValSetPrefMultipleVal: true,
+		},
+		"No validator returned from valset, fall back to superfluid delegation": {
+			useSuperfluid: true,
+		},
+		"error: invalid val address": {
+			useInvalidValAddr: true,
+			expectedError:     "invalid Bech32 prefix; expected osmovaloper, got osmo",
+		},
+		"error: min amount to stake exceeds actual amount staking": {
+			useMinAmtToStake: true,
+			expectedError:    "actual amount converted to stake (8309) is less then minimum amount expected to be staked (999999999)",
+		},
+	}
+
+	for name, tc := range testCases {
+		s.Run(name, func() {
+			s.SetupTest()
+			bondDenom := s.App.StakingKeeper.BondDenom(s.Ctx)
+
+			// use setup helper function to setup pool, fund account with gamm shares
+			// note that we're not creating any locks here.
+			_, _, _, _, sender, poolId, shareOut, _ := s.SetupUnbondConvertAndStakeTest(s.Ctx, false, false, false, true)
+			// exit pool
+			exitCoins, err := s.App.GAMMKeeper.ExitPool(s.Ctx, sender, poolId, shareOut.Amount, sdk.NewCoins())
+			s.Require().NoError(err)
+
+			// test params
+			originalSuperfluidValAddr := ""
+			valAddr := s.SetupValidator(stakingtypes.Bonded)
+			valAddrString := valAddr.String()
+			if tc.useInvalidValAddr {
+				valAddrString = s.TestAccs[0].String()
+			}
+
+			stakeCoin := sdk.NewInt64Coin(bondDenom, 100000)
+			if tc.useValSetPrefSingleVal || tc.useValSetPrefMultipleVal {
+				valAddrString = ""
+
+				s.FundAcc(sender, sdk.NewCoins(stakeCoin))
+				validator, found := s.App.StakingKeeper.GetValidator(s.Ctx, valAddr)
+				s.Require().True(found)
+
+				_, err = s.App.StakingKeeper.Delegate(s.Ctx, sender, stakeCoin.Amount, stakingtypes.Unbonded, validator, true)
+				s.Require().NoError(err)
+			}
+			if tc.useSuperfluid {
+				originalSuperfluidValAddr = valAddrString
+				valAddrString = ""
+			}
+
+			// if test case is setting multiple validator, stake one more time to a different validator
+			if tc.useValSetPrefMultipleVal {
+				valAddr2 := s.SetupValidator(stakingtypes.Bonded)
+				stakeCoin := sdk.NewInt64Coin(bondDenom, 100000)
+				s.FundAcc(sender, sdk.NewCoins(stakeCoin))
+				validator, found := s.App.StakingKeeper.GetValidator(s.Ctx, valAddr2)
+				s.Require().True(found)
+				_, err = s.App.StakingKeeper.Delegate(s.Ctx, sender, stakeCoin.Amount, stakingtypes.Unbonded, validator, true)
+				s.Require().NoError(err)
+			}
+
+			minAmtToStake := osmomath.ZeroInt()
+			if tc.useMinAmtToStake {
+				minAmtToStake = osmomath.NewInt(999999999)
+			}
+
+			// mark expected shares before swap
+			nonStakeDenomCoin := osmoutils.FilterDenoms(exitCoins, []string{"foo"})[0]
+			stakeDenomCoin := exitCoins.AmountOf(bondDenom)
+			// use cache context to get expected amount after swap without changing test state
+			cc, _ := s.Ctx.CacheContext()
+			tokenOutAmt, err := s.App.PoolManagerKeeper.SwapExactAmountIn(cc, sender, poolId, nonStakeDenomCoin, bondDenom, osmomath.ZeroInt())
+			s.Require().NoError(err)
+			expectedTotalAmtStaked := tokenOutAmt.Add(stakeDenomCoin)
+
+			// mark pool liquidity
+			pool, err := s.App.GAMMKeeper.GetPoolAndPoke(s.Ctx, poolId)
+			s.Require().NoError(err)
+			poolLiquidityBeforeSwap := pool.GetTotalPoolLiquidity(s.Ctx)
+			poolBeforeBondDenomAmt := poolLiquidityBeforeSwap.AmountOf("stake")
+			poolBeforeNonBondDenomAmt := poolLiquidityBeforeSwap.AmountOf("foo")
+
+			// system under test.
+			totalAmtConverted, err := s.App.SuperfluidKeeper.ConvertGammSharesToOsmoAndStake(s.Ctx, sender, valAddrString, poolId, exitCoins, minAmtToStake, originalSuperfluidValAddr)
+			if tc.expectedError != "" {
+				s.Require().Equal(err.Error(), tc.expectedError)
+				s.Require().Error(err)
+				return
+			}
+			s.Require().NoError(err)
+
+			// check that total Amount converted is equal to (swap result + original stake denom amount)
+			s.Require().True(expectedTotalAmtStaked.Equal(totalAmtConverted))
+
+			// check staking
+			if tc.useValSetPrefMultipleVal {
+				delegations := s.App.StakingKeeper.GetAllDelegatorDelegations(s.Ctx, sender)
+				// we used two validators
+				s.Require().True(len(delegations) == 2)
+
+				delegation0Shares := delegations[0].Shares
+				delegation1Shares := delegations[1].Shares
+
+				shareDiff := delegation0Shares.Sub(delegation1Shares).Abs()
+
+				// in practice, the share amount between two validators should be equal,
+				// but due to how we handle truncation and rounding in valset pref, we expect the diff to be under one dec.
+				s.Require().True(shareDiff.LTE(osmomath.OneDec()))
+			} else {
+				_, found := s.App.StakingKeeper.GetDelegation(s.Ctx, sender, valAddr)
+				s.Require().True(found)
+			}
+
+			// check pool
+			pool, err = s.App.GAMMKeeper.GetPoolAndPoke(s.Ctx, poolId)
+			s.Require().NoError(err)
+			poolLiquidityAfterSwap := pool.GetTotalPoolLiquidity(s.Ctx)
+			poolAfterBondDenomAmt := poolLiquidityAfterSwap.AmountOf("stake")
+			poolAfterNonBondDenomAmt := poolLiquidityAfterSwap.AmountOf("foo")
+			// we swapped from non-bond denom to bond denom,
+			// thus bond denom token in pool should have decreased, non bond denom token should have increased
+			s.Require().True(poolBeforeBondDenomAmt.GT(poolAfterBondDenomAmt))
+			s.Require().True(poolBeforeNonBondDenomAmt.LT(poolAfterNonBondDenomAmt))
+		})
+	}
+}
+
+func (s *KeeperTestSuite) TestDelegateBaseOnValsetPref() {
+	type tc struct {
+		useValAddr                   bool
+		haveExistingDelegation       bool
+		useOriginalSuperfluidValAddr bool
+
+		useInvalidValAddr bool
+
+		expectedError string
+	}
+	testCases := map[string]tc{
+		"provide val address": {
+			useValAddr: true,
+		},
+		"use valset pref delegation": {
+			haveExistingDelegation: true,
+		},
+		"using valset pref fail, fallback to using provided original superfluid address": {
+			useOriginalSuperfluidValAddr: true,
+		},
+		"error: using valset pref fail, no superfluid address provided": {
+			expectedError: "empty address string is not allowed",
+		},
+		"error: invalid val address provided": {
+			useInvalidValAddr: true,
+			expectedError:     "ecoding bech32 failed: invalid character not part of charset",
+		},
+	}
+
+	for name, tc := range testCases {
+		s.Run(name, func() {
+			s.Setup()
+			bondDenom := s.App.StakingKeeper.BondDenom(s.Ctx)
+			stakeAmount := osmomath.NewInt(100)
+
+			sender := s.TestAccs[0]
+			s.FundAcc(sender, sdk.NewCoins(sdk.NewCoin(bondDenom, stakeAmount)))
+
+			var valAddr string
+			if tc.useValAddr {
+				valAddr = s.SetupValidator(stakingtypes.Bonded).String()
+			}
+			if tc.useInvalidValAddr {
+				valAddr = s.SetupValidator(stakingtypes.Bonded).String() + "invalid"
+			}
+
+			var originalSuperfluidValAddr string
+			if tc.useOriginalSuperfluidValAddr {
+				originalSuperfluidValAddr = s.SetupValidator(stakingtypes.Bonded).String()
+			}
+
+			// by having existing delegation, we can test val set pref based delegation
+			var superfluidStakedValAddr sdk.ValAddress
+			if tc.haveExistingDelegation {
+				superfluidStakedValAddr = s.SetupValidator(stakingtypes.Bonded)
+
+				stakeCoin := sdk.NewInt64Coin(bondDenom, 100)
+				s.FundAcc(sender, sdk.NewCoins(stakeCoin))
+				validator, found := s.App.StakingKeeper.GetValidator(s.Ctx, superfluidStakedValAddr)
+				s.Require().True(found)
+				_, err := s.App.StakingKeeper.Delegate(s.Ctx, sender, stakeCoin.Amount, stakingtypes.Unbonded, validator, true)
+				s.Require().NoError(err)
+			}
+
+			// system under test
+			err := s.App.SuperfluidKeeper.DelegateBaseOnValsetPref(s.Ctx, sender, valAddr, originalSuperfluidValAddr, stakeAmount)
+			if tc.expectedError != "" {
+				s.Require().Error(err)
+				s.Require().ErrorContains(err, tc.expectedError)
+				return
+			}
+
+			s.Require().NoError(err)
+
+			// check delegation
+			if valAddr != "" || originalSuperfluidValAddr != "" {
+				// we want to check which ever param that was passed in with value
+				var delegatedAddr string
+				if valAddr == "" {
+					delegatedAddr = originalSuperfluidValAddr
+				} else {
+					delegatedAddr = valAddr
+				}
+
+				val, err := sdk.ValAddressFromBech32(delegatedAddr)
+				s.Require().NoError(err)
+				del, found := s.App.StakingKeeper.GetDelegation(s.Ctx, sender, val)
+				s.Require().True(found)
+				s.Require().True(del.Shares.RoundInt().Equal(stakeAmount))
+				return
+			}
+
+			// if we are testing valset-pref case(already deleated), check existing delegation address to see if delegation increased
+			if tc.haveExistingDelegation {
+				del, found := s.App.StakingKeeper.GetDelegation(s.Ctx, sender, superfluidStakedValAddr)
+				s.Require().True(found)
+				// should be 200(original delegated amount + newly staked amount)
+				s.Require().True(del.Shares.RoundInt().Equal(stakeAmount.Mul(osmomath.NewInt(2))))
+				return
+			}
+		})
+	}
+}
+
+func (s *KeeperTestSuite) SetupUnbondConvertAndStakeTest(ctx sdk.Context, superfluidDelegated, superfluidUndelegating, unlocking, noLock bool) (joinPoolAmt sdk.Coins, balancerIntermediaryAcc types.SuperfluidIntermediaryAccount, balancerLock *lockuptypes.PeriodLock, poolCreateAcc, poolJoinAcc sdk.AccAddress, balancerPooId uint64, balancerPoolShareOut sdk.Coin, valAddr sdk.ValAddress) { //nolint:revive // TODO: refactor this function
+	bankKeeper := s.App.BankKeeper
+	gammKeeper := s.App.GAMMKeeper
+	superfluidKeeper := s.App.SuperfluidKeeper
+	lockupKeeper := s.App.LockupKeeper
+	stakingKeeper := s.App.StakingKeeper
+	poolmanagerKeeper := s.App.PoolManagerKeeper
+
+	// Generate and fund two accounts.
+	// Account 1 will be the account that creates the pool.
+	// Account 2 will be the account that joins the pool.
+	delAddrs := CreateRandomAccounts(2)
+	poolCreateAcc = delAddrs[0]
+	poolJoinAcc = delAddrs[1]
+	for _, acc := range delAddrs {
+		err := testutil.FundAccount(bankKeeper, ctx, acc, defaultAcctFunds)
+		s.Require().NoError(err)
+	}
+
+	// Set up a single validator.
+	valAddr = s.SetupValidator(stakingtypes.Bonded)
+
+	// Create a balancer pool of "stake" and "foo".
+	msg := balancer.NewMsgCreateBalancerPool(poolCreateAcc, balancer.PoolParams{
+		SwapFee: osmomath.NewDecWithPrec(1, 2),
+		ExitFee: osmomath.NewDec(0),
+	}, defaultPoolAssets, defaultFutureGovernor)
+	balancerPooId, err := poolmanagerKeeper.CreatePool(ctx, msg)
+	s.Require().NoError(err)
+
+	// Join the balancer pool.
+	// Note the account balance before and after joining the pool.
+	balanceBeforeJoin := bankKeeper.GetAllBalances(ctx, poolJoinAcc)
+	_, _, err = gammKeeper.JoinPoolNoSwap(ctx, poolJoinAcc, balancerPooId, gammtypes.OneShare.MulRaw(50), sdk.Coins{})
+	s.Require().NoError(err)
+	balanceAfterJoin := bankKeeper.GetAllBalances(ctx, poolJoinAcc)
+
+	// The balancer join pool amount is the difference between the account balance before and after joining the pool.
+	joinPoolAmt, _ = balanceBeforeJoin.SafeSub(balanceAfterJoin...)
+
+	// Determine the balancer pool's LP token denomination.
+	balancerPoolDenom := gammtypes.GetPoolShareDenom(balancerPooId)
+
+	// Register the balancer pool's LP token as a superfluid asset
+	err = superfluidKeeper.AddNewSuperfluidAsset(ctx, types.SuperfluidAsset{
+		Denom:     balancerPoolDenom,
+		AssetType: types.SuperfluidAssetTypeLPShare,
+	})
+	s.Require().NoError(err)
+
+	// Note how much of the balancer pool's LP token the account that joined the pool has.
+	balancerPoolShareOut = bankKeeper.GetBalance(ctx, poolJoinAcc, balancerPoolDenom)
+
+	// The unbonding duration is the same as the staking module's unbonding duration.
+	unbondingDuration := stakingKeeper.GetParams(ctx).UnbondingTime
+
+	// Lock the LP tokens for the duration of the unbonding period.
+	originalGammLockId := uint64(0)
+	if !noLock {
+		originalGammLockId = s.LockTokens(poolJoinAcc, sdk.NewCoins(balancerPoolShareOut), unbondingDuration)
+	}
+
+	// Superfluid delegate the balancer lock if the test case requires it.
+	// Note the intermediary account that was created.
+	if superfluidDelegated {
+		err = superfluidKeeper.SuperfluidDelegate(ctx, poolJoinAcc.String(), originalGammLockId, valAddr.String())
+		s.Require().NoError(err)
+		intermediaryAccConnection := superfluidKeeper.GetLockIdIntermediaryAccountConnection(ctx, originalGammLockId)
+		balancerIntermediaryAcc = superfluidKeeper.GetIntermediaryAccount(ctx, intermediaryAccConnection)
+	}
+
+	// Superfluid undelegate the lock if the test case requires it.
+	if superfluidUndelegating {
+		err = superfluidKeeper.SuperfluidUndelegate(ctx, poolJoinAcc.String(), originalGammLockId)
+		s.Require().NoError(err)
+	}
+
+	// Unlock the balancer lock if the test case requires it.
+	if unlocking {
+		// If lock was superfluid staked, we can't unlock via `BeginUnlock`,
+		// we need to unlock lock via `SuperfluidUnbondLock`
+		if superfluidUndelegating {
+			err = superfluidKeeper.SuperfluidUnbondLock(ctx, originalGammLockId, poolJoinAcc.String())
+			s.Require().NoError(err)
+		} else {
+			lock, err := lockupKeeper.GetLockByID(ctx, originalGammLockId)
+			s.Require().NoError(err)
+			_, err = lockupKeeper.BeginUnlock(ctx, originalGammLockId, lock.Coins)
+			s.Require().NoError(err)
+		}
+	}
+
+	balancerLock = &lockuptypes.PeriodLock{}
+	if !noLock {
+		balancerLock, err = lockupKeeper.GetLockByID(ctx, originalGammLockId)
+		s.Require().NoError(err)
+	}
+
+	s.Require().NoError(err)
+	return joinPoolAmt, balancerIntermediaryAcc, balancerLock, poolCreateAcc, poolJoinAcc, balancerPooId, balancerPoolShareOut, valAddr
+}
+
+// delegationCheck checks staking related invariants of the test.
+// We check the following in this method:
+// - if superfluid staked previously, check if the original validator's delegation has been deleted.
+// - Check if the delegation of the new validator matches what's expected.
+func (s *KeeperTestSuite) delegationCheck(sender sdk.AccAddress, originalValAddr, newValAddr sdk.ValAddress, totalAmtConverted osmomath.Int) {
+	if !originalValAddr.Empty() {
+		// check if original superfluid staked lock's delegation is successfully deleted
+		_, found := s.App.StakingKeeper.GetDelegation(s.Ctx, sender, originalValAddr)
+		s.Require().False(found)
+	}
+	// check if delegation amount matches
+	delegation, found := s.App.StakingKeeper.GetDelegation(s.Ctx, sender, newValAddr)
+	s.Require().True(found)
+	s.Require().True(totalAmtConverted.ToLegacyDec().Equal(delegation.Shares))
+	s.Require().True(delegation.Shares.Equal(totalAmtConverted.ToLegacyDec()))
+}
+
+// lockCheck checks lock related invariants of the test.
+// We check the following in this method:
+// - check if old synth lock has been deleted (both staking & unstaking)
+// - check if old lock has been successfully deleted.
+func (s *KeeperTestSuite) lockCheck(lock lockuptypes.PeriodLock, valAddr string) {
+	// The synthetic lockup should be deleted.
+	_, err := s.App.LockupKeeper.GetSyntheticLockup(s.Ctx, lock.ID, keeper.StakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
+	s.Require().Error(err)
+
+	// intermediary account should have been deleted
+	_, err = s.App.LockupKeeper.GetSyntheticLockup(s.Ctx, lock.ID, keeper.UnstakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
+	s.Require().Error(err)
+
+	// Lock check
+	_, err = s.App.LockupKeeper.GetLockByID(s.Ctx, lock.ID)
+	s.Require().Error(err)
+}
+
+func (s *KeeperTestSuite) getExpectedBondDenomPoolAmtAfterConvert(sender sdk.AccAddress, poolId uint64, sharesToStake sdk.Coin) osmomath.Int {
+	bondDenom := s.App.StakingKeeper.BondDenom(s.Ctx)
+	cc, _ := s.Ctx.CacheContext()
+	exitCoins, err := s.App.GAMMKeeper.ExitPool(cc, sender, poolId, sharesToStake.Amount, sdk.NewCoins())
+	s.Require().NoError(err)
+
+	var nonOsmoCoin sdk.Coin
+	for _, exitCoin := range exitCoins {
+		// if coin is not uosmo, add it to non-osmo Coins
+		if exitCoin.Denom != bondDenom {
+			nonOsmoCoin = exitCoin
+		}
+	}
+	_, err = s.App.PoolManagerKeeper.SwapExactAmountIn(cc, sender, poolId, nonOsmoCoin, bondDenom, osmomath.ZeroInt())
+	s.Require().NoError(err)
+	expectedLiquidity, err := s.App.GAMMKeeper.GetTotalPoolLiquidity(cc, poolId)
+	s.Require().NoError(err)
+
+	return expectedLiquidity.AmountOf(bondDenom)
 }
 
 // type superfluidRedelegation struct {

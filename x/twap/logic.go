@@ -8,7 +8,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/osmosis-labs/osmosis/osmomath"
-	"github.com/osmosis-labs/osmosis/v16/x/twap/types"
+	"github.com/osmosis-labs/osmosis/v24/x/twap/types"
 )
 
 func newTwapRecord(k types.PoolManagerInterface, ctx sdk.Context, poolId uint64, denom0, denom1 string) (types.TwapRecord, error) {
@@ -26,9 +26,9 @@ func newTwapRecord(k types.PoolManagerInterface, ctx sdk.Context, poolId uint64,
 		Time:                        ctx.BlockTime(),
 		P0LastSpotPrice:             sp0,
 		P1LastSpotPrice:             sp1,
-		P0ArithmeticTwapAccumulator: sdk.ZeroDec(),
-		P1ArithmeticTwapAccumulator: sdk.ZeroDec(),
-		GeometricTwapAccumulator:    sdk.ZeroDec(),
+		P0ArithmeticTwapAccumulator: osmomath.ZeroDec(),
+		P1ArithmeticTwapAccumulator: osmomath.ZeroDec(),
+		GeometricTwapAccumulator:    osmomath.ZeroDec(),
 		LastErrorTime:               lastErrorTime,
 	}, nil
 }
@@ -44,31 +44,35 @@ func getSpotPrices(
 	poolId uint64,
 	denom0, denom1 string,
 	previousErrorTime time.Time,
-) (sp0 sdk.Dec, sp1 sdk.Dec, latestErrTime time.Time) {
+) (sp0 osmomath.Dec, sp1 osmomath.Dec, latestErrTime time.Time) {
 	latestErrTime = previousErrorTime
 	// sp0 = denom0 quote, denom1 base.
-	sp0, err0 := k.RouteCalculateSpotPrice(ctx, poolId, denom0, denom1)
+	sp0BigDec, err0 := k.RouteCalculateSpotPrice(ctx, poolId, denom0, denom1)
 	// sp1 = denom0 base, denom1 quote.
-	sp1, err1 := k.RouteCalculateSpotPrice(ctx, poolId, denom1, denom0)
+	sp1BigDec, err1 := k.RouteCalculateSpotPrice(ctx, poolId, denom1, denom0)
+
 	if err0 != nil || err1 != nil {
 		latestErrTime = ctx.BlockTime()
 		// In the event of an error, we just sanity replace empty values with zero values
 		// so that the numbers can be still be calculated within TWAPs over error values
 		// TODO: Should we be using the last spot price?
-		if (sp0 == sdk.Dec{}) {
-			sp0 = sdk.ZeroDec()
+		if (sp0BigDec == osmomath.BigDec{}) {
+			sp0BigDec = osmomath.ZeroBigDec()
 		}
-		if (sp1 == sdk.Dec{}) {
-			sp1 = sdk.ZeroDec()
+		if (sp1BigDec == osmomath.BigDec{}) {
+			sp1BigDec = osmomath.ZeroBigDec()
 		}
 	}
-	if sp0.GT(types.MaxSpotPrice) {
-		sp0, latestErrTime = types.MaxSpotPrice, ctx.BlockTime()
+	if sp0BigDec.GT(types.MaxSpotPriceBigDec) {
+		sp0BigDec, latestErrTime = types.MaxSpotPriceBigDec, ctx.BlockTime()
 	}
-	if sp1.GT(types.MaxSpotPrice) {
-		sp1, latestErrTime = types.MaxSpotPrice, ctx.BlockTime()
+	if sp1BigDec.GT(types.MaxSpotPriceBigDec) {
+		sp1BigDec, latestErrTime = types.MaxSpotPriceBigDec, ctx.BlockTime()
 	}
-	return sp0, sp1, latestErrTime
+
+	// Note: truncation is appropriate since we don not support greater precision by design.
+	// If support for pools with outlier spot prices is needed in the future, then this should be revisited.
+	return sp0BigDec.Dec(), sp1BigDec.Dec(), latestErrTime
 }
 
 // mustTrackCreatedPool is a wrapper around afterCreatePool that panics on error.
@@ -111,6 +115,14 @@ func (k Keeper) EndBlock(ctx sdk.Context) {
 					" Skipping record update. Underlying err: %w", id, err).Error())
 		}
 	}
+
+	state := k.GetPruningState(ctx)
+	if state.IsPruning {
+		err := k.pruneRecordsBeforeTimeButNewest(ctx, state)
+		if err != nil {
+			ctx.Logger().Error("Error pruning old twaps at the end block", err)
+		}
+	}
 }
 
 // updateRecords updates all records for a given pool id.
@@ -123,13 +135,13 @@ func (k Keeper) EndBlock(ctx sdk.Context) {
 //   - the number of records does not match expected relative to the
 //     number of denoms in the pool.
 func (k Keeper) updateRecords(ctx sdk.Context, poolId uint64) error {
-	// Will only err if pool doesn't have most recent entry set
-	records, err := k.GetAllMostRecentRecordsForPool(ctx, poolId)
+	denoms, err := k.poolmanagerKeeper.RouteGetPoolDenoms(ctx, poolId)
 	if err != nil {
 		return err
 	}
 
-	denoms, err := k.poolmanagerKeeper.RouteGetPoolDenoms(ctx, poolId)
+	// Will only err if pool doesn't have most recent entry set
+	records, err := k.GetAllMostRecentRecordsForPoolWithDenoms(ctx, poolId, denoms)
 	if err != nil {
 		return err
 	}
@@ -161,7 +173,7 @@ func (k Keeper) updateRecord(ctx sdk.Context, record types.TwapRecord) (types.Tw
 	// then the TwapAccumulator variables are zero.
 
 	// Handle record after creating pool
-	// Incase record height should equal to ctx height
+	// In case record height should equal to ctx height
 	// But ArithmeticTwapAccumulators should be zero
 	if (record.Height == ctx.BlockHeight() || record.Time.Equal(ctx.BlockTime())) &&
 		!record.P1ArithmeticTwapAccumulator.IsZero() &&
@@ -191,18 +203,6 @@ func (k Keeper) updateRecord(ctx sdk.Context, record types.TwapRecord) (types.Tw
 	return newRecord, nil
 }
 
-// pruneRecords prunes twap records that happened earlier than recordHistoryKeepPeriod
-// before current block time while preserving the most recent record before the threshold.
-// Such record is preserved for each pool.
-// See TWAP keeper's `pruneRecordsBeforeTimeButNewest(...)` for more details about the reasons for
-// keeping this record.
-func (k Keeper) pruneRecords(ctx sdk.Context) error {
-	recordHistoryKeepPeriod := k.RecordHistoryKeepPeriod(ctx)
-
-	lastKeptTime := ctx.BlockTime().Add(-recordHistoryKeepPeriod)
-	return k.pruneRecordsBeforeTimeButNewest(ctx, lastKeptTime)
-}
-
 // recordWithUpdatedAccumulators returns a record, with updated accumulator values and time for provided newTime,
 // otherwise referred to as "interpolating the record" to the target time.
 // This does not mutate the passed in record.
@@ -221,10 +221,10 @@ func recordWithUpdatedAccumulators(record types.TwapRecord, newTime time.Time) t
 	// thus it is treated as the effective spot price until the new time.
 	// (As there was no change until at or after this time)
 	p0NewAccum := types.SpotPriceMulDuration(record.P0LastSpotPrice, timeDelta)
-	newRecord.P0ArithmeticTwapAccumulator = newRecord.P0ArithmeticTwapAccumulator.Add(p0NewAccum)
+	newRecord.P0ArithmeticTwapAccumulator = p0NewAccum.AddMut(newRecord.P0ArithmeticTwapAccumulator)
 
 	p1NewAccum := types.SpotPriceMulDuration(record.P1LastSpotPrice, timeDelta)
-	newRecord.P1ArithmeticTwapAccumulator = newRecord.P1ArithmeticTwapAccumulator.Add(p1NewAccum)
+	newRecord.P1ArithmeticTwapAccumulator = p1NewAccum.AddMut(newRecord.P1ArithmeticTwapAccumulator)
 
 	// If the last spot price is zero, then the logarithm is undefined.
 	// As a result, we cannot update the geometric accumulator.
@@ -234,11 +234,18 @@ func recordWithUpdatedAccumulators(record types.TwapRecord, newTime time.Time) t
 		return newRecord
 	}
 
+	// NOTE: An edge case exists here. If a pool is drained of all it's liquidity, and then the pool's
+	// spot price is set to exactly one and the GeometricTWAP is queried, the the result will be zero.
+	// This is because the P0LastSpotPrice is one, which makes log_{2}{P_0} = 0, and thus the geometric
+	// accumulator is the same as the time of pool drain.
+
+	// This is a edge case almost certainly to never be hit in prod, but its good to be aware of.
+
 	// logP0SpotPrice = log_{2}{P_0}
 	logP0SpotPrice := twapLog(record.P0LastSpotPrice)
 	// p0NewGeomAccum = log_{2}{P_0} * timeDelta
 	p0NewGeomAccum := types.SpotPriceMulDuration(logP0SpotPrice, timeDelta)
-	newRecord.GeometricTwapAccumulator = newRecord.GeometricTwapAccumulator.Add(p0NewGeomAccum)
+	newRecord.GeometricTwapAccumulator = p0NewGeomAccum.AddMut(newRecord.GeometricTwapAccumulator)
 
 	return newRecord
 }
@@ -278,7 +285,7 @@ func (k Keeper) getMostRecentRecord(ctx sdk.Context, poolId uint64, assetA, asse
 // if (endRecord.Time == startRecord.Time) returns endRecord.LastSpotPrice
 // else returns
 // (endRecord.Accumulator - startRecord.Accumulator) / (endRecord.Time - startRecord.Time)
-func computeTwap(startRecord types.TwapRecord, endRecord types.TwapRecord, quoteAsset string, strategy twapStrategy) (sdk.Dec, error) {
+func computeTwap(startRecord types.TwapRecord, endRecord types.TwapRecord, quoteAsset string, strategy twapStrategy) (osmomath.Dec, error) {
 	// see if we need to return an error, due to spot price issues
 	var err error = nil
 	if endRecord.LastErrorTime.After(startRecord.Time) ||
@@ -300,10 +307,10 @@ func computeTwap(startRecord types.TwapRecord, endRecord types.TwapRecord, quote
 
 // twapLog returns the logarithm of the given spot price, base 2.
 // Panics if zero is given.
-func twapLog(price sdk.Dec) sdk.Dec {
+func twapLog(price osmomath.Dec) osmomath.Dec {
 	if price.IsZero() {
 		panic("twap: cannot take logarithm of zero")
 	}
 
-	return osmomath.BigDecFromSDKDec(price).LogBase2().SDKDec()
+	return osmomath.BigDecFromDec(price).LogBase2().Dec()
 }

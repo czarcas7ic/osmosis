@@ -8,7 +8,7 @@ import (
 
 	// "github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
-	"github.com/osmosis-labs/osmosis/v16/x/tokenfactory/types"
+	"github.com/osmosis-labs/osmosis/v24/x/tokenfactory/types"
 )
 
 // GetTxCmd returns the transaction commands for this module
@@ -28,28 +28,28 @@ func GetTxCmd() *cobra.Command {
 
 func NewCreateDenomCmd() *cobra.Command {
 	return osmocli.BuildTxCli[*types.MsgCreateDenom](&osmocli.TxCliDesc{
-		Use:   "create-denom [subdenom] [flags]",
+		Use:   "create-denom",
 		Short: "create a new denom from an account. (Costs osmo though!)",
 	})
 }
 
 func NewMintCmd() *cobra.Command {
 	return osmocli.BuildTxCli[*types.MsgMint](&osmocli.TxCliDesc{
-		Use:   "mint [amount] [flags]",
+		Use:   "mint",
 		Short: "Mint a denom to an address. Must have admin authority to do so.",
 	})
 }
 
 func NewBurnCmd() *cobra.Command {
 	return osmocli.BuildTxCli[*types.MsgBurn](&osmocli.TxCliDesc{
-		Use:   "burn [amount] [flags]",
+		Use:   "burn",
 		Short: "Burn tokens from an address. Must have admin authority to do so.",
 	})
 }
 
 func NewChangeAdminCmd() *cobra.Command {
 	return osmocli.BuildTxCli[*types.MsgChangeAdmin](&osmocli.TxCliDesc{
-		Use:   "change-admin [denom] [new-admin-address] [flags]",
+		Use:   "change-admin",
 		Short: "Changes the admin address for a factory-created denom. Must have admin authority to do so.",
 	})
 }
@@ -66,7 +66,11 @@ func NewSetBeforeSendHookCmd() *cobra.Command {
 				return err
 			}
 
-			txf := tx.NewFactoryCLI(clientCtx, cmd.Flags()).WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
+			txf, err := tx.NewFactoryCLI(clientCtx, cmd.Flags())
+			if err != nil {
+				return err
+			}
+			txf = txf.WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
 
 			msg := types.NewMsgSetBeforeSendHook(
 				clientCtx.GetFromAddress().String(),

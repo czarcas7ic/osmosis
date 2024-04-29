@@ -9,34 +9,40 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distributiontypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	ibctransfertypes "github.com/cosmos/ibc-go/v4/modules/apps/transfer/types"
+	ibctransfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 
-	gammv2types "github.com/osmosis-labs/osmosis/v16/x/gamm/v2types"
+	govtypesv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 
-	concentratedliquidityquery "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/client/queryproto"
-	downtimequerytypes "github.com/osmosis-labs/osmosis/v16/x/downtime-detector/client/queryproto"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	incentivestypes "github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	minttypes "github.com/osmosis-labs/osmosis/v16/x/mint/types"
-	poolincentivestypes "github.com/osmosis-labs/osmosis/v16/x/pool-incentives/types"
-	poolmanagerqueryproto "github.com/osmosis-labs/osmosis/v16/x/poolmanager/client/queryproto"
-	superfluidtypes "github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
-	tokenfactorytypes "github.com/osmosis-labs/osmosis/v16/x/tokenfactory/types"
-	twapquerytypes "github.com/osmosis-labs/osmosis/v16/x/twap/client/queryproto"
-	txfeestypes "github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	gammv2types "github.com/osmosis-labs/osmosis/v24/x/gamm/v2types"
+
+	concentratedliquidityquery "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/client/queryproto"
+	cosmwasmpooltypes "github.com/osmosis-labs/osmosis/v24/x/cosmwasmpool/client/queryproto"
+	downtimequerytypes "github.com/osmosis-labs/osmosis/v24/x/downtime-detector/client/queryproto"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	incentivestypes "github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	minttypes "github.com/osmosis-labs/osmosis/v24/x/mint/types"
+	poolincentivestypes "github.com/osmosis-labs/osmosis/v24/x/pool-incentives/types"
+	poolmanagerqueryproto "github.com/osmosis-labs/osmosis/v24/x/poolmanager/client/queryproto"
+	smartaccounttypes "github.com/osmosis-labs/osmosis/v24/x/smart-account/types"
+	superfluidtypes "github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
+	tokenfactorytypes "github.com/osmosis-labs/osmosis/v24/x/tokenfactory/types"
+	twapquerytypes "github.com/osmosis-labs/osmosis/v24/x/twap/client/queryproto"
+	txfeestypes "github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 	epochtypes "github.com/osmosis-labs/osmosis/x/epochs/types"
 )
 
-// stargateWhitelist keeps whitelist and its deterministic
+// stargateResponsePools keeps whitelist and its deterministic
 // response binding for stargate queries.
+// CONTRACT: since results of queries go into blocks, queries being added here should always be
+// deterministic or can cause non-determinism in the state machine.
 //
-// The query can be multi-thread, so we have to use
-// thread safe sync.Map.
-var stargateWhitelist sync.Map
+// The query is multi-threaded so we're using a sync.Pool
+// to manage the allocation and de-allocation of newly created
+// pb objects.
+var stargateResponsePools = make(map[string]*sync.Pool)
 
 // Note: When adding a migration here, we should also add it to the Async ICQ params in the upgrade.
 // In the future we may want to find a better way to keep these in sync
@@ -51,10 +57,12 @@ func init() {
 	// auth
 	setWhitelistedQuery("/cosmos.auth.v1beta1.Query/Account", &authtypes.QueryAccountResponse{})
 	setWhitelistedQuery("/cosmos.auth.v1beta1.Query/Params", &authtypes.QueryParamsResponse{})
+	setWhitelistedQuery("/cosmos.auth.v1beta1.Query/ModuleAccounts", &authtypes.QueryModuleAccountsResponse{})
 
 	// bank
 	setWhitelistedQuery("/cosmos.bank.v1beta1.Query/Balance", &banktypes.QueryBalanceResponse{})
-	setWhitelistedQuery("/cosmos.bank.v1beta1.Query/DenomMetadata", &banktypes.QueryDenomsMetadataResponse{})
+	setWhitelistedQuery("/cosmos.bank.v1beta1.Query/DenomMetadata", &banktypes.QueryDenomMetadataResponse{})
+	setWhitelistedQuery("/cosmos.bank.v1beta1.Query/DenomsMetadata", &banktypes.QueryDenomsMetadataResponse{})
 	setWhitelistedQuery("/cosmos.bank.v1beta1.Query/Params", &banktypes.QueryParamsResponse{})
 	setWhitelistedQuery("/cosmos.bank.v1beta1.Query/SupplyOf", &banktypes.QuerySupplyOfResponse{})
 
@@ -64,9 +72,9 @@ func init() {
 	setWhitelistedQuery("/cosmos.distribution.v1beta1.Query/ValidatorCommission", &distributiontypes.QueryValidatorCommissionResponse{})
 
 	// gov
-	setWhitelistedQuery("/cosmos.gov.v1beta1.Query/Deposit", &govtypes.QueryDepositResponse{})
-	setWhitelistedQuery("/cosmos.gov.v1beta1.Query/Params", &govtypes.QueryParamsResponse{})
-	setWhitelistedQuery("/cosmos.gov.v1beta1.Query/Vote", &govtypes.QueryVoteResponse{})
+	setWhitelistedQuery("/cosmos.gov.v1beta1.Query/Deposit", &govtypesv1.QueryDepositResponse{})
+	setWhitelistedQuery("/cosmos.gov.v1beta1.Query/Params", &govtypesv1.QueryParamsResponse{})
+	setWhitelistedQuery("/cosmos.gov.v1beta1.Query/Vote", &govtypesv1.QueryVoteResponse{})
 
 	// slashing
 	setWhitelistedQuery("/cosmos.slashing.v1beta1.Query/Params", &slashingtypes.QueryParamsResponse{})
@@ -78,33 +86,40 @@ func init() {
 	setWhitelistedQuery("/cosmos.staking.v1beta1.Query/Validator", &stakingtypes.QueryValidatorResponse{})
 
 	// osmosis queries
+	// cosmwasm pool
+	setWhitelistedQuery("/osmosis.cosmwasmpool.v1beta1.Query/Pools", &cosmwasmpooltypes.PoolsResponse{})
+	setWhitelistedQuery("/osmosis.cosmwasmpool.v1beta1.Query/Params", &cosmwasmpooltypes.ParamsResponse{})
+	setWhitelistedQuery("/osmosis.cosmwasmpool.v1beta1.Query/ContractInfoByPoolId", &cosmwasmpooltypes.ContractInfoByPoolIdResponse{})
 
 	// epochs
 	setWhitelistedQuery("/osmosis.epochs.v1beta1.Query/EpochInfos", &epochtypes.QueryEpochsInfoResponse{})
 	setWhitelistedQuery("/osmosis.epochs.v1beta1.Query/CurrentEpoch", &epochtypes.QueryCurrentEpochResponse{})
 
 	// gamm
-	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/NumPools", &gammtypes.QueryNumPoolsResponse{})
+	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/NumPools", &gammtypes.QueryNumPoolsResponse{}) // ==> use x/poolmanager
 	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/TotalLiquidity", &gammtypes.QueryTotalLiquidityResponse{})
-	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/Pool", &gammtypes.QueryPoolResponse{})
+	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/Pool", &gammtypes.QueryPoolResponse{}) // ==> use x/poolmanager
 	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/PoolParams", &gammtypes.QueryPoolParamsResponse{})
-	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/TotalPoolLiquidity", &gammtypes.QueryTotalPoolLiquidityResponse{})
+	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/TotalPoolLiquidity", &gammtypes.QueryTotalPoolLiquidityResponse{}) // ==> use x/poolmanager
 	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/TotalShares", &gammtypes.QueryTotalSharesResponse{})
 	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/CalcJoinPoolShares", &gammtypes.QueryCalcJoinPoolSharesResponse{})
 	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/CalcExitPoolCoinsFromShares", &gammtypes.QueryCalcExitPoolCoinsFromSharesResponse{})
 	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/CalcJoinPoolNoSwapShares", &gammtypes.QueryCalcJoinPoolNoSwapSharesResponse{})
 	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/PoolType", &gammtypes.QueryPoolTypeResponse{})
 	setWhitelistedQuery("/osmosis.gamm.v2.Query/SpotPrice", &gammv2types.QuerySpotPriceResponse{})
-	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/EstimateSwapExactAmountIn", &gammtypes.QuerySwapExactAmountInResponse{})
-	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/EstimateSwapExactAmountOut", &gammtypes.QuerySwapExactAmountOutResponse{})
+	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/EstimateSwapExactAmountIn", &gammtypes.QuerySwapExactAmountInResponse{})   // ==> use x/poolmanager
+	setWhitelistedQuery("/osmosis.gamm.v1beta1.Query/EstimateSwapExactAmountOut", &gammtypes.QuerySwapExactAmountOutResponse{}) // ==> use x/poolmanager
 
 	// incentives
 	setWhitelistedQuery("/osmosis.incentives.Query/ModuleToDistributeCoins", &incentivestypes.ModuleToDistributeCoinsResponse{})
 	setWhitelistedQuery("/osmosis.incentives.Query/LockableDurations", &incentivestypes.QueryLockableDurationsResponse{})
+	setWhitelistedQuery("/osmosis.incentives.Query/GaugeByID", &incentivestypes.GaugeByIDResponse{})
 
 	// lockup
 	setWhitelistedQuery("/osmosis.lockup.Query/ModuleBalance", &lockuptypes.ModuleBalanceResponse{})
 	setWhitelistedQuery("/osmosis.lockup.Query/ModuleLockedAmount", &lockuptypes.ModuleLockedAmountResponse{})
+	// Warning: it iterates over every single lock account has, which means this query can have unbounded gas
+	setWhitelistedQuery("/osmosis.lockup.Query/AccountLockedCoins", &lockuptypes.AccountLockedCoinsResponse{})
 	setWhitelistedQuery("/osmosis.lockup.Query/AccountUnlockableCoins", &lockuptypes.AccountUnlockableCoinsResponse{})
 	setWhitelistedQuery("/osmosis.lockup.Query/AccountUnlockingCoins", &lockuptypes.AccountUnlockingCoinsResponse{})
 	setWhitelistedQuery("/osmosis.lockup.Query/LockedDenom", &lockuptypes.LockedDenomResponse{})
@@ -125,6 +140,10 @@ func init() {
 	setWhitelistedQuery("/osmosis.superfluid.Query/AllAssets", &superfluidtypes.AllAssetsResponse{})
 	setWhitelistedQuery("/osmosis.superfluid.Query/AssetMultiplier", &superfluidtypes.AssetMultiplierResponse{})
 
+	// smartaccount
+	setWhitelistedQuery("/osmosis.smartaccount.v1beta1.Query/GetAuthenticator", &smartaccounttypes.GetAuthenticatorResponse{})
+	setWhitelistedQuery("/osmosis.smartaccount.v1beta1.Query/GetAuthenticators", &smartaccounttypes.GetAuthenticatorsResponse{})
+
 	// poolmanager
 	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/NumPools", &poolmanagerqueryproto.NumPoolsResponse{})
 	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/EstimateSwapExactAmountIn", &poolmanagerqueryproto.EstimateSwapExactAmountInResponse{})
@@ -133,6 +152,10 @@ func init() {
 	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/EstimateSinglePoolSwapExactAmountOut", &poolmanagerqueryproto.EstimateSwapExactAmountOutResponse{})
 	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/Pool", &poolmanagerqueryproto.PoolResponse{})
 	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/SpotPrice", &poolmanagerqueryproto.SpotPriceResponse{})
+	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/TotalPoolLiquidity", &poolmanagerqueryproto.TotalPoolLiquidityResponse{})
+	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/Params", &poolmanagerqueryproto.ParamsResponse{})
+	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/TradingPairTakerFee", &poolmanagerqueryproto.TradingPairTakerFeeResponse{})
+	setWhitelistedQuery("/osmosis.poolmanager.v1beta1.Query/EstimateTradeBasedOnPriceImpact", &poolmanagerqueryproto.EstimateTradeBasedOnPriceImpactResponse{})
 
 	// txfees
 	setWhitelistedQuery("/osmosis.txfees.v1beta1.Query/FeeTokens", &txfeestypes.QueryFeeTokensResponse{})
@@ -156,10 +179,8 @@ func init() {
 	setWhitelistedQuery("/osmosis.downtimedetector.v1beta1.Query/RecoveredSinceDowntimeOfLength", &downtimequerytypes.RecoveredSinceDowntimeOfLengthResponse{})
 
 	// concentrated-liquidity
-	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/Pools", &concentratedliquidityquery.PoolsResponse{})
 	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/UserPositions", &concentratedliquidityquery.UserPositionsResponse{})
 	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/LiquidityPerTickRange", &concentratedliquidityquery.LiquidityPerTickRangeResponse{})
-	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/LiquidityNetInDirection", &concentratedliquidityquery.LiquidityNetInDirectionResponse{})
 	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/ClaimableSpreadRewards", &concentratedliquidityquery.ClaimableSpreadRewardsResponse{})
 	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/ClaimableIncentives", &concentratedliquidityquery.ClaimableIncentivesResponse{})
 	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/PositionById", &concentratedliquidityquery.PositionByIdResponse{})
@@ -170,34 +191,57 @@ func init() {
 	setWhitelistedQuery("/osmosis.concentratedliquidity.v1beta1.Query/CFMMPoolIdLinkFromConcentratedPoolId", &concentratedliquidityquery.CFMMPoolIdLinkFromConcentratedPoolIdResponse{})
 }
 
-// GetWhitelistedQuery returns the whitelisted query at the provided path.
+// IsWhitelistedQuery returns if the query is not whitelisted.
+func IsWhitelistedQuery(queryPath string) error {
+	_, isWhitelisted := stargateResponsePools[queryPath]
+	if !isWhitelisted {
+		return wasmvmtypes.UnsupportedRequest{Kind: fmt.Sprintf("'%s' path is not allowed from the contract", queryPath)}
+	}
+	return nil
+}
+
+// getWhitelistedQuery returns the whitelisted query at the provided path.
 // If the query does not exist, or it was setup wrong by the chain, this returns an error.
-func GetWhitelistedQuery(queryPath string) (codec.ProtoMarshaler, error) {
-	protoResponseAny, isWhitelisted := stargateWhitelist.Load(queryPath)
+// CONTRACT: must call returnStargateResponseToPool in order to avoid pointless allocs.
+func getWhitelistedQuery(queryPath string) (codec.ProtoMarshaler, error) {
+	protoResponseAny, isWhitelisted := stargateResponsePools[queryPath]
 	if !isWhitelisted {
 		return nil, wasmvmtypes.UnsupportedRequest{Kind: fmt.Sprintf("'%s' path is not allowed from the contract", queryPath)}
 	}
-	protoResponseType, ok := protoResponseAny.(codec.ProtoMarshaler)
+	protoMarshaler, ok := protoResponseAny.Get().(codec.ProtoMarshaler)
 	if !ok {
-		return nil, wasmvmtypes.Unknown{}
+		return nil, fmt.Errorf("failed to assert type to codec.ProtoMarshaler")
 	}
-	return protoResponseType, nil
+	return protoMarshaler, nil
 }
 
-func setWhitelistedQuery(queryPath string, protoType codec.ProtoMarshaler) {
-	stargateWhitelist.Store(queryPath, protoType)
+type protoTypeG[T any] interface {
+	*T
+	codec.ProtoMarshaler
+}
+
+// setWhitelistedQuery sets the whitelisted query at the provided path.
+// This method also creates a sync.Pool for the provided protoMarshaler.
+// We use generics so we can properly instantiate an object that the
+// queryPath expects as a response.
+func setWhitelistedQuery[T any, PT protoTypeG[T]](queryPath string, _ PT) {
+	stargateResponsePools[queryPath] = &sync.Pool{
+		New: func() any {
+			return PT(new(T))
+		},
+	}
+}
+
+// returnStargateResponseToPool returns the provided protoMarshaler to the appropriate pool based on it's query path.
+func returnStargateResponseToPool(queryPath string, pb codec.ProtoMarshaler) {
+	stargateResponsePools[queryPath].Put(pb)
 }
 
 func GetStargateWhitelistedPaths() (keys []string) {
 	// Iterate over the map and collect the keys
-	stargateWhitelist.Range(func(key, value interface{}) bool {
-		keyStr, ok := key.(string)
-		if !ok {
-			panic("key is not a string")
-		}
-		keys = append(keys, keyStr)
-		return true
-	})
-
+	keys = make([]string, 0, len(stargateResponsePools))
+	for k := range stargateResponsePools {
+		keys = append(keys, k)
+	}
 	return keys
 }

@@ -179,6 +179,222 @@ paths:
                           format: byte
       tags:
         - Query
+  /osmosis/gamm/v1beta1/cfmm_concentrated_pool_links:
+    get:
+      summary: |-
+        CFMMConcentratedPoolLinks returns migration links between CFMM and
+        Concentrated pools.
+      operationId: CFMMConcentratedPoolLinks
+      responses:
+        "200":
+          description: A successful response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  migration_records:
+                    type: object
+                    properties:
+                      balancer_to_concentrated_pool_links:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            balancer_pool_id:
+                              type: string
+                              format: uint64
+                            cl_pool_id:
+                              type: string
+                              format: uint64
+                          description: >-
+                            BalancerToConcentratedPoolLink defines a single link between a single
+
+                            balancer pool and a single concentrated liquidity pool. This link is used to
+
+                            allow a balancer pool to migrate to a single canonical full range
+
+                            concentrated liquidity pool position
+
+                            A balancer pool can be linked to a maximum of one cl pool, and a cl pool can
+
+                            be linked to a maximum of one balancer pool.
+                    title: >-
+                      MigrationRecords contains all the links between balancer and concentrated
+
+                      pools
+        default:
+          description: An unexpected error response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: integer
+                    format: int32
+                  message:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type_url:
+                          type: string
+                          description: >-
+                            A URL/resource name that uniquely identifies the type of the serialized
+
+                            protocol buffer message. This string must contain at least
+
+                            one "/" character. The last segment of the URL's path must represent
+
+                            the fully qualified name of the type (as in
+
+                            `path/google.protobuf.Duration`). The name should be in a canonical form
+
+                            (e.g., leading "." is not accepted).
+
+
+                            In practice, teams usually precompile into the binary all types that they
+
+                            expect it to use in the context of Any. However, for URLs which use the
+
+                            scheme `http`, `https`, or no scheme, one can optionally set up a type
+
+                            server that maps type URLs to message definitions as follows:
+
+
+                            * If no scheme is provided, `https` is assumed.
+
+                            * An HTTP GET on the URL must yield a [google.protobuf.Type][]
+
+                              value in binary format, or produce an error.
+                            * Applications are allowed to cache lookup results based on the
+
+                              URL, or have them precompiled into a binary to avoid any
+                              lookup. Therefore, binary compatibility needs to be preserved
+                              on changes to types. (Use versioned type names to manage
+                              breaking changes.)
+
+                            Note: this functionality is not currently available in the official
+
+                            protobuf release, and it is not used for type URLs beginning with
+
+                            type.googleapis.com.
+
+
+                            Schemes other than `http`, `https` (or the empty scheme) might be
+
+                            used with implementation specific semantics.
+                        value:
+                          type: string
+                          format: byte
+                          description: Must be a valid serialized protocol buffer of the above specified type.
+                      description: >-
+                        `Any` contains an arbitrary serialized protocol buffer message along with a
+
+                        URL that describes the type of the serialized message.
+
+
+                        Protobuf library provides support to pack/unpack Any values in the form
+
+                        of utility functions or additional generated methods of the Any type.
+
+
+                        Example 1: Pack and unpack a message in C++.
+
+
+                            Foo foo = ...;
+                            Any any;
+                            any.PackFrom(foo);
+                            ...
+                            if (any.UnpackTo(&foo)) {
+                              ...
+                            }
+
+                        Example 2: Pack and unpack a message in Java.
+
+
+                            Foo foo = ...;
+                            Any any = Any.pack(foo);
+                            ...
+                            if (any.is(Foo.class)) {
+                              foo = any.unpack(Foo.class);
+                            }
+
+                         Example 3: Pack and unpack a message in Python.
+
+                            foo = Foo(...)
+                            any = Any()
+                            any.Pack(foo)
+                            ...
+                            if any.Is(Foo.DESCRIPTOR):
+                              any.Unpack(foo)
+                              ...
+
+                         Example 4: Pack and unpack a message in Go
+
+                             foo := &pb.Foo{...}
+                             any, err := ptypes.MarshalAny(foo)
+                             ...
+                             foo := &pb.Foo{}
+                             if err := ptypes.UnmarshalAny(any, foo); err != nil {
+                               ...
+                             }
+
+                        The pack methods provided by protobuf library will by default use
+
+                        'type.googleapis.com/full.type.name' as the type URL and the unpack
+
+                        methods only use the fully qualified type name after the last '/'
+
+                        in the type URL, for example "foo.bar.com/x/y.z" will yield type
+
+                        name "y.z".
+
+
+
+                        JSON
+
+                        ====
+
+                        The JSON representation of an `Any` value uses the regular
+
+                        representation of the deserialized, embedded message, with an
+
+                        additional field `@type` which contains the type URL. Example:
+
+
+                            package google.profile;
+                            message Person {
+                              string first_name = 1;
+                              string last_name = 2;
+                            }
+
+                            {
+                              "@type": "type.googleapis.com/google.profile.Person",
+                              "firstName": <string>,
+                              "lastName": <string>
+                            }
+
+                        If the embedded message type is well-known and has a custom JSON
+
+                        representation, that representation will be embedded adding a field
+
+                        `value` which holds the custom JSON in addition to the `@type`
+
+                        field. Example (for message [google.protobuf.Duration][]):
+
+
+                            {
+                              "@type": "type.googleapis.com/google.protobuf.Duration",
+                              "value": "1.212s"
+                            }
+      tags:
+        - Query
   "/osmosis/gamm/v1beta1/concentrated_pool_id_link_from_cfmm/{cfmm_pool_id}":
     get:
       summary: >-
@@ -736,7 +952,7 @@ paths:
       parameters:
         - name: min_liquidity
           description: |-
-            String of the coins in single string seperated by comma. Ex)
+            String of the coins in single string separated by comma. Ex)
             10uatom,100uosmo.
           in: query
           required: false
@@ -3981,6 +4197,8 @@ paths:
                               enum:
                                 - ByDuration
                                 - ByTime
+                                - NoLock
+                                - ByGroup
                               default: ByDuration
                               description: >-
                                 LockQueryType defines the type of the lock query that can
@@ -4229,6 +4447,8 @@ paths:
                               enum:
                                 - ByDuration
                                 - ByTime
+                                - NoLock
+                                - ByGroup
                               default: ByDuration
                               description: >-
                                 LockQueryType defines the type of the lock query that can
@@ -4437,6 +4657,507 @@ paths:
             type: boolean
       tags:
         - Query
+  /osmosis/incentives/v1beta1/all_groups:
+    get:
+      summary: AllGroups returns all groups
+      operationId: AllGroups
+      responses:
+        "200":
+          description: A successful response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        group_gauge_id:
+                          type: string
+                          format: uint64
+                        internal_gauge_info:
+                          type: object
+                          properties:
+                            total_weight:
+                              type: string
+                            gauge_records:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  gauge_id:
+                                    type: string
+                                    format: uint64
+                                  current_weight:
+                                    type: string
+                                    description: >-
+                                      CurrentWeight is the current weight of this gauge being distributed to for
+
+                                      this epoch. For instance, for volume splitting policy, this stores the
+
+                                      volume generated in the last epoch of the linked pool.
+                                  cumulative_weight:
+                                    type: string
+                                    description: >-
+                                      CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                                      based on splitting policy. For instance, for volume splitting policy, this
+
+                                      stores the cumulative volume for the linked pool at time of last update.
+                          description: >-
+                            Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+                            technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+                            module, we create separate types here to keep our abstractions clean and
+
+                            readable (pool-incentives distribution abstractions are used in a very
+
+                            specific way that does not directly relate to gauge logic). This also helps
+
+                            us sidestep a refactor to avoid an import cycle.
+                        splitting_policy:
+                          type: string
+                          enum:
+                            - ByVolume
+                          default: ByVolume
+                          title: SplittingPolicy determines the way we want to split incentives in groupGauges
+                      description: >-
+                        Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+                        info, and a splitting policy. These are grouped into a single abstraction to
+
+                        allow for distribution of group incentives to internal gauges according to
+
+                        the specified splitting policy.
+        default:
+          description: An unexpected error response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: integer
+                    format: int32
+                  message:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type_url:
+                          type: string
+                        value:
+                          type: string
+                          format: byte
+      tags:
+        - Query
+  /osmosis/incentives/v1beta1/all_groups_gauges:
+    get:
+      summary: AllGroupsGauges returns all group gauges
+      operationId: AllGroupsGauges
+      responses:
+        "200":
+          description: A successful response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  gauges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uint64
+                          title: id is the unique ID of a Gauge
+                        is_perpetual:
+                          type: boolean
+                          description: >-
+                            is_perpetual is a flag to show if it's a perpetual or non-perpetual gauge
+
+                            Non-perpetual gauges distribute their tokens equally per epoch while the
+
+                            gauge is in the active period. Perpetual gauges distribute all their tokens
+
+                            at a single time and only distribute their tokens again once the gauge is
+
+                            refilled, Intended for use with incentives that get refilled daily.
+                        distribute_to:
+                          title: >-
+                            distribute_to is where the gauge rewards are distributed to.
+
+                            This is queried via lock duration or by timestamp
+                          type: object
+                          properties:
+                            lock_query_type:
+                              title: LockQueryType is a type of lock query, ByLockDuration | ByLockTime
+                              type: string
+                              enum:
+                                - ByDuration
+                                - ByTime
+                                - NoLock
+                                - ByGroup
+                              default: ByDuration
+                              description: >-
+                                LockQueryType defines the type of the lock query that can
+
+                                either be by duration or start time of the lock.
+                            denom:
+                              type: string
+                              title: Denom represents the token denomination we are looking to lock up
+                            duration:
+                              type: string
+                              description: >-
+                                Duration is used to query locks with longer duration than the specified
+
+                                duration. Duration field must not be nil when the lock query type is
+
+                                `ByLockDuration`.
+                            timestamp:
+                              type: string
+                              format: date-time
+                              description: >-
+                                Timestamp is used by locks started before the specified duration.
+
+                                Timestamp field must not be nil when the lock query type is `ByLockTime`.
+
+                                Querying locks with timestamp is currently not implemented.
+                          description: >-
+                            QueryCondition is a struct used for querying locks upon different conditions.
+
+                            Duration field and timestamp fields could be optional, depending on the
+
+                            LockQueryType.
+                        coins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              denom:
+                                type: string
+                              amount:
+                                type: string
+                            description: >-
+                              Coin defines a token with a denomination and an amount.
+
+
+                              NOTE: The amount field is an Int which implements the custom method
+
+                              signatures required by gogoproto.
+                          title: >-
+                            coins is the total amount of coins that have been in the gauge
+
+                            Can distribute multiple coin denoms
+                        start_time:
+                          type: string
+                          format: date-time
+                          title: start_time is the distribution start time
+                        num_epochs_paid_over:
+                          type: string
+                          format: uint64
+                          title: >-
+                            num_epochs_paid_over is the number of total epochs distribution will be
+
+                            completed over
+                        filled_epochs:
+                          type: string
+                          format: uint64
+                          title: >-
+                            filled_epochs is the number of epochs distribution has been completed on
+
+                            already
+                        distributed_coins:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              denom:
+                                type: string
+                              amount:
+                                type: string
+                            description: >-
+                              Coin defines a token with a denomination and an amount.
+
+
+                              NOTE: The amount field is an Int which implements the custom method
+
+                              signatures required by gogoproto.
+                          title: distributed_coins are coins that have been distributed already
+                      description: >-
+                        Gauge is an object that stores and distributes yields to recipients who
+
+                        satisfy certain conditions. Currently gauges support conditions around the
+
+                        duration for which a given denom is locked.
+        default:
+          description: An unexpected error response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: integer
+                    format: int32
+                  message:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type_url:
+                          type: string
+                        value:
+                          type: string
+                          format: byte
+      tags:
+        - Query
+  /osmosis/incentives/v1beta1/all_groups_with_gauge:
+    get:
+      summary: AllGroupsWithGauge returns all groups with their group gauge
+      operationId: AllGroupsWithGauge
+      responses:
+        "200":
+          description: A successful response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  groups_with_gauge:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        group:
+                          type: object
+                          properties:
+                            group_gauge_id:
+                              type: string
+                              format: uint64
+                            internal_gauge_info:
+                              type: object
+                              properties:
+                                total_weight:
+                                  type: string
+                                gauge_records:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      gauge_id:
+                                        type: string
+                                        format: uint64
+                                      current_weight:
+                                        type: string
+                                        description: >-
+                                          CurrentWeight is the current weight of this gauge being distributed to for
+
+                                          this epoch. For instance, for volume splitting policy, this stores the
+
+                                          volume generated in the last epoch of the linked pool.
+                                      cumulative_weight:
+                                        type: string
+                                        description: >-
+                                          CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                                          based on splitting policy. For instance, for volume splitting policy, this
+
+                                          stores the cumulative volume for the linked pool at time of last update.
+                              description: >-
+                                Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+                                technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+                                module, we create separate types here to keep our abstractions clean and
+
+                                readable (pool-incentives distribution abstractions are used in a very
+
+                                specific way that does not directly relate to gauge logic). This also helps
+
+                                us sidestep a refactor to avoid an import cycle.
+                            splitting_policy:
+                              type: string
+                              enum:
+                                - ByVolume
+                              default: ByVolume
+                              title: SplittingPolicy determines the way we want to split incentives in groupGauges
+                          description: >-
+                            Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+                            info, and a splitting policy. These are grouped into a single abstraction to
+
+                            allow for distribution of group incentives to internal gauges according to
+
+                            the specified splitting policy.
+                        gauge:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uint64
+                              title: id is the unique ID of a Gauge
+                            is_perpetual:
+                              type: boolean
+                              description: >-
+                                is_perpetual is a flag to show if it's a perpetual or non-perpetual gauge
+
+                                Non-perpetual gauges distribute their tokens equally per epoch while the
+
+                                gauge is in the active period. Perpetual gauges distribute all their tokens
+
+                                at a single time and only distribute their tokens again once the gauge is
+
+                                refilled, Intended for use with incentives that get refilled daily.
+                            distribute_to:
+                              title: >-
+                                distribute_to is where the gauge rewards are distributed to.
+
+                                This is queried via lock duration or by timestamp
+                              type: object
+                              properties:
+                                lock_query_type:
+                                  title: LockQueryType is a type of lock query, ByLockDuration | ByLockTime
+                                  type: string
+                                  enum:
+                                    - ByDuration
+                                    - ByTime
+                                    - NoLock
+                                    - ByGroup
+                                  default: ByDuration
+                                  description: >-
+                                    LockQueryType defines the type of the lock query that can
+
+                                    either be by duration or start time of the lock.
+                                denom:
+                                  type: string
+                                  title: Denom represents the token denomination we are looking to lock up
+                                duration:
+                                  type: string
+                                  description: >-
+                                    Duration is used to query locks with longer duration than the specified
+
+                                    duration. Duration field must not be nil when the lock query type is
+
+                                    `ByLockDuration`.
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                  description: >-
+                                    Timestamp is used by locks started before the specified duration.
+
+                                    Timestamp field must not be nil when the lock query type is `ByLockTime`.
+
+                                    Querying locks with timestamp is currently not implemented.
+                              description: >-
+                                QueryCondition is a struct used for querying locks upon different conditions.
+
+                                Duration field and timestamp fields could be optional, depending on the
+
+                                LockQueryType.
+                            coins:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  denom:
+                                    type: string
+                                  amount:
+                                    type: string
+                                description: >-
+                                  Coin defines a token with a denomination and an amount.
+
+
+                                  NOTE: The amount field is an Int which implements the custom method
+
+                                  signatures required by gogoproto.
+                              title: >-
+                                coins is the total amount of coins that have been in the gauge
+
+                                Can distribute multiple coin denoms
+                            start_time:
+                              type: string
+                              format: date-time
+                              title: start_time is the distribution start time
+                            num_epochs_paid_over:
+                              type: string
+                              format: uint64
+                              title: >-
+                                num_epochs_paid_over is the number of total epochs distribution will be
+
+                                completed over
+                            filled_epochs:
+                              type: string
+                              format: uint64
+                              title: >-
+                                filled_epochs is the number of epochs distribution has been completed on
+
+                                already
+                            distributed_coins:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  denom:
+                                    type: string
+                                  amount:
+                                    type: string
+                                description: >-
+                                  Coin defines a token with a denomination and an amount.
+
+
+                                  NOTE: The amount field is an Int which implements the custom method
+
+                                  signatures required by gogoproto.
+                              title: distributed_coins are coins that have been distributed already
+                          description: >-
+                            Gauge is an object that stores and distributes yields to recipients who
+
+                            satisfy certain conditions. Currently gauges support conditions around the
+
+                            duration for which a given denom is locked.
+                      description: >-
+                        GroupsWithGauge is a helper struct that stores a group and its
+
+                        associated gauge.
+        default:
+          description: An unexpected error response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: integer
+                    format: int32
+                  message:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type_url:
+                          type: string
+                        value:
+                          type: string
+                          format: byte
+      tags:
+        - Query
   "/osmosis/incentives/v1beta1/gauge_by_id/{id}":
     get:
       summary: GaugeByID returns gauges by their respective ID
@@ -4481,6 +5202,8 @@ paths:
                             enum:
                               - ByDuration
                               - ByTime
+                              - NoLock
+                              - ByGroup
                             default: ByDuration
                             description: >-
                               LockQueryType defines the type of the lock query that can
@@ -4654,6 +5377,8 @@ paths:
                               enum:
                                 - ByDuration
                                 - ByTime
+                                - NoLock
+                                - ByGroup
                               default: ByDuration
                               description: >-
                                 LockQueryType defines the type of the lock query that can
@@ -4856,6 +5581,112 @@ paths:
             type: boolean
       tags:
         - Query
+  "/osmosis/incentives/v1beta1/group_by_group_gauge_id/{id}":
+    get:
+      summary: GroupByGroupGaugeID returns a group given its group gauge ID
+      operationId: GroupByGroupGaugeID
+      responses:
+        "200":
+          description: A successful response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  group:
+                    type: object
+                    properties:
+                      group_gauge_id:
+                        type: string
+                        format: uint64
+                      internal_gauge_info:
+                        type: object
+                        properties:
+                          total_weight:
+                            type: string
+                          gauge_records:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                gauge_id:
+                                  type: string
+                                  format: uint64
+                                current_weight:
+                                  type: string
+                                  description: >-
+                                    CurrentWeight is the current weight of this gauge being distributed to for
+
+                                    this epoch. For instance, for volume splitting policy, this stores the
+
+                                    volume generated in the last epoch of the linked pool.
+                                cumulative_weight:
+                                  type: string
+                                  description: >-
+                                    CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                                    based on splitting policy. For instance, for volume splitting policy, this
+
+                                    stores the cumulative volume for the linked pool at time of last update.
+                        description: >-
+                          Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+                          technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+                          module, we create separate types here to keep our abstractions clean and
+
+                          readable (pool-incentives distribution abstractions are used in a very
+
+                          specific way that does not directly relate to gauge logic). This also helps
+
+                          us sidestep a refactor to avoid an import cycle.
+                      splitting_policy:
+                        type: string
+                        enum:
+                          - ByVolume
+                        default: ByVolume
+                        title: SplittingPolicy determines the way we want to split incentives in groupGauges
+                    description: >-
+                      Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+                      info, and a splitting policy. These are grouped into a single abstraction to
+
+                      allow for distribution of group incentives to internal gauges according to
+
+                      the specified splitting policy.
+        default:
+          description: An unexpected error response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: integer
+                    format: int32
+                  message:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type_url:
+                          type: string
+                        value:
+                          type: string
+                          format: byte
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uint64
+      tags:
+        - Query
   /osmosis/incentives/v1beta1/lockable_durations:
     get:
       summary: >-
@@ -4875,7 +5706,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    title: Time durations that users can lock coins for in order to recieve rewards
+                    title: Time durations that users can lock coins for in order to receive rewards
         default:
           description: An unexpected error response.
           content:
@@ -4991,7 +5822,7 @@ paths:
 
                         signatures required by gogoproto.
                     title: >-
-                      Estimated coin rewards that will be recieved at provided address
+                      Estimated coin rewards that will be received at provided address
 
                       from specified locks between current time and end epoch
         default:
@@ -5048,7 +5879,7 @@ paths:
         - Query
   /osmosis/incentives/v1beta1/upcoming_gauges:
     get:
-      summary: Returns scheduled gauges that have not yet occured
+      summary: Returns scheduled gauges that have not yet occurred
       operationId: UpcomingGauges
       responses:
         "200":
@@ -5092,6 +5923,8 @@ paths:
                               enum:
                                 - ByDuration
                                 - ByTime
+                                - NoLock
+                                - ByGroup
                               default: ByDuration
                               description: >-
                                 LockQueryType defines the type of the lock query that can
@@ -5297,7 +6130,7 @@ paths:
   /osmosis/incentives/v1beta1/upcoming_gauges_per_denom:
     get:
       summary: >-
-        UpcomingGaugesPerDenom returns scheduled gauges that have not yet occured
+        UpcomingGaugesPerDenom returns scheduled gauges that have not yet occurred
 
         by denom
       operationId: UpcomingGaugesPerDenom
@@ -5343,6 +6176,8 @@ paths:
                               enum:
                                 - ByDuration
                                 - ByTime
+                                - NoLock
+                                - ByGroup
                               default: ByDuration
                               description: >-
                                 LockQueryType defines the type of the lock query that can
@@ -7829,6 +8664,8 @@ paths:
                               enum:
                                 - ByDuration
                                 - ByTime
+                                - NoLock
+                                - ByGroup
                               default: ByDuration
                               description: >-
                                 LockQueryType defines the type of the lock query that can
@@ -8146,6 +8983,541 @@ paths:
                         value:
                           type: string
                           format: byte
+      tags:
+        - Query
+  "/osmosis/superfluid/v1beta1/account_delegated_cl_positions/{delegator_address}":
+    get:
+      summary: Returns all of a user's full range CL positions that are superfluid staked.
+      operationId: UserConcentratedSuperfluidPositionsDelegated
+      responses:
+        "200":
+          description: A successful response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  cl_pool_user_position_records:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        validator_address:
+                          type: string
+                        position_id:
+                          type: string
+                          format: uint64
+                        lock_id:
+                          type: string
+                          format: uint64
+                        synthetic_lock:
+                          type: object
+                          properties:
+                            underlying_lock_id:
+                              type: string
+                              format: uint64
+                              description: >-
+                                Underlying Lock ID is the underlying native lock's id for this synthetic
+
+                                lockup. A synthetic lock MUST have an underlying lock.
+                            synth_denom:
+                              type: string
+                              description: >-
+                                SynthDenom is the synthetic denom that is a combination of
+
+                                gamm share + bonding status + validator address.
+                            end_time:
+                              type: string
+                              format: date-time
+                              title: >-
+                                used for unbonding synthetic lockups, for active synthetic lockups, this
+
+                                value is set to uninitialized value
+                            duration:
+                              type: string
+                              description: >-
+                                Duration is the duration for a synthetic lock to mature
+
+                                at the point of unbonding has started.
+                          description: >-
+                            SyntheticLock is creating virtual lockup where new denom is combination of
+
+                            original denom and synthetic suffix. At the time of synthetic lockup creation
+
+                            and deletion, accumulation store is also being updated and on querier side,
+
+                            they can query as freely as native lockup.
+                        delegation_amount:
+                          type: object
+                          properties:
+                            denom:
+                              type: string
+                            amount:
+                              type: string
+                          description: >-
+                            Coin defines a token with a denomination and an amount.
+
+
+                            NOTE: The amount field is an Int which implements the custom method
+
+                            signatures required by gogoproto.
+                        equivalent_staked_amount:
+                          type: object
+                          properties:
+                            denom:
+                              type: string
+                            amount:
+                              type: string
+                          description: >-
+                            Coin defines a token with a denomination and an amount.
+
+
+                            NOTE: The amount field is an Int which implements the custom method
+
+                            signatures required by gogoproto.
+        default:
+          description: An unexpected error response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: integer
+                    format: int32
+                  message:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type_url:
+                          type: string
+                          description: >-
+                            A URL/resource name that uniquely identifies the type of the serialized
+
+                            protocol buffer message. This string must contain at least
+
+                            one "/" character. The last segment of the URL's path must represent
+
+                            the fully qualified name of the type (as in
+
+                            `path/google.protobuf.Duration`). The name should be in a canonical form
+
+                            (e.g., leading "." is not accepted).
+
+
+                            In practice, teams usually precompile into the binary all types that they
+
+                            expect it to use in the context of Any. However, for URLs which use the
+
+                            scheme `http`, `https`, or no scheme, one can optionally set up a type
+
+                            server that maps type URLs to message definitions as follows:
+
+
+                            * If no scheme is provided, `https` is assumed.
+
+                            * An HTTP GET on the URL must yield a [google.protobuf.Type][]
+
+                              value in binary format, or produce an error.
+                            * Applications are allowed to cache lookup results based on the
+
+                              URL, or have them precompiled into a binary to avoid any
+                              lookup. Therefore, binary compatibility needs to be preserved
+                              on changes to types. (Use versioned type names to manage
+                              breaking changes.)
+
+                            Note: this functionality is not currently available in the official
+
+                            protobuf release, and it is not used for type URLs beginning with
+
+                            type.googleapis.com.
+
+
+                            Schemes other than `http`, `https` (or the empty scheme) might be
+
+                            used with implementation specific semantics.
+                        value:
+                          type: string
+                          format: byte
+                          description: Must be a valid serialized protocol buffer of the above specified type.
+                      description: >-
+                        `Any` contains an arbitrary serialized protocol buffer message along with a
+
+                        URL that describes the type of the serialized message.
+
+
+                        Protobuf library provides support to pack/unpack Any values in the form
+
+                        of utility functions or additional generated methods of the Any type.
+
+
+                        Example 1: Pack and unpack a message in C++.
+
+
+                            Foo foo = ...;
+                            Any any;
+                            any.PackFrom(foo);
+                            ...
+                            if (any.UnpackTo(&foo)) {
+                              ...
+                            }
+
+                        Example 2: Pack and unpack a message in Java.
+
+
+                            Foo foo = ...;
+                            Any any = Any.pack(foo);
+                            ...
+                            if (any.is(Foo.class)) {
+                              foo = any.unpack(Foo.class);
+                            }
+
+                         Example 3: Pack and unpack a message in Python.
+
+                            foo = Foo(...)
+                            any = Any()
+                            any.Pack(foo)
+                            ...
+                            if any.Is(Foo.DESCRIPTOR):
+                              any.Unpack(foo)
+                              ...
+
+                         Example 4: Pack and unpack a message in Go
+
+                             foo := &pb.Foo{...}
+                             any, err := ptypes.MarshalAny(foo)
+                             ...
+                             foo := &pb.Foo{}
+                             if err := ptypes.UnmarshalAny(any, foo); err != nil {
+                               ...
+                             }
+
+                        The pack methods provided by protobuf library will by default use
+
+                        'type.googleapis.com/full.type.name' as the type URL and the unpack
+
+                        methods only use the fully qualified type name after the last '/'
+
+                        in the type URL, for example "foo.bar.com/x/y.z" will yield type
+
+                        name "y.z".
+
+
+
+                        JSON
+
+                        ====
+
+                        The JSON representation of an `Any` value uses the regular
+
+                        representation of the deserialized, embedded message, with an
+
+                        additional field `@type` which contains the type URL. Example:
+
+
+                            package google.profile;
+                            message Person {
+                              string first_name = 1;
+                              string last_name = 2;
+                            }
+
+                            {
+                              "@type": "type.googleapis.com/google.profile.Person",
+                              "firstName": <string>,
+                              "lastName": <string>
+                            }
+
+                        If the embedded message type is well-known and has a custom JSON
+
+                        representation, that representation will be embedded adding a field
+
+                        `value` which holds the custom JSON in addition to the `@type`
+
+                        field. Example (for message [google.protobuf.Duration][]):
+
+
+                            {
+                              "@type": "type.googleapis.com/google.protobuf.Duration",
+                              "value": "1.212s"
+                            }
+      parameters:
+        - name: delegator_address
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Query
+  "/osmosis/superfluid/v1beta1/account_undelegating_cl_positions/{delegator_address}":
+    get:
+      operationId: UserConcentratedSuperfluidPositionsUndelegating
+      responses:
+        "200":
+          description: A successful response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  cl_pool_user_position_records:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        validator_address:
+                          type: string
+                        position_id:
+                          type: string
+                          format: uint64
+                        lock_id:
+                          type: string
+                          format: uint64
+                        synthetic_lock:
+                          type: object
+                          properties:
+                            underlying_lock_id:
+                              type: string
+                              format: uint64
+                              description: >-
+                                Underlying Lock ID is the underlying native lock's id for this synthetic
+
+                                lockup. A synthetic lock MUST have an underlying lock.
+                            synth_denom:
+                              type: string
+                              description: >-
+                                SynthDenom is the synthetic denom that is a combination of
+
+                                gamm share + bonding status + validator address.
+                            end_time:
+                              type: string
+                              format: date-time
+                              title: >-
+                                used for unbonding synthetic lockups, for active synthetic lockups, this
+
+                                value is set to uninitialized value
+                            duration:
+                              type: string
+                              description: >-
+                                Duration is the duration for a synthetic lock to mature
+
+                                at the point of unbonding has started.
+                          description: >-
+                            SyntheticLock is creating virtual lockup where new denom is combination of
+
+                            original denom and synthetic suffix. At the time of synthetic lockup creation
+
+                            and deletion, accumulation store is also being updated and on querier side,
+
+                            they can query as freely as native lockup.
+                        delegation_amount:
+                          type: object
+                          properties:
+                            denom:
+                              type: string
+                            amount:
+                              type: string
+                          description: >-
+                            Coin defines a token with a denomination and an amount.
+
+
+                            NOTE: The amount field is an Int which implements the custom method
+
+                            signatures required by gogoproto.
+                        equivalent_staked_amount:
+                          type: object
+                          properties:
+                            denom:
+                              type: string
+                            amount:
+                              type: string
+                          description: >-
+                            Coin defines a token with a denomination and an amount.
+
+
+                            NOTE: The amount field is an Int which implements the custom method
+
+                            signatures required by gogoproto.
+        default:
+          description: An unexpected error response.
+          content:
+            "*/*":
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: integer
+                    format: int32
+                  message:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type_url:
+                          type: string
+                          description: >-
+                            A URL/resource name that uniquely identifies the type of the serialized
+
+                            protocol buffer message. This string must contain at least
+
+                            one "/" character. The last segment of the URL's path must represent
+
+                            the fully qualified name of the type (as in
+
+                            `path/google.protobuf.Duration`). The name should be in a canonical form
+
+                            (e.g., leading "." is not accepted).
+
+
+                            In practice, teams usually precompile into the binary all types that they
+
+                            expect it to use in the context of Any. However, for URLs which use the
+
+                            scheme `http`, `https`, or no scheme, one can optionally set up a type
+
+                            server that maps type URLs to message definitions as follows:
+
+
+                            * If no scheme is provided, `https` is assumed.
+
+                            * An HTTP GET on the URL must yield a [google.protobuf.Type][]
+
+                              value in binary format, or produce an error.
+                            * Applications are allowed to cache lookup results based on the
+
+                              URL, or have them precompiled into a binary to avoid any
+                              lookup. Therefore, binary compatibility needs to be preserved
+                              on changes to types. (Use versioned type names to manage
+                              breaking changes.)
+
+                            Note: this functionality is not currently available in the official
+
+                            protobuf release, and it is not used for type URLs beginning with
+
+                            type.googleapis.com.
+
+
+                            Schemes other than `http`, `https` (or the empty scheme) might be
+
+                            used with implementation specific semantics.
+                        value:
+                          type: string
+                          format: byte
+                          description: Must be a valid serialized protocol buffer of the above specified type.
+                      description: >-
+                        `Any` contains an arbitrary serialized protocol buffer message along with a
+
+                        URL that describes the type of the serialized message.
+
+
+                        Protobuf library provides support to pack/unpack Any values in the form
+
+                        of utility functions or additional generated methods of the Any type.
+
+
+                        Example 1: Pack and unpack a message in C++.
+
+
+                            Foo foo = ...;
+                            Any any;
+                            any.PackFrom(foo);
+                            ...
+                            if (any.UnpackTo(&foo)) {
+                              ...
+                            }
+
+                        Example 2: Pack and unpack a message in Java.
+
+
+                            Foo foo = ...;
+                            Any any = Any.pack(foo);
+                            ...
+                            if (any.is(Foo.class)) {
+                              foo = any.unpack(Foo.class);
+                            }
+
+                         Example 3: Pack and unpack a message in Python.
+
+                            foo = Foo(...)
+                            any = Any()
+                            any.Pack(foo)
+                            ...
+                            if any.Is(Foo.DESCRIPTOR):
+                              any.Unpack(foo)
+                              ...
+
+                         Example 4: Pack and unpack a message in Go
+
+                             foo := &pb.Foo{...}
+                             any, err := ptypes.MarshalAny(foo)
+                             ...
+                             foo := &pb.Foo{}
+                             if err := ptypes.UnmarshalAny(any, foo); err != nil {
+                               ...
+                             }
+
+                        The pack methods provided by protobuf library will by default use
+
+                        'type.googleapis.com/full.type.name' as the type URL and the unpack
+
+                        methods only use the fully qualified type name after the last '/'
+
+                        in the type URL, for example "foo.bar.com/x/y.z" will yield type
+
+                        name "y.z".
+
+
+
+                        JSON
+
+                        ====
+
+                        The JSON representation of an `Any` value uses the regular
+
+                        representation of the deserialized, embedded message, with an
+
+                        additional field `@type` which contains the type URL. Example:
+
+
+                            package google.profile;
+                            message Person {
+                              string first_name = 1;
+                              string last_name = 2;
+                            }
+
+                            {
+                              "@type": "type.googleapis.com/google.profile.Person",
+                              "firstName": <string>,
+                              "lastName": <string>
+                            }
+
+                        If the embedded message type is well-known and has a custom JSON
+
+                        representation, that representation will be embedded adding a field
+
+                        `value` which holds the custom JSON in addition to the `@type`
+
+                        field. Example (for message [google.protobuf.Duration][]):
+
+
+                            {
+                              "@type": "type.googleapis.com/google.protobuf.Duration",
+                              "value": "1.212s"
+                            }
+      parameters:
+        - name: delegator_address
+          in: path
+          required: true
+          schema:
+            type: string
       tags:
         - Query
   /osmosis/superfluid/v1beta1/all_assets:
@@ -8849,7 +10221,7 @@ paths:
 
                       to be set as the Time-weighted-average-osmo-backing for the entire duration
 
-                      of epoch N-1. (Thereby locking whats in use for epoch N as based on the prior
+                      of epoch N-1. (Thereby locking what's in use for epoch N as based on the prior
 
                       epochs rewards) However for now, this is not the TWAP but instead the spot
 
@@ -10076,7 +11448,7 @@ paths:
         - Query
   "/osmosis/superfluid/v1beta1/superfluid_delegations/{delegator_address}":
     get:
-      summary: Returns all the delegated superfluid poistions for a specific delegator.
+      summary: Returns all the delegated superfluid positions for a specific delegator.
       operationId: SuperfluidDelegationsByDelegator
       responses:
         "200":
@@ -10576,7 +11948,7 @@ paths:
         - Query
   "/osmosis/superfluid/v1beta1/superfluid_undelegations_by_delegator/{delegator_address}":
     get:
-      summary: Returns all the undelegating superfluid poistions for a specific delegator.
+      summary: Returns all the undelegating superfluid positions for a specific delegator.
       operationId: SuperfluidUndelegationsByDelegator
       responses:
         "200":
@@ -18516,7 +19888,7 @@ paths:
                 type: object
                 properties:
                   commission:
-                    description: commission defines the commision the validator received.
+                    description: commission defines the commission the validator received.
                     type: object
                     properties:
                       commission:
@@ -22719,7 +24091,7 @@ paths:
             type: string
             format: uint64
         - name: voter
-          description: voter defines the oter address for the proposals.
+          description: voter defines the other address for the proposals.
           in: path
           required: true
           schema:
@@ -30960,6 +32332,90 @@ components:
 
         NOTE: The amount field is an Int which implements the custom method
         signatures required by gogoproto.
+    osmosis.gamm.v1beta1.BalancerToConcentratedPoolLink:
+      type: object
+      properties:
+        balancer_pool_id:
+          type: string
+          format: uint64
+        cl_pool_id:
+          type: string
+          format: uint64
+      description: >-
+        BalancerToConcentratedPoolLink defines a single link between a single
+
+        balancer pool and a single concentrated liquidity pool. This link is used to
+
+        allow a balancer pool to migrate to a single canonical full range
+
+        concentrated liquidity pool position
+
+        A balancer pool can be linked to a maximum of one cl pool, and a cl pool can
+
+        be linked to a maximum of one balancer pool.
+    osmosis.gamm.v1beta1.MigrationRecords:
+      type: object
+      properties:
+        balancer_to_concentrated_pool_links:
+          type: array
+          items:
+            type: object
+            properties:
+              balancer_pool_id:
+                type: string
+                format: uint64
+              cl_pool_id:
+                type: string
+                format: uint64
+            description: >-
+              BalancerToConcentratedPoolLink defines a single link between a single
+
+              balancer pool and a single concentrated liquidity pool. This link is used to
+
+              allow a balancer pool to migrate to a single canonical full range
+
+              concentrated liquidity pool position
+
+              A balancer pool can be linked to a maximum of one cl pool, and a cl pool can
+
+              be linked to a maximum of one balancer pool.
+      title: >-
+        MigrationRecords contains all the links between balancer and concentrated
+
+        pools
+    osmosis.gamm.v1beta1.QueryCFMMConcentratedPoolLinksResponse:
+      type: object
+      properties:
+        migration_records:
+          type: object
+          properties:
+            balancer_to_concentrated_pool_links:
+              type: array
+              items:
+                type: object
+                properties:
+                  balancer_pool_id:
+                    type: string
+                    format: uint64
+                  cl_pool_id:
+                    type: string
+                    format: uint64
+                description: >-
+                  BalancerToConcentratedPoolLink defines a single link between a single
+
+                  balancer pool and a single concentrated liquidity pool. This link is used to
+
+                  allow a balancer pool to migrate to a single canonical full range
+
+                  concentrated liquidity pool position
+
+                  A balancer pool can be linked to a maximum of one cl pool, and a cl pool can
+
+                  be linked to a maximum of one balancer pool.
+          title: >-
+            MigrationRecords contains all the links between balancer and concentrated
+
+            pools
     osmosis.gamm.v1beta1.QueryCalcExitPoolCoinsFromSharesResponse:
       type: object
       properties:
@@ -31831,6 +33287,8 @@ components:
                     enum:
                       - ByDuration
                       - ByTime
+                      - NoLock
+                      - ByGroup
                     default: ByDuration
                     description: |-
                       LockQueryType defines the type of the lock query that can
@@ -31983,6 +33441,8 @@ components:
                     enum:
                       - ByDuration
                       - ByTime
+                      - NoLock
+                      - ByGroup
                     default: ByDuration
                     description: |-
                       LockQueryType defines the type of the lock query that can
@@ -32130,6 +33590,8 @@ components:
               enum:
                 - ByDuration
                 - ByTime
+                - NoLock
+                - ByGroup
               default: ByDuration
               description: |-
                 LockQueryType defines the type of the lock query that can
@@ -32254,6 +33716,8 @@ components:
                   enum:
                     - ByDuration
                     - ByTime
+                    - NoLock
+                    - ByGroup
                   default: ByDuration
                   description: |-
                     LockQueryType defines the type of the lock query that can
@@ -32381,6 +33845,8 @@ components:
                     enum:
                       - ByDuration
                       - ByTime
+                      - NoLock
+                      - ByGroup
                     default: ByDuration
                     description: |-
                       LockQueryType defines the type of the lock query that can
@@ -32497,6 +33963,320 @@ components:
                      repeated Bar results = 1;
                      PageResponse page = 2;
              }
+    osmosis.incentives.Group:
+      type: object
+      properties:
+        group_gauge_id:
+          type: string
+          format: uint64
+        internal_gauge_info:
+          type: object
+          properties:
+            total_weight:
+              type: string
+            gauge_records:
+              type: array
+              items:
+                type: object
+                properties:
+                  gauge_id:
+                    type: string
+                    format: uint64
+                  current_weight:
+                    type: string
+                    description: >-
+                      CurrentWeight is the current weight of this gauge being distributed to for
+
+                      this epoch. For instance, for volume splitting policy, this stores the
+
+                      volume generated in the last epoch of the linked pool.
+                  cumulative_weight:
+                    type: string
+                    description: >-
+                      CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                      based on splitting policy. For instance, for volume splitting policy, this
+
+                      stores the cumulative volume for the linked pool at time of last update.
+          description: >-
+            Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+            technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+            module, we create separate types here to keep our abstractions clean and
+
+            readable (pool-incentives distribution abstractions are used in a very
+
+            specific way that does not directly relate to gauge logic). This also helps
+
+            us sidestep a refactor to avoid an import cycle.
+        splitting_policy:
+          type: string
+          enum:
+            - ByVolume
+          default: ByVolume
+          title: SplittingPolicy determines the way we want to split incentives in groupGauges
+      description: >-
+        Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+        info, and a splitting policy. These are grouped into a single abstraction to
+
+        allow for distribution of group incentives to internal gauges according to
+
+        the specified splitting policy.
+    osmosis.incentives.GroupsWithGauge:
+      type: object
+      properties:
+        group:
+          type: object
+          properties:
+            group_gauge_id:
+              type: string
+              format: uint64
+            internal_gauge_info:
+              type: object
+              properties:
+                total_weight:
+                  type: string
+                gauge_records:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      gauge_id:
+                        type: string
+                        format: uint64
+                      current_weight:
+                        type: string
+                        description: >-
+                          CurrentWeight is the current weight of this gauge being distributed to for
+
+                          this epoch. For instance, for volume splitting policy, this stores the
+
+                          volume generated in the last epoch of the linked pool.
+                      cumulative_weight:
+                        type: string
+                        description: >-
+                          CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                          based on splitting policy. For instance, for volume splitting policy, this
+
+                          stores the cumulative volume for the linked pool at time of last update.
+              description: >-
+                Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+                technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+                module, we create separate types here to keep our abstractions clean and
+
+                readable (pool-incentives distribution abstractions are used in a very
+
+                specific way that does not directly relate to gauge logic). This also helps
+
+                us sidestep a refactor to avoid an import cycle.
+            splitting_policy:
+              type: string
+              enum:
+                - ByVolume
+              default: ByVolume
+              title: SplittingPolicy determines the way we want to split incentives in groupGauges
+          description: >-
+            Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+            info, and a splitting policy. These are grouped into a single abstraction to
+
+            allow for distribution of group incentives to internal gauges according to
+
+            the specified splitting policy.
+        gauge:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uint64
+              title: id is the unique ID of a Gauge
+            is_perpetual:
+              type: boolean
+              description: >-
+                is_perpetual is a flag to show if it's a perpetual or non-perpetual gauge
+
+                Non-perpetual gauges distribute their tokens equally per epoch while the
+
+                gauge is in the active period. Perpetual gauges distribute all their tokens
+
+                at a single time and only distribute their tokens again once the gauge is
+
+                refilled, Intended for use with incentives that get refilled daily.
+            distribute_to:
+              title: |-
+                distribute_to is where the gauge rewards are distributed to.
+                This is queried via lock duration or by timestamp
+              type: object
+              properties:
+                lock_query_type:
+                  title: LockQueryType is a type of lock query, ByLockDuration | ByLockTime
+                  type: string
+                  enum:
+                    - ByDuration
+                    - ByTime
+                    - NoLock
+                    - ByGroup
+                  default: ByDuration
+                  description: |-
+                    LockQueryType defines the type of the lock query that can
+                    either be by duration or start time of the lock.
+                denom:
+                  type: string
+                  title: Denom represents the token denomination we are looking to lock up
+                duration:
+                  type: string
+                  description: >-
+                    Duration is used to query locks with longer duration than the specified
+
+                    duration. Duration field must not be nil when the lock query type is
+
+                    `ByLockDuration`.
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: >-
+                    Timestamp is used by locks started before the specified duration.
+
+                    Timestamp field must not be nil when the lock query type is `ByLockTime`.
+
+                    Querying locks with timestamp is currently not implemented.
+              description: >-
+                QueryCondition is a struct used for querying locks upon different conditions.
+
+                Duration field and timestamp fields could be optional, depending on the
+
+                LockQueryType.
+            coins:
+              type: array
+              items:
+                type: object
+                properties:
+                  denom:
+                    type: string
+                  amount:
+                    type: string
+                description: >-
+                  Coin defines a token with a denomination and an amount.
+
+
+                  NOTE: The amount field is an Int which implements the custom method
+
+                  signatures required by gogoproto.
+              title: |-
+                coins is the total amount of coins that have been in the gauge
+                Can distribute multiple coin denoms
+            start_time:
+              type: string
+              format: date-time
+              title: start_time is the distribution start time
+            num_epochs_paid_over:
+              type: string
+              format: uint64
+              title: >-
+                num_epochs_paid_over is the number of total epochs distribution will be
+
+                completed over
+            filled_epochs:
+              type: string
+              format: uint64
+              title: >-
+                filled_epochs is the number of epochs distribution has been completed on
+
+                already
+            distributed_coins:
+              type: array
+              items:
+                type: object
+                properties:
+                  denom:
+                    type: string
+                  amount:
+                    type: string
+                description: >-
+                  Coin defines a token with a denomination and an amount.
+
+
+                  NOTE: The amount field is an Int which implements the custom method
+
+                  signatures required by gogoproto.
+              title: distributed_coins are coins that have been distributed already
+          description: >-
+            Gauge is an object that stores and distributes yields to recipients who
+
+            satisfy certain conditions. Currently gauges support conditions around the
+
+            duration for which a given denom is locked.
+      description: |-
+        GroupsWithGauge is a helper struct that stores a group and its
+        associated gauge.
+    osmosis.incentives.InternalGaugeInfo:
+      type: object
+      properties:
+        total_weight:
+          type: string
+        gauge_records:
+          type: array
+          items:
+            type: object
+            properties:
+              gauge_id:
+                type: string
+                format: uint64
+              current_weight:
+                type: string
+                description: >-
+                  CurrentWeight is the current weight of this gauge being distributed to for
+
+                  this epoch. For instance, for volume splitting policy, this stores the
+
+                  volume generated in the last epoch of the linked pool.
+              cumulative_weight:
+                type: string
+                description: >-
+                  CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                  based on splitting policy. For instance, for volume splitting policy, this
+
+                  stores the cumulative volume for the linked pool at time of last update.
+      description: >-
+        Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+        technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+        module, we create separate types here to keep our abstractions clean and
+
+        readable (pool-incentives distribution abstractions are used in a very
+
+        specific way that does not directly relate to gauge logic). This also helps
+
+        us sidestep a refactor to avoid an import cycle.
+    osmosis.incentives.InternalGaugeRecord:
+      type: object
+      properties:
+        gauge_id:
+          type: string
+          format: uint64
+        current_weight:
+          type: string
+          description: >-
+            CurrentWeight is the current weight of this gauge being distributed to for
+
+            this epoch. For instance, for volume splitting policy, this stores the
+
+            volume generated in the last epoch of the linked pool.
+        cumulative_weight:
+          type: string
+          description: >-
+            CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+            based on splitting policy. For instance, for volume splitting policy, this
+
+            stores the cumulative volume for the linked pool at time of last update.
     osmosis.incentives.ModuleToDistributeCoinsResponse:
       type: object
       properties:
@@ -32517,6 +34297,462 @@ components:
 
               signatures required by gogoproto.
           title: Coins that have yet to be distributed
+    osmosis.incentives.QueryAllGroupsGaugesResponse:
+      type: object
+      properties:
+        gauges:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uint64
+                title: id is the unique ID of a Gauge
+              is_perpetual:
+                type: boolean
+                description: >-
+                  is_perpetual is a flag to show if it's a perpetual or non-perpetual gauge
+
+                  Non-perpetual gauges distribute their tokens equally per epoch while the
+
+                  gauge is in the active period. Perpetual gauges distribute all their tokens
+
+                  at a single time and only distribute their tokens again once the gauge is
+
+                  refilled, Intended for use with incentives that get refilled daily.
+              distribute_to:
+                title: |-
+                  distribute_to is where the gauge rewards are distributed to.
+                  This is queried via lock duration or by timestamp
+                type: object
+                properties:
+                  lock_query_type:
+                    title: LockQueryType is a type of lock query, ByLockDuration | ByLockTime
+                    type: string
+                    enum:
+                      - ByDuration
+                      - ByTime
+                      - NoLock
+                      - ByGroup
+                    default: ByDuration
+                    description: |-
+                      LockQueryType defines the type of the lock query that can
+                      either be by duration or start time of the lock.
+                  denom:
+                    type: string
+                    title: Denom represents the token denomination we are looking to lock up
+                  duration:
+                    type: string
+                    description: >-
+                      Duration is used to query locks with longer duration than the specified
+
+                      duration. Duration field must not be nil when the lock query type is
+
+                      `ByLockDuration`.
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: >-
+                      Timestamp is used by locks started before the specified duration.
+
+                      Timestamp field must not be nil when the lock query type is `ByLockTime`.
+
+                      Querying locks with timestamp is currently not implemented.
+                description: >-
+                  QueryCondition is a struct used for querying locks upon different conditions.
+
+                  Duration field and timestamp fields could be optional, depending on the
+
+                  LockQueryType.
+              coins:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    denom:
+                      type: string
+                    amount:
+                      type: string
+                  description: >-
+                    Coin defines a token with a denomination and an amount.
+
+
+                    NOTE: The amount field is an Int which implements the custom method
+
+                    signatures required by gogoproto.
+                title: |-
+                  coins is the total amount of coins that have been in the gauge
+                  Can distribute multiple coin denoms
+              start_time:
+                type: string
+                format: date-time
+                title: start_time is the distribution start time
+              num_epochs_paid_over:
+                type: string
+                format: uint64
+                title: >-
+                  num_epochs_paid_over is the number of total epochs distribution will be
+
+                  completed over
+              filled_epochs:
+                type: string
+                format: uint64
+                title: >-
+                  filled_epochs is the number of epochs distribution has been completed on
+
+                  already
+              distributed_coins:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    denom:
+                      type: string
+                    amount:
+                      type: string
+                  description: >-
+                    Coin defines a token with a denomination and an amount.
+
+
+                    NOTE: The amount field is an Int which implements the custom method
+
+                    signatures required by gogoproto.
+                title: distributed_coins are coins that have been distributed already
+            description: >-
+              Gauge is an object that stores and distributes yields to recipients who
+
+              satisfy certain conditions. Currently gauges support conditions around the
+
+              duration for which a given denom is locked.
+    osmosis.incentives.QueryAllGroupsResponse:
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            type: object
+            properties:
+              group_gauge_id:
+                type: string
+                format: uint64
+              internal_gauge_info:
+                type: object
+                properties:
+                  total_weight:
+                    type: string
+                  gauge_records:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        gauge_id:
+                          type: string
+                          format: uint64
+                        current_weight:
+                          type: string
+                          description: >-
+                            CurrentWeight is the current weight of this gauge being distributed to for
+
+                            this epoch. For instance, for volume splitting policy, this stores the
+
+                            volume generated in the last epoch of the linked pool.
+                        cumulative_weight:
+                          type: string
+                          description: >-
+                            CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                            based on splitting policy. For instance, for volume splitting policy, this
+
+                            stores the cumulative volume for the linked pool at time of last update.
+                description: >-
+                  Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+                  technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+                  module, we create separate types here to keep our abstractions clean and
+
+                  readable (pool-incentives distribution abstractions are used in a very
+
+                  specific way that does not directly relate to gauge logic). This also helps
+
+                  us sidestep a refactor to avoid an import cycle.
+              splitting_policy:
+                type: string
+                enum:
+                  - ByVolume
+                default: ByVolume
+                title: SplittingPolicy determines the way we want to split incentives in groupGauges
+            description: >-
+              Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+              info, and a splitting policy. These are grouped into a single abstraction to
+
+              allow for distribution of group incentives to internal gauges according to
+
+              the specified splitting policy.
+    osmosis.incentives.QueryAllGroupsWithGaugeResponse:
+      type: object
+      properties:
+        groups_with_gauge:
+          type: array
+          items:
+            type: object
+            properties:
+              group:
+                type: object
+                properties:
+                  group_gauge_id:
+                    type: string
+                    format: uint64
+                  internal_gauge_info:
+                    type: object
+                    properties:
+                      total_weight:
+                        type: string
+                      gauge_records:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            gauge_id:
+                              type: string
+                              format: uint64
+                            current_weight:
+                              type: string
+                              description: >-
+                                CurrentWeight is the current weight of this gauge being distributed to for
+
+                                this epoch. For instance, for volume splitting policy, this stores the
+
+                                volume generated in the last epoch of the linked pool.
+                            cumulative_weight:
+                              type: string
+                              description: >-
+                                CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                                based on splitting policy. For instance, for volume splitting policy, this
+
+                                stores the cumulative volume for the linked pool at time of last update.
+                    description: >-
+                      Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+                      technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+                      module, we create separate types here to keep our abstractions clean and
+
+                      readable (pool-incentives distribution abstractions are used in a very
+
+                      specific way that does not directly relate to gauge logic). This also helps
+
+                      us sidestep a refactor to avoid an import cycle.
+                  splitting_policy:
+                    type: string
+                    enum:
+                      - ByVolume
+                    default: ByVolume
+                    title: SplittingPolicy determines the way we want to split incentives in groupGauges
+                description: >-
+                  Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+                  info, and a splitting policy. These are grouped into a single abstraction to
+
+                  allow for distribution of group incentives to internal gauges according to
+
+                  the specified splitting policy.
+              gauge:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uint64
+                    title: id is the unique ID of a Gauge
+                  is_perpetual:
+                    type: boolean
+                    description: >-
+                      is_perpetual is a flag to show if it's a perpetual or non-perpetual gauge
+
+                      Non-perpetual gauges distribute their tokens equally per epoch while the
+
+                      gauge is in the active period. Perpetual gauges distribute all their tokens
+
+                      at a single time and only distribute their tokens again once the gauge is
+
+                      refilled, Intended for use with incentives that get refilled daily.
+                  distribute_to:
+                    title: >-
+                      distribute_to is where the gauge rewards are distributed to.
+
+                      This is queried via lock duration or by timestamp
+                    type: object
+                    properties:
+                      lock_query_type:
+                        title: LockQueryType is a type of lock query, ByLockDuration | ByLockTime
+                        type: string
+                        enum:
+                          - ByDuration
+                          - ByTime
+                          - NoLock
+                          - ByGroup
+                        default: ByDuration
+                        description: >-
+                          LockQueryType defines the type of the lock query that can
+
+                          either be by duration or start time of the lock.
+                      denom:
+                        type: string
+                        title: Denom represents the token denomination we are looking to lock up
+                      duration:
+                        type: string
+                        description: >-
+                          Duration is used to query locks with longer duration than the specified
+
+                          duration. Duration field must not be nil when the lock query type is
+
+                          `ByLockDuration`.
+                      timestamp:
+                        type: string
+                        format: date-time
+                        description: >-
+                          Timestamp is used by locks started before the specified duration.
+
+                          Timestamp field must not be nil when the lock query type is `ByLockTime`.
+
+                          Querying locks with timestamp is currently not implemented.
+                    description: >-
+                      QueryCondition is a struct used for querying locks upon different conditions.
+
+                      Duration field and timestamp fields could be optional, depending on the
+
+                      LockQueryType.
+                  coins:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        denom:
+                          type: string
+                        amount:
+                          type: string
+                      description: >-
+                        Coin defines a token with a denomination and an amount.
+
+
+                        NOTE: The amount field is an Int which implements the custom method
+
+                        signatures required by gogoproto.
+                    title: >-
+                      coins is the total amount of coins that have been in the gauge
+
+                      Can distribute multiple coin denoms
+                  start_time:
+                    type: string
+                    format: date-time
+                    title: start_time is the distribution start time
+                  num_epochs_paid_over:
+                    type: string
+                    format: uint64
+                    title: >-
+                      num_epochs_paid_over is the number of total epochs distribution will be
+
+                      completed over
+                  filled_epochs:
+                    type: string
+                    format: uint64
+                    title: >-
+                      filled_epochs is the number of epochs distribution has been completed on
+
+                      already
+                  distributed_coins:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        denom:
+                          type: string
+                        amount:
+                          type: string
+                      description: >-
+                        Coin defines a token with a denomination and an amount.
+
+
+                        NOTE: The amount field is an Int which implements the custom method
+
+                        signatures required by gogoproto.
+                    title: distributed_coins are coins that have been distributed already
+                description: >-
+                  Gauge is an object that stores and distributes yields to recipients who
+
+                  satisfy certain conditions. Currently gauges support conditions around the
+
+                  duration for which a given denom is locked.
+            description: |-
+              GroupsWithGauge is a helper struct that stores a group and its
+              associated gauge.
+    osmosis.incentives.QueryGroupByGroupGaugeIDResponse:
+      type: object
+      properties:
+        group:
+          type: object
+          properties:
+            group_gauge_id:
+              type: string
+              format: uint64
+            internal_gauge_info:
+              type: object
+              properties:
+                total_weight:
+                  type: string
+                gauge_records:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      gauge_id:
+                        type: string
+                        format: uint64
+                      current_weight:
+                        type: string
+                        description: >-
+                          CurrentWeight is the current weight of this gauge being distributed to for
+
+                          this epoch. For instance, for volume splitting policy, this stores the
+
+                          volume generated in the last epoch of the linked pool.
+                      cumulative_weight:
+                        type: string
+                        description: >-
+                          CumulativeWeight serves as a snapshot of the accumulator being tracked
+
+                          based on splitting policy. For instance, for volume splitting policy, this
+
+                          stores the cumulative volume for the linked pool at time of last update.
+              description: >-
+                Note that while both InternalGaugeInfo and InternalGaugeRecord could
+
+                technically be replaced by DistrInfo and DistrRecord from the pool-incentives
+
+                module, we create separate types here to keep our abstractions clean and
+
+                readable (pool-incentives distribution abstractions are used in a very
+
+                specific way that does not directly relate to gauge logic). This also helps
+
+                us sidestep a refactor to avoid an import cycle.
+            splitting_policy:
+              type: string
+              enum:
+                - ByVolume
+              default: ByVolume
+              title: SplittingPolicy determines the way we want to split incentives in groupGauges
+          description: >-
+            Group is an object that stores a 1:1 mapped gauge ID, a list of pool gauge
+
+            info, and a splitting policy. These are grouped into a single abstraction to
+
+            allow for distribution of group incentives to internal gauges according to
+
+            the specified splitting policy.
     osmosis.incentives.QueryLockableDurationsResponse:
       type: object
       properties:
@@ -32524,7 +34760,7 @@ components:
           type: array
           items:
             type: string
-          title: Time durations that users can lock coins for in order to recieve rewards
+          title: Time durations that users can lock coins for in order to receive rewards
     osmosis.incentives.RewardsEstResponse:
       type: object
       properties:
@@ -32545,8 +34781,14 @@ components:
 
               signatures required by gogoproto.
           title: |-
-            Estimated coin rewards that will be recieved at provided address
+            Estimated coin rewards that will be received at provided address
             from specified locks between current time and end epoch
+    osmosis.incentives.SplittingPolicy:
+      type: string
+      enum:
+        - ByVolume
+      default: ByVolume
+      title: SplittingPolicy determines the way we want to split incentives in groupGauges
     osmosis.incentives.UpcomingGaugesPerDenomResponse:
       type: object
       properties:
@@ -32583,6 +34825,8 @@ components:
                     enum:
                       - ByDuration
                       - ByTime
+                      - NoLock
+                      - ByGroup
                     default: ByDuration
                     description: |-
                       LockQueryType defines the type of the lock query that can
@@ -32735,6 +34979,8 @@ components:
                     enum:
                       - ByDuration
                       - ByTime
+                      - NoLock
+                      - ByGroup
                     default: ByDuration
                     description: |-
                       LockQueryType defines the type of the lock query that can
@@ -32856,6 +35102,8 @@ components:
       enum:
         - ByDuration
         - ByTime
+        - NoLock
+        - ByGroup
       default: ByDuration
       description: |-
         LockQueryType defines the type of the lock query that can
@@ -32869,6 +35117,8 @@ components:
           enum:
             - ByDuration
             - ByTime
+            - NoLock
+            - ByGroup
           default: ByDuration
           description: |-
             LockQueryType defines the type of the lock query that can
@@ -34185,6 +36435,8 @@ components:
                     enum:
                       - ByDuration
                       - ByTime
+                      - NoLock
+                      - ByGroup
                     default: ByDuration
                     description: |-
                       LockQueryType defines the type of the lock query that can
@@ -34476,7 +36728,7 @@ components:
 
             to be set as the Time-weighted-average-osmo-backing for the entire duration
 
-            of epoch N-1. (Thereby locking whats in use for epoch N as based on the prior
+            of epoch N-1. (Thereby locking what's in use for epoch N as based on the prior
 
             epochs rewards) However for now, this is not the TWAP but instead the spot
 
@@ -34496,6 +36748,76 @@ components:
           title: |-
             SuperfluidAssetType indicates whether the superfluid asset is
             a native token, lp share of a pool, or concentrated share of a pool
+    osmosis.superfluid.ConcentratedPoolUserPositionRecord:
+      type: object
+      properties:
+        validator_address:
+          type: string
+        position_id:
+          type: string
+          format: uint64
+        lock_id:
+          type: string
+          format: uint64
+        synthetic_lock:
+          type: object
+          properties:
+            underlying_lock_id:
+              type: string
+              format: uint64
+              description: >-
+                Underlying Lock ID is the underlying native lock's id for this synthetic
+
+                lockup. A synthetic lock MUST have an underlying lock.
+            synth_denom:
+              type: string
+              description: |-
+                SynthDenom is the synthetic denom that is a combination of
+                gamm share + bonding status + validator address.
+            end_time:
+              type: string
+              format: date-time
+              title: >-
+                used for unbonding synthetic lockups, for active synthetic lockups, this
+
+                value is set to uninitialized value
+            duration:
+              type: string
+              description: |-
+                Duration is the duration for a synthetic lock to mature
+                at the point of unbonding has started.
+          description: >-
+            SyntheticLock is creating virtual lockup where new denom is combination of
+
+            original denom and synthetic suffix. At the time of synthetic lockup creation
+
+            and deletion, accumulation store is also being updated and on querier side,
+
+            they can query as freely as native lockup.
+        delegation_amount:
+          type: object
+          properties:
+            denom:
+              type: string
+            amount:
+              type: string
+          description: |-
+            Coin defines a token with a denomination and an amount.
+
+            NOTE: The amount field is an Int which implements the custom method
+            signatures required by gogoproto.
+        equivalent_staked_amount:
+          type: object
+          properties:
+            denom:
+              type: string
+            amount:
+              type: string
+          description: |-
+            Coin defines a token with a denomination and an amount.
+
+            NOTE: The amount field is an Int which implements the custom method
+            signatures required by gogoproto.
     osmosis.superfluid.ConnectedIntermediaryAccountResponse:
       type: object
       properties:
@@ -34557,7 +36879,7 @@ components:
 
         to be set as the Time-weighted-average-osmo-backing for the entire duration
 
-        of epoch N-1. (Thereby locking whats in use for epoch N as based on the prior
+        of epoch N-1. (Thereby locking what's in use for epoch N as based on the prior
 
         epochs rewards) However for now, this is not the TWAP but instead the spot
 
@@ -35041,6 +37363,164 @@ components:
       properties:
         total_delegations:
           type: string
+    osmosis.superfluid.UserConcentratedSuperfluidPositionsDelegatedResponse:
+      type: object
+      properties:
+        cl_pool_user_position_records:
+          type: array
+          items:
+            type: object
+            properties:
+              validator_address:
+                type: string
+              position_id:
+                type: string
+                format: uint64
+              lock_id:
+                type: string
+                format: uint64
+              synthetic_lock:
+                type: object
+                properties:
+                  underlying_lock_id:
+                    type: string
+                    format: uint64
+                    description: >-
+                      Underlying Lock ID is the underlying native lock's id for this synthetic
+
+                      lockup. A synthetic lock MUST have an underlying lock.
+                  synth_denom:
+                    type: string
+                    description: |-
+                      SynthDenom is the synthetic denom that is a combination of
+                      gamm share + bonding status + validator address.
+                  end_time:
+                    type: string
+                    format: date-time
+                    title: >-
+                      used for unbonding synthetic lockups, for active synthetic lockups, this
+
+                      value is set to uninitialized value
+                  duration:
+                    type: string
+                    description: |-
+                      Duration is the duration for a synthetic lock to mature
+                      at the point of unbonding has started.
+                description: >-
+                  SyntheticLock is creating virtual lockup where new denom is combination of
+
+                  original denom and synthetic suffix. At the time of synthetic lockup creation
+
+                  and deletion, accumulation store is also being updated and on querier side,
+
+                  they can query as freely as native lockup.
+              delegation_amount:
+                type: object
+                properties:
+                  denom:
+                    type: string
+                  amount:
+                    type: string
+                description: >-
+                  Coin defines a token with a denomination and an amount.
+
+
+                  NOTE: The amount field is an Int which implements the custom method
+
+                  signatures required by gogoproto.
+              equivalent_staked_amount:
+                type: object
+                properties:
+                  denom:
+                    type: string
+                  amount:
+                    type: string
+                description: >-
+                  Coin defines a token with a denomination and an amount.
+
+
+                  NOTE: The amount field is an Int which implements the custom method
+
+                  signatures required by gogoproto.
+    osmosis.superfluid.UserConcentratedSuperfluidPositionsUndelegatingResponse:
+      type: object
+      properties:
+        cl_pool_user_position_records:
+          type: array
+          items:
+            type: object
+            properties:
+              validator_address:
+                type: string
+              position_id:
+                type: string
+                format: uint64
+              lock_id:
+                type: string
+                format: uint64
+              synthetic_lock:
+                type: object
+                properties:
+                  underlying_lock_id:
+                    type: string
+                    format: uint64
+                    description: >-
+                      Underlying Lock ID is the underlying native lock's id for this synthetic
+
+                      lockup. A synthetic lock MUST have an underlying lock.
+                  synth_denom:
+                    type: string
+                    description: |-
+                      SynthDenom is the synthetic denom that is a combination of
+                      gamm share + bonding status + validator address.
+                  end_time:
+                    type: string
+                    format: date-time
+                    title: >-
+                      used for unbonding synthetic lockups, for active synthetic lockups, this
+
+                      value is set to uninitialized value
+                  duration:
+                    type: string
+                    description: |-
+                      Duration is the duration for a synthetic lock to mature
+                      at the point of unbonding has started.
+                description: >-
+                  SyntheticLock is creating virtual lockup where new denom is combination of
+
+                  original denom and synthetic suffix. At the time of synthetic lockup creation
+
+                  and deletion, accumulation store is also being updated and on querier side,
+
+                  they can query as freely as native lockup.
+              delegation_amount:
+                type: object
+                properties:
+                  denom:
+                    type: string
+                  amount:
+                    type: string
+                description: >-
+                  Coin defines a token with a denomination and an amount.
+
+
+                  NOTE: The amount field is an Int which implements the custom method
+
+                  signatures required by gogoproto.
+              equivalent_staked_amount:
+                type: object
+                properties:
+                  denom:
+                    type: string
+                  amount:
+                    type: string
+                description: >-
+                  Coin defines a token with a denomination and an amount.
+
+
+                  NOTE: The amount field is an Int which implements the custom method
+
+                  signatures required by gogoproto.
     osmosis.tokenfactory.v1beta1.DenomAuthorityMetadata:
       type: object
       properties:
@@ -41315,7 +43795,7 @@ components:
       type: object
       properties:
         commission:
-          description: commission defines the commision the validator received.
+          description: commission defines the commission the validator received.
           type: object
           properties:
             commission:
@@ -47340,7 +49820,7 @@ components:
 
         gas to be used by the transaction. The ratio yields an effective "gasprice",
 
-        which must be above some miminum to be accepted into the mempool.
+        which must be above some minimum to be accepted into the mempool.
     cosmos.tx.v1beta1.GetTxResponse:
       type: object
       properties:

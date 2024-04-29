@@ -3,15 +3,16 @@ package keeper_test
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	"github.com/osmosis-labs/osmosis/osmomath"
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
+	"github.com/osmosis-labs/osmosis/osmoutils/osmoassert"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
 )
 
 func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
@@ -22,8 +23,8 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 		superfluidUndelegating bool
 		unlocking              bool
 		overwritePositionId    bool
-		amount0Added           sdk.Int
-		amount1Added           sdk.Int
+		amount0Added           osmomath.Int
+		amount1Added           osmomath.Int
 		doNotFundAcc           bool
 		isLastPositionInPool   bool
 		overwriteExecutionAcc  bool
@@ -32,74 +33,74 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 	testCases := map[string]sendTest{
 		"add to position that is superfluid delegated, not unlocking": {
 			superfluidDelegated: true,
-			amount0Added:        sdk.NewInt(100000000),
-			amount1Added:        sdk.NewInt(100000000),
+			amount0Added:        osmomath.NewInt(100000000),
+			amount1Added:        osmomath.NewInt(100000000),
 		},
 		"error: negative amount 0": {
 			superfluidDelegated: true,
 			doNotFundAcc:        true,
-			amount0Added:        sdk.NewInt(-100000000),
-			amount1Added:        sdk.NewInt(100000000),
-			expectedError:       cltypes.NegativeAmountAddedError{PositionId: 1, Asset0Amount: sdk.NewInt(-100000000), Asset1Amount: sdk.NewInt(100000000)},
+			amount0Added:        osmomath.NewInt(-100000000),
+			amount1Added:        osmomath.NewInt(100000000),
+			expectedError:       cltypes.NegativeAmountAddedError{PositionId: 1, Asset0Amount: osmomath.NewInt(-100000000), Asset1Amount: osmomath.NewInt(100000000)},
 		},
 		"error: negative amount 1": {
 			superfluidDelegated: true,
 			doNotFundAcc:        true,
-			amount0Added:        sdk.NewInt(100000000),
-			amount1Added:        sdk.NewInt(-100000000),
-			expectedError:       cltypes.NegativeAmountAddedError{PositionId: 1, Asset0Amount: sdk.NewInt(100000000), Asset1Amount: sdk.NewInt(-100000000)},
+			amount0Added:        osmomath.NewInt(100000000),
+			amount1Added:        osmomath.NewInt(-100000000),
+			expectedError:       cltypes.NegativeAmountAddedError{PositionId: 1, Asset0Amount: osmomath.NewInt(100000000), Asset1Amount: osmomath.NewInt(-100000000)},
 		},
 		"error: not underlying lock owner of the position": {
 			superfluidDelegated:   true,
 			overwriteExecutionAcc: true,
-			amount0Added:          sdk.NewInt(100000000),
-			amount1Added:          sdk.NewInt(100000000),
+			amount0Added:          osmomath.NewInt(100000000),
+			amount1Added:          osmomath.NewInt(100000000),
 			expectedError:         types.LockOwnerMismatchError{LockId: 1, LockOwner: owner.String(), ProvidedOwner: nonOwner.String()},
 		},
 		"error: not enough funds to add": {
 			doNotFundAcc:        true,
 			superfluidDelegated: true,
-			amount0Added:        sdk.NewInt(100000000),
-			amount1Added:        sdk.NewInt(100000000),
+			amount0Added:        osmomath.NewInt(100000000),
+			amount1Added:        osmomath.NewInt(100000000),
 			expectedError:       fmt.Errorf("insufficient funds"),
 		},
 		"error: last position in pool": {
 			superfluidDelegated:  true,
 			isLastPositionInPool: true,
-			amount0Added:         sdk.NewInt(100000000),
-			amount1Added:         sdk.NewInt(100000000),
+			amount0Added:         osmomath.NewInt(100000000),
+			amount1Added:         osmomath.NewInt(100000000),
 			expectedError:        cltypes.AddToLastPositionInPoolError{PoolId: 1, PositionId: 1},
 		},
 		"error: lock that is not superfluid delegated, not unlocking": {
-			amount0Added:  sdk.NewInt(100000000),
-			amount1Added:  sdk.NewInt(100000000),
+			amount0Added:  osmomath.NewInt(100000000),
+			amount1Added:  osmomath.NewInt(100000000),
 			expectedError: types.ErrNotSuperfluidUsedLockup,
 		},
 		"error: lock that is not superfluid delegated, unlocking": {
 			unlocking:     true,
-			amount0Added:  sdk.NewInt(100000000),
-			amount1Added:  sdk.NewInt(100000000),
+			amount0Added:  osmomath.NewInt(100000000),
+			amount1Added:  osmomath.NewInt(100000000),
 			expectedError: types.LockImproperStateError{LockId: 1, UnbondingDuration: s.App.StakingKeeper.UnbondingTime(s.Ctx).String()},
 		},
 		"error: lock that is superfluid undelegating, not unlocking": {
 			superfluidDelegated:    true,
 			superfluidUndelegating: true,
-			amount0Added:           sdk.NewInt(100000000),
-			amount1Added:           sdk.NewInt(100000000),
+			amount0Added:           osmomath.NewInt(100000000),
+			amount1Added:           osmomath.NewInt(100000000),
 			expectedError:          types.ErrNotSuperfluidUsedLockup,
 		},
 		"error: lock that is superfluid undelegating, unlocking": {
 			superfluidDelegated:    true,
 			superfluidUndelegating: true,
 			unlocking:              true,
-			amount0Added:           sdk.NewInt(100000000),
-			amount1Added:           sdk.NewInt(100000000),
+			amount0Added:           osmomath.NewInt(100000000),
+			amount1Added:           osmomath.NewInt(100000000),
 			expectedError:          types.LockImproperStateError{LockId: 1, UnbondingDuration: s.App.StakingKeeper.UnbondingTime(s.Ctx).String()},
 		},
 		"error: non-existent position ID": {
 			overwritePositionId: true,
-			amount0Added:        sdk.NewInt(100000000),
-			amount1Added:        sdk.NewInt(100000000),
+			amount0Added:        osmomath.NewInt(100000000),
+			amount1Added:        osmomath.NewInt(100000000),
 			expectedError:       cltypes.PositionIdNotFoundError{PositionId: 5},
 		},
 	}
@@ -133,9 +134,9 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 			}
 
 			if !tc.isLastPositionInPool {
-				fundCoins := sdk.NewCoins(sdk.NewCoin(clPool.GetToken0(), sdk.NewInt(100000000)), sdk.NewCoin(clPool.GetToken1(), sdk.NewInt(100000000)))
+				fundCoins := sdk.NewCoins(sdk.NewCoin(clPool.GetToken0(), osmomath.NewInt(100000000)), sdk.NewCoin(clPool.GetToken1(), osmomath.NewInt(100000000)))
 				s.FundAcc(nonOwner, fundCoins)
-				_, _, _, _, err := concentratedLiquidityKeeper.CreateFullRangePosition(ctx, clPool.GetId(), nonOwner, fundCoins)
+				_, err := concentratedLiquidityKeeper.CreateFullRangePosition(ctx, clPool.GetId(), nonOwner, fundCoins)
 				s.Require().NoError(err)
 			}
 
@@ -147,7 +148,7 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 			preAddToPositionPoolFunds := bankKeeper.GetAllBalances(ctx, clPoolAddress)
 
 			// System under test.
-			newPositionId, finalAmount0, finalAmount1, newLiquidity, newLockId, err := superfluidKeeper.AddToConcentratedLiquiditySuperfluidPosition(ctx, executionAcc, positionId, tc.amount0Added, tc.amount1Added)
+			positionData, newLockId, err := superfluidKeeper.AddToConcentratedLiquiditySuperfluidPosition(ctx, executionAcc, positionId, tc.amount0Added, tc.amount1Added)
 			if tc.expectedError != nil {
 				s.Require().Error(err)
 				s.Require().ErrorContains(err, tc.expectedError.Error())
@@ -164,7 +165,7 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 			//
 			// Note that the expected difference valid additive difference of 101 on asset 1.
 			var errTolerance osmomath.ErrTolerance
-			errTolerance.AdditiveTolerance = sdk.NewDec(101)
+			errTolerance.AdditiveTolerance = osmomath.NewDec(101)
 			errTolerance.RoundingDir = osmomath.RoundDown
 
 			postAddToPositionStakeSupply := bankKeeper.GetSupply(ctx, bondDenom)
@@ -173,22 +174,21 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 			// Check that bond denom supply changed by the amount of bond denom added (taking into consideration risk adjusted osmo value and err tolerance)
 			diffInBondDenomSupply := postAddToPositionStakeSupply.Amount.Sub(preAddToPositionStakeSupply.Amount)
 			expectedBondDenomSupplyDiff := superfluidKeeper.GetRiskAdjustedOsmoValue(ctx, tc.amount0Added)
-			s.Require().Equal(0, errTolerance.Compare(expectedBondDenomSupplyDiff, diffInBondDenomSupply), fmt.Sprintf("expected (%s), actual (%s)", expectedBondDenomSupplyDiff, diffInBondDenomSupply))
-
+			osmoassert.Equal(s.T(), errTolerance, expectedBondDenomSupplyDiff, diffInBondDenomSupply)
 			// Check that the pool funds changed by the amount of tokens added (taking into consideration err tolerance)
 			diffInPoolFundsToken0 := postAddToPositionPoolFunds.AmountOf(clPool.GetToken0()).Sub(preAddToPositionPoolFunds.AmountOf(clPool.GetToken0()))
-			s.Require().Equal(0, errTolerance.Compare(tc.amount0Added, diffInPoolFundsToken0), fmt.Sprintf("expected (%s), actual (%s)", tc.amount0Added, diffInPoolFundsToken0))
+			osmoassert.Equal(s.T(), errTolerance, tc.amount0Added, diffInPoolFundsToken0)
 			diffInPoolFundsToken1 := postAddToPositionPoolFunds.AmountOf(clPool.GetToken1()).Sub(preAddToPositionPoolFunds.AmountOf(clPool.GetToken1()))
-			s.Require().Equal(0, errTolerance.Compare(tc.amount1Added, diffInPoolFundsToken1), fmt.Sprintf("expected (%s), actual (%s)", tc.amount1Added, diffInPoolFundsToken1))
+			osmoassert.Equal(s.T(), errTolerance, tc.amount1Added, diffInPoolFundsToken1)
 
 			expectedNewCoins := sdk.NewCoins(sdk.NewCoin(clPool.GetToken0(), amount0.Add(tc.amount0Added)), sdk.NewCoin(clPool.GetToken1(), amount1.Add(tc.amount1Added)))
 
 			clPoolDenom := cltypes.GetConcentratedLockupDenomFromPoolId(clPool.GetId())
-			expectedLockCoins := sdk.NewCoins(sdk.NewCoin(clPoolDenom, newLiquidity.TruncateInt()))
+			expectedLockCoins := sdk.NewCoins(sdk.NewCoin(clPoolDenom, positionData.Liquidity.TruncateInt()))
 
 			// Resulting position should have the expected amount of coins within one unit (rounding down).
-			s.Require().Equal(0, errTolerance.Compare(expectedNewCoins[0].Amount, finalAmount0), fmt.Sprintf("expected (%s), actual (%s)", expectedNewCoins[0].Amount, finalAmount0))
-			s.Require().Equal(0, errTolerance.Compare(expectedNewCoins[1].Amount, finalAmount1), fmt.Sprintf("expected (%s), actual (%s)", expectedNewCoins[1].Amount, finalAmount1))
+			osmoassert.Equal(s.T(), errTolerance, expectedNewCoins[0].Amount, positionData.Amount0)
+			osmoassert.Equal(s.T(), errTolerance, expectedNewCoins[1].Amount, positionData.Amount1)
 
 			// Check the new lock.
 			newLock, err := s.App.LockupKeeper.GetLockByID(ctx, newLockId)
@@ -199,7 +199,7 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 			s.Require().Equal(expectedLockCoins.String(), newLock.Coins.String())
 
 			// Check that a new position and lock ID were generated.
-			s.Require().NotEqual(positionId, newPositionId)
+			s.Require().NotEqual(positionId, positionData.ID)
 			s.Require().NotEqual(lockId, newLockId)
 
 			// Check if intermediary account connection for the old lock ID is deleted.
@@ -224,7 +224,7 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 			s.Require().False(found)
 
 			// Check if the new intermediary account has expected delegation amount.
-			expectedDelegationAmt := superfluidKeeper.GetRiskAdjustedOsmoValue(ctx, finalAmount0)
+			expectedDelegationAmt := superfluidKeeper.GetRiskAdjustedOsmoValue(ctx, positionData.Amount0)
 			delegationAmt, found := stakingKeeper.GetDelegation(ctx, newIntermediaryAcc, valAddr)
 			s.Require().True(found)
 			s.Require().Equal(expectedDelegationAmt, delegationAmt.Shares.TruncateInt())
@@ -232,7 +232,7 @@ func (s *KeeperTestSuite) TestAddToConcentratedLiquiditySuperfluidPosition() {
 	}
 }
 
-func (s *KeeperTestSuite) SetupSuperfluidConcentratedPosition(ctx sdk.Context, superfluidDelegated, superfluidUndelegating, unlocking bool, owner sdk.AccAddress) (positionId, lockId uint64, amount0, amount1 sdk.Int, valAddr sdk.ValAddress, poolJoinAcc sdk.AccAddress) {
+func (s *KeeperTestSuite) SetupSuperfluidConcentratedPosition(ctx sdk.Context, superfluidDelegated, superfluidUndelegating, unlocking bool, owner sdk.AccAddress) (positionId, lockId uint64, amount0, amount1 osmomath.Int, valAddr sdk.ValAddress, poolJoinAcc sdk.AccAddress) { //nolint:revive // TODO: refactor this function
 	bankKeeper := s.App.BankKeeper
 	superfluidKeeper := s.App.SuperfluidKeeper
 	lockupKeeper := s.App.LockupKeeper
@@ -248,7 +248,7 @@ func (s *KeeperTestSuite) SetupSuperfluidConcentratedPosition(ctx sdk.Context, s
 	delAddrs = append(delAddrs, owner)
 	poolJoinAcc = delAddrs[1]
 	for _, acc := range delAddrs {
-		err := simapp.FundAccount(bankKeeper, ctx, acc, defaultAcctFunds)
+		err := testutil.FundAccount(bankKeeper, ctx, acc, defaultAcctFunds)
 		s.Require().NoError(err)
 	}
 
@@ -256,15 +256,18 @@ func (s *KeeperTestSuite) SetupSuperfluidConcentratedPosition(ctx sdk.Context, s
 	valAddr = s.SetupValidator(stakingtypes.Bonded)
 
 	// Create a cl pool.
-	clPool := s.PrepareCustomConcentratedPool(poolCreateAcc, defaultPoolAssets[0].Token.Denom, defaultPoolAssets[1].Token.Denom, 1, sdk.ZeroDec())
+	clPool := s.PrepareCustomConcentratedPool(poolCreateAcc, defaultPoolAssets[0].Token.Denom, defaultPoolAssets[1].Token.Denom, 1, osmomath.ZeroDec())
 	clPoolId := clPool.GetId()
 
 	// The lock duration is the same as the staking module's unbonding duration.
 	unbondingDuration := stakingKeeper.GetParams(ctx).UnbondingTime
 
 	// Create a full range position in the concentrated liquidity pool.
-	positionId, amount0, amount1, _, lockId, err := s.App.ConcentratedLiquidityKeeper.CreateFullRangePositionLocked(s.Ctx, clPoolId, poolJoinAcc, fullRangeCoins, unbondingDuration)
+	positionData, lockId, err := s.App.ConcentratedLiquidityKeeper.CreateFullRangePositionLocked(s.Ctx, clPoolId, poolJoinAcc, fullRangeCoins, unbondingDuration)
 	s.Require().NoError(err)
+	positionId = positionData.ID
+	amount0 = positionData.Amount0
+	amount1 = positionData.Amount1
 
 	// Register the CL full range LP tokens as a superfluid asset.
 	clPoolDenom := cltypes.GetConcentratedLockupDenomFromPoolId(clPoolId)

@@ -8,11 +8,11 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/osmosis-labs/osmosis/osmoutils"
-	"github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 // validateCreatedPool checks that the pool was created with the correct pool ID and address.
-func (k Keeper) validateCreatedPool(ctx sdk.Context, poolId uint64, pool types.PoolI) error {
+func (k Keeper) validateCreatedPool(poolId uint64, pool types.PoolI) error {
 	if pool.GetId() != poolId {
 		return types.IncorrectPoolIdError{ExpectedPoolId: poolId, ActualPoolId: pool.GetId()}
 	}
@@ -30,16 +30,11 @@ func (k Keeper) validateCreatedPool(ctx sdk.Context, poolId uint64, pool types.P
 // - Minting LP shares to pool creator
 // - Setting metadata for the shares
 func (k Keeper) CreatePool(ctx sdk.Context, msg types.CreatePoolMsg) (uint64, error) {
-	// Get pool module interface from the pool type.
+	// Check that the pool type exists
 	poolType := msg.GetPoolType()
-	poolModule, ok := k.routes[poolType]
+	_, ok := k.routes[poolType]
 	if !ok {
 		return 0, types.InvalidPoolTypeError{PoolType: poolType}
-	}
-
-	// Confirm that permissionless pool creation is enabled for the module.
-	if err := poolModule.ValidatePermissionlessPoolCreationEnabled(ctx); err != nil {
-		return 0, err
 	}
 
 	// createPoolZeroLiquidityNoCreationFee contains shared pool creation logic between this function (CreatePool) and
@@ -104,6 +99,11 @@ func (k Keeper) createPoolZeroLiquidityNoCreationFee(ctx sdk.Context, msg types.
 
 	// Get the next pool ID and increment the pool ID counter.
 	poolId := k.getNextPoolIdAndIncrement(ctx)
+	if poolId >= types.MaxPoolId {
+		return nil, fmt.Errorf("next pool ID %d is greater than max pool ID %d", poolId, types.MaxPoolId)
+	}
+
+	poolType := msg.GetPoolType()
 
 	// Create the pool with the given pool ID.
 	pool, err := msg.CreatePool(ctx, poolId)
@@ -112,15 +112,15 @@ func (k Keeper) createPoolZeroLiquidityNoCreationFee(ctx sdk.Context, msg types.
 	}
 
 	// Store the pool ID to pool type mapping in state.
-	k.SetPoolRoute(ctx, poolId, msg.GetPoolType())
+	k.SetPoolRoute(ctx, poolId, poolType)
 
 	// Validates the pool address and pool ID stored match what was expected.
-	if err := k.validateCreatedPool(ctx, poolId, pool); err != nil {
+	if err := k.validateCreatedPool(poolId, pool); err != nil {
 		return nil, err
 	}
 
 	// Run the respective pool type's initialization logic.
-	swapModule := k.routes[msg.GetPoolType()]
+	swapModule := k.routes[poolType]
 	if err := swapModule.InitializePool(ctx, pool, msg.PoolCreator()); err != nil {
 		return nil, err
 	}
@@ -131,20 +131,15 @@ func (k Keeper) createPoolZeroLiquidityNoCreationFee(ctx sdk.Context, msg types.
 		return nil, fmt.Errorf("creating pool module account for id %d: %w", poolId, err)
 	}
 
-	emitCreatePoolEvents(ctx, poolId, msg)
+	emitCreatePoolEvents(ctx, poolId)
 	return pool, nil
 }
 
-func emitCreatePoolEvents(ctx sdk.Context, poolId uint64, msg types.CreatePoolMsg) {
+func emitCreatePoolEvents(ctx sdk.Context, poolId uint64) {
 	ctx.EventManager().EmitEvents(sdk.Events{
 		sdk.NewEvent(
 			types.TypeEvtPoolCreated,
 			sdk.NewAttribute(types.AttributeKeyPoolId, strconv.FormatUint(poolId, 10)),
-		),
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.PoolCreator().String()),
 		),
 	})
 }
@@ -156,9 +151,34 @@ func (k Keeper) getNextPoolIdAndIncrement(ctx sdk.Context) uint64 {
 	return nextPoolId
 }
 
-func (k Keeper) SetPoolRoute(ctx sdk.Context, poolId uint64, poolType types.PoolType) {
+func (k *Keeper) SetPoolRoute(ctx sdk.Context, poolId uint64, poolType types.PoolType) {
 	store := ctx.KVStore(k.storeKey)
 	osmoutils.MustSet(store, types.FormatModuleRouteKey(poolId), &types.ModuleRoute{PoolType: poolType})
+}
+
+type poolModuleCacheValue struct {
+	pooltype types.PoolType
+	module   types.PoolModuleI
+	gasFlat  uint64
+	gasKey   uint64
+	gasValue uint64
+}
+
+func (k *Keeper) GetPoolType(ctx sdk.Context, poolId uint64) (types.PoolType, error) {
+	poolModuleCandidate, cacheHit := k.cachedPoolModules.Load(poolId)
+	if !cacheHit {
+		_, err := k.GetPoolModule(ctx, poolId)
+		if err != nil {
+			return 0, err
+		}
+		poolModuleCandidate, _ = k.cachedPoolModules.Load(poolId)
+	}
+	v, _ := poolModuleCandidate.(poolModuleCacheValue)
+	if cacheHit {
+		osmoutils.ChargeMockReadGas(ctx, v.gasFlat, v.gasKey, v.gasValue)
+	}
+
+	return v.pooltype, nil
 }
 
 // GetPoolModule returns the swap module for the given pool ID.
@@ -169,11 +189,17 @@ func (k Keeper) SetPoolRoute(ctx sdk.Context, poolId uint64, poolType types.Pool
 // in poolmanager's keeper constructor.
 // TODO: unexport after concentrated-liqudity upgrade. Currently, it is exported
 // for the upgrade handler logic and tests.
-func (k Keeper) GetPoolModule(ctx sdk.Context, poolId uint64) (types.PoolModuleI, error) {
+func (k *Keeper) GetPoolModule(ctx sdk.Context, poolId uint64) (types.PoolModuleI, error) {
+	poolModuleCandidate, ok := k.cachedPoolModules.Load(poolId)
+	if ok {
+		v, _ := poolModuleCandidate.(poolModuleCacheValue)
+		osmoutils.ChargeMockReadGas(ctx, v.gasFlat, v.gasKey, v.gasValue)
+		return v.module, nil
+	}
 	store := ctx.KVStore(k.storeKey)
 
 	moduleRoute := &types.ModuleRoute{}
-	found, err := osmoutils.Get(store, types.FormatModuleRouteKey(poolId), moduleRoute)
+	found, gasFlat, gasKey, gasVal, err := osmoutils.TrackGasUsedInGet(store, types.FormatModuleRouteKey(poolId), moduleRoute)
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +211,14 @@ func (k Keeper) GetPoolModule(ctx sdk.Context, poolId uint64) (types.PoolModuleI
 	if !routeExists {
 		return nil, types.UndefinedRouteError{PoolType: moduleRoute.PoolType, PoolId: poolId}
 	}
+
+	k.cachedPoolModules.Store(poolId, poolModuleCacheValue{
+		pooltype: moduleRoute.PoolType,
+		module:   swapModule,
+		gasFlat:  gasFlat,
+		gasKey:   gasKey,
+		gasValue: gasVal,
+	})
 
 	return swapModule, nil
 }

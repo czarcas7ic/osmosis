@@ -8,15 +8,16 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/configurer/chain"
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/containers"
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/initialization"
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/util"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/configurer/chain"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/containers"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/initialization"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/util"
 )
 
 // baseConfigurer is the base implementation for the
@@ -52,18 +53,49 @@ func (bc *baseConfigurer) GetChainConfig(chainIndex int) *chain.Config {
 }
 
 func (bc *baseConfigurer) RunValidators() error {
+	errChan := make(chan error, len(bc.chainConfigs))
+
+	// Launch goroutines for each chainConfig
 	for _, chainConfig := range bc.chainConfigs {
-		if err := bc.runValidators(chainConfig); err != nil {
+		go func(config *chain.Config) {
+			err := bc.runValidators(config)
+			errChan <- err
+		}(chainConfig)
+	}
+
+	// Collect errors from goroutines
+	for range bc.chainConfigs {
+		if err := <-errChan; err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
 func (bc *baseConfigurer) runValidators(chainConfig *chain.Config) error {
 	bc.t.Logf("starting %s validator containers...", chainConfig.Id)
+
+	errCh := make(chan error, len(chainConfig.NodeConfigs))
+	var wg sync.WaitGroup
+
 	for _, node := range chainConfig.NodeConfigs {
-		if err := node.Run(); err != nil {
+		wg.Add(1)
+		go func(node *chain.NodeConfig) {
+			defer wg.Done()
+			if err := node.Run(true); err != nil {
+				errCh <- err
+			}
+		}(node)
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(errCh)
+
+	// Check if any of the goroutines returned an error
+	for err := range errCh {
+		if err != nil {
 			return err
 		}
 	}
@@ -149,8 +181,8 @@ func (bc *baseConfigurer) runIBCRelayer(chainConfigA *chain.Config, chainConfigB
 
 		return status == "success" && len(chains) == 2
 	},
-		5*time.Minute,
-		time.Second,
+		time.Minute,
+		10*time.Millisecond,
 		"hermes relayer not healthy")
 
 	bc.t.Logf("started Hermes relayer container: %s", hermesResource.Container.ID)

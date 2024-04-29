@@ -3,6 +3,8 @@ package types
 import (
 	"errors"
 	"fmt"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 )
 
 var (
@@ -33,4 +35,14 @@ type CodeIdNotWhitelistedError struct {
 
 func (e CodeIdNotWhitelistedError) Error() string {
 	return fmt.Sprintf("cannot create coswasm pool with the given code id (%d). Please whitelist it via governance", e.CodeId)
+}
+
+type NegativeExcessiveTokenInAmountError struct {
+	TokenInMaxAmount       osmomath.Int
+	TokenInRequiredAmount  osmomath.Int
+	TokenInExcessiveAmount osmomath.Int
+}
+
+func (e NegativeExcessiveTokenInAmountError) Error() string {
+	return fmt.Sprintf("excessive token in amount cannot be negative. token in max amount = %d, token in required amount = %d, token in excessive amount = %d", e.TokenInMaxAmount, e.TokenInRequiredAmount, e.TokenInExcessiveAmount)
 }

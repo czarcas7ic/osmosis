@@ -6,7 +6,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
 	authzcodec "github.com/cosmos/cosmos-sdk/x/authz/codec"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	govtypesv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 )
 
 func RegisterCodec(cdc *codec.LegacyAmino) {
@@ -22,6 +22,7 @@ func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgUnlockAndMigrateSharesToFullRangeConcentratedPosition{}, "osmosis/unlock-and-migrate", nil)
 	cdc.RegisterConcrete(&MsgCreateFullRangePositionAndSuperfluidDelegate{}, "osmosis/full-range-and-sf-delegate", nil)
 	cdc.RegisterConcrete(&MsgAddToConcentratedLiquiditySuperfluidPosition{}, "osmosis/add-to-cl-superfluid-position", nil)
+	cdc.RegisterConcrete(&MsgUnbondConvertAndStake{}, "osmosis/unbond-convert-and-stake", nil)
 }
 
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
@@ -36,10 +37,11 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgUnlockAndMigrateSharesToFullRangeConcentratedPosition{},
 		&MsgCreateFullRangePositionAndSuperfluidDelegate{},
 		&MsgAddToConcentratedLiquiditySuperfluidPosition{},
+		&MsgUnbondConvertAndStake{},
 	)
 
 	registry.RegisterImplementations(
-		(*govtypes.Content)(nil),
+		(*govtypesv1.Content)(nil),
 		&SetSuperfluidAssetsProposal{},
 		&RemoveSuperfluidAssetsProposal{},
 		&UpdateUnpoolWhiteListProposal{},

@@ -7,7 +7,7 @@ new binaries, and cosmovisor will automatically update them based on
 on-chain SoftwareUpgrade proposals.
 
 You should review the docs for cosmovisor located here:
-<https://docs.cosmos.network/master/run-node/cosmovisor.html>
+<https://docs.cosmos.network/main/tooling/cosmovisor>
 
 If you choose to use cosmovisor, please continue with these
 instructions:
@@ -36,7 +36,7 @@ Cosmovisor requires some ENVIRONMENT VARIABLES be set in order to
 function properly. We recommend setting these in your `.profile` so it
 is automatically set in every session.
 
-For validators we recommmend setting
+For validators we recommend setting
 
 - `DAEMON_ALLOW_DOWNLOAD_BINARIES=false` for security reasons
 - `DAEMON_LOG_BUFFER_SIZE=512` to avoid a bug with extra long log

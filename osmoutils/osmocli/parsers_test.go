@@ -7,6 +7,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 )
 
 type testingStruct struct {
@@ -18,7 +20,7 @@ type testingStruct struct {
 	Pointer  *testingStruct
 	Slice    sdk.Coins
 	Struct   interface{}
-	Dec      sdk.Dec
+	Dec      osmomath.Dec
 }
 
 func TestParseFieldFromArg(t *testing.T) {
@@ -80,24 +82,24 @@ func TestParseFieldFromArg(t *testing.T) {
 		},
 		"Slice change": {
 			testingStruct: testingStruct{Slice: sdk.Coins{
-				sdk.NewCoin("foo", sdk.NewInt(100)),
-				sdk.NewCoin("bar", sdk.NewInt(100)),
+				sdk.NewCoin("foo", osmomath.NewInt(100)),
+				sdk.NewCoin("bar", osmomath.NewInt(100)),
 			}},
 			arg:        "10foo,10bar", // Should be of a format suitable for ParseCoinsNormalized
 			fieldIndex: 6,
 			expectedStruct: testingStruct{Slice: sdk.Coins{ // swapped places due to lexicographic order
-				sdk.NewCoin("bar", sdk.NewInt(10)),
-				sdk.NewCoin("foo", sdk.NewInt(10)),
+				sdk.NewCoin("bar", osmomath.NewInt(10)),
+				sdk.NewCoin("foo", osmomath.NewInt(10)),
 			}},
 		},
 		"Struct (sdk.Coin) change": {
-			testingStruct:  testingStruct{Struct: sdk.NewCoin("bar", sdk.NewInt(10))}, // only supports sdk.Int, sdk.Coin or time.Time, other structs are not recognized
+			testingStruct:  testingStruct{Struct: sdk.NewCoin("bar", osmomath.NewInt(10))}, // only supports osmomath.Int, sdk.Coin or time.Time, other structs are not recognized
 			arg:            "100bar",
 			fieldIndex:     7,
-			expectedStruct: testingStruct{Struct: sdk.NewCoin("bar", sdk.NewInt(10))},
+			expectedStruct: testingStruct{Struct: sdk.NewCoin("bar", osmomath.NewInt(10))},
 		},
 		"Unrecognizable struct": {
-			testingStruct: testingStruct{Struct: testingStruct{}}, // only supports sdk.Int, sdk.Coin or time.Time, other structs are not recognized
+			testingStruct: testingStruct{Struct: testingStruct{}}, // only supports osmomath.Int, sdk.Coin or time.Time, other structs are not recognized
 			arg:           "whatever",
 			fieldIndex:    7,
 			expectingErr:  true,
@@ -117,10 +119,10 @@ func TestParseFieldFromArg(t *testing.T) {
 				Duration: time.Second,
 				Pointer:  &testingStruct{},
 				Slice: sdk.Coins{
-					sdk.NewCoin("foo", sdk.NewInt(100)),
-					sdk.NewCoin("bar", sdk.NewInt(100)),
+					sdk.NewCoin("foo", osmomath.NewInt(100)),
+					sdk.NewCoin("bar", osmomath.NewInt(100)),
 				},
-				Struct: sdk.NewCoin("bar", sdk.NewInt(10)),
+				Struct: sdk.NewCoin("bar", osmomath.NewInt(10)),
 			},
 			arg:        "1foo,15bar",
 			fieldIndex: 6,
@@ -132,21 +134,22 @@ func TestParseFieldFromArg(t *testing.T) {
 				Duration: time.Second,
 				Pointer:  &testingStruct{},
 				Slice: sdk.Coins{
-					sdk.NewCoin("bar", sdk.NewInt(15)),
-					sdk.NewCoin("foo", sdk.NewInt(1)),
+					sdk.NewCoin("bar", osmomath.NewInt(15)),
+					sdk.NewCoin("foo", osmomath.NewInt(1)),
 				},
-				Struct: sdk.NewCoin("bar", sdk.NewInt(10)),
+				Struct: sdk.NewCoin("bar", osmomath.NewInt(10)),
 			},
 		},
 		"Dec struct": {
-			testingStruct:  testingStruct{Dec: sdk.MustNewDecFromStr("100")},
+			testingStruct:  testingStruct{Dec: osmomath.MustNewDecFromStr("100")},
 			arg:            "10",
 			fieldIndex:     8,
-			expectedStruct: testingStruct{Dec: sdk.MustNewDecFromStr("10")},
+			expectedStruct: testingStruct{Dec: osmomath.MustNewDecFromStr("10")},
 		},
 	}
 
 	for name, tc := range tests {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
 			val := reflect.ValueOf(&tc.testingStruct).Elem()
 			typ := reflect.TypeOf(&tc.testingStruct).Elem()
@@ -160,6 +163,44 @@ func TestParseFieldFromArg(t *testing.T) {
 				require.Equal(t, tc.expectedStruct, tc.testingStruct)
 			} else {
 				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestParseUint64SliceToString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []uint64
+		expected string
+	}{
+		{
+			name:     "Test with empty slice",
+			input:    []uint64{},
+			expected: "",
+		},
+		{
+			name:     "Test with single element",
+			input:    []uint64{1},
+			expected: "1",
+		},
+		{
+			name:     "Test with multiple elements",
+			input:    []uint64{1, 2, 3, 4, 5},
+			expected: "1, 2, 3, 4, 5",
+		},
+		{
+			name:     "Test with multiple elements out of order",
+			input:    []uint64{9, 1, 2, 3, 4, 5},
+			expected: "9, 1, 2, 3, 4, 5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseUint64SliceToString(tt.input)
+			if result != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, result)
 			}
 		})
 	}

@@ -3,8 +3,10 @@ package twap
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	concentratedliquiditytypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	concentratedliquiditytypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	"github.com/osmosis-labs/osmosis/v24/x/twap/types"
 	epochtypes "github.com/osmosis-labs/osmosis/x/epochs/types"
 )
 
@@ -21,10 +23,21 @@ func (k Keeper) EpochHooks() epochtypes.EpochHooks {
 	return &epochhook{k}
 }
 
+// GetModuleName implements types.EpochHooks.
+func (*epochhook) GetModuleName() string {
+	return types.ModuleName
+}
+
 func (hook *epochhook) AfterEpochEnd(ctx sdk.Context, epochIdentifier string, epochNumber int64) error {
 	if epochIdentifier == hook.k.PruneEpochIdentifier(ctx) {
-		if err := hook.k.pruneRecords(ctx); err != nil {
-			ctx.Logger().Error("Error pruning old twaps at the epoch end", err)
+		lastKeptTime := ctx.BlockTime().Add(-hook.k.RecordHistoryKeepPeriod(ctx))
+		poolIdToStartFrom := hook.k.poolmanagerKeeper.GetNextPoolId(ctx) - 1
+		if poolIdToStartFrom > 0 {
+			hook.k.SetPruningState(ctx, types.PruningState{
+				IsPruning:      true,
+				LastKeptTime:   lastKeptTime,
+				LastSeenPoolId: poolIdToStartFrom,
+			})
 		}
 	}
 	return nil
@@ -52,11 +65,11 @@ func (hook *gammhook) AfterCFMMSwap(ctx sdk.Context, sender sdk.AccAddress, pool
 	hook.k.trackChangedPool(ctx, poolId)
 }
 
-func (hook *gammhook) AfterJoinPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, enterCoins sdk.Coins, shareOutAmount sdk.Int) {
+func (hook *gammhook) AfterJoinPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, enterCoins sdk.Coins, shareOutAmount osmomath.Int) {
 	hook.k.trackChangedPool(ctx, poolId)
 }
 
-func (hook *gammhook) AfterExitPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, shareInAmount sdk.Int, exitCoins sdk.Coins) {
+func (hook *gammhook) AfterExitPool(ctx sdk.Context, sender sdk.AccAddress, poolId uint64, shareInAmount osmomath.Int, exitCoins sdk.Coins) {
 	hook.k.trackChangedPool(ctx, poolId)
 }
 

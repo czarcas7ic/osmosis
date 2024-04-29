@@ -15,6 +15,8 @@ const (
 	// StoreKey defines the primary module store key
 	StoreKey = ModuleName
 
+	TransientStoreKey = "transient_" + ModuleName
+
 	// RouterKey defines the module's message routing key
 	RouterKey = ModuleName
 )
@@ -22,7 +24,7 @@ const (
 const (
 	prefixTokenPairRoutes = iota + 1
 	prefixDenomPairToPool
-	prefixBaseDenoms
+	prefixDeprecatedBaseDenoms
 	prefixNumberOfTrades
 	prefixProfitsByDenom
 	prefixTradesByRoute
@@ -34,8 +36,11 @@ const (
 	prefixMaxPoolPointsPerBlock
 	prefixPoolPointCountForBlock
 	prefixLatestBlockHeight
-	prefixPoolWeights
+	prefixInfoByPoolType
 	prefixSwapsToBackrun
+	prefixcyclicArbTracker
+	prefixcyclicArbTrackerStartHeight
+	prefixBaseDenoms
 )
 
 var (
@@ -46,8 +51,8 @@ var (
 	// KeyPrefixDenomPairToPool is the prefix that is used to store the pool id for a given denom pair (baseDenom, otherDenom)
 	KeyPrefixDenomPairToPool = []byte{prefixDenomPairToPool}
 
-	// KeyPrefixBaseDenoms is the prefix that is used to store the base denoms that are used to create cyclic arbitrage routes
-	KeyPrefixBaseDenoms = []byte{prefixBaseDenoms}
+	// DEPRECATED: KeyPrefixDeprecatedBaseDenoms is the prefix that is used to store the base denoms that are used to create cyclic arbitrage routes
+	KeyPrefixDeprecatedBaseDenoms = []byte{prefixDeprecatedBaseDenoms}
 
 	// -------------- Keys for statistics stores -------------- //
 	// KeyPrefixNumberOfTrades is the prefix for the store that keeps track of the number of trades executed
@@ -84,11 +89,20 @@ var (
 	// KeyPrefixLatestBlockHeight is the prefix for store that keeps track of the latest recorded block height
 	KeyPrefixLatestBlockHeight = []byte{prefixLatestBlockHeight}
 
-	// KeyPrefixPoolWeights is the prefix for store that keeps track of the weights for different pool types
-	KeyPrefixPoolWeights = []byte{prefixPoolWeights}
+	// KeyPrefixInfoByPoolType is the prefix for store that keeps track of the pool type info
+	KeyPrefixInfoByPoolType = []byte{prefixInfoByPoolType}
 
 	// KeyPrefixSwapsToBackrun is the prefix for store that keeps track of the swaps that need to be backrun for a given tx
 	KeyPrefixSwapsToBackrun = []byte{prefixSwapsToBackrun}
+
+	// KeyCyclicArbTracker is the prefix for store that keeps track of the profits made by cyclic arbitrage
+	KeyCyclicArbTracker = []byte{prefixcyclicArbTracker}
+
+	// KeyCyclicArbTracker is the prefix for store that keeps track of the height we began tracking cyclic arbitrage
+	KeyCyclicArbTrackerStartHeight = []byte{prefixcyclicArbTrackerStartHeight}
+
+	// KeyPrefixBaseDenoms is the prefix that is used to store the base denoms that are used to create cyclic arbitrage routes
+	KeyPrefixBaseDenoms = []byte{prefixBaseDenoms}
 )
 
 // Returns the key needed to fetch the pool id for a given denom
@@ -97,8 +111,8 @@ func GetKeyPrefixDenomPairToPool(baseDenom, matchDenom string) []byte {
 }
 
 // Returns the key needed to fetch info about base denoms
-func GetKeyPrefixBaseDenom(priority uint64) []byte {
-	return append(KeyPrefixBaseDenoms, sdk.Uint64ToBigEndian(priority)...)
+func DeprecatedGetKeyPrefixBaseDenom(priority uint64) []byte {
+	return append(KeyPrefixDeprecatedBaseDenoms, sdk.Uint64ToBigEndian(priority)...)
 }
 
 // Returns the key needed to fetch the tokenPair routes for a given pair of tokens

@@ -6,17 +6,16 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 
-	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/version"
-	"github.com/cosmos/cosmos-sdk/x/gov/client/cli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	govtypesv1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 
 	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -29,7 +28,7 @@ func NewCmdTx() *cobra.Command {
 	osmocli.AddTxCmd(txCmd, CmdSetMaxPoolPointsPerBlock)
 	txCmd.AddCommand(
 		CmdSetDeveloperHotRoutes().BuildCommandCustomFn(),
-		CmdSetPoolWeights().BuildCommandCustomFn(),
+		CmdSetInfoByPoolType().BuildCommandCustomFn(),
 		CmdSetBaseDenoms().BuildCommandCustomFn(),
 		CmdSetProtoRevAdminAccountProposal(),
 		CmdSetProtoRevEnabledProposal(),
@@ -40,7 +39,7 @@ func NewCmdTx() *cobra.Command {
 // CmdSetDeveloperHotRoutes implements the command to set the protorev hot routes
 func CmdSetDeveloperHotRoutes() *osmocli.TxCliDesc {
 	desc := osmocli.TxCliDesc{
-		Use:   "set-hot-routes [path/to/routes.json]",
+		Use:   "set-hot-routes",
 		Short: "set the protorev hot routes",
 		Long: `Must provide a json file with all of the hot routes that will be set. 
 		Sample json file:
@@ -84,7 +83,7 @@ func CmdSetDeveloperHotRoutes() *osmocli.TxCliDesc {
 // CmdSetDeveloperAccount implements the command to set the protorev developer account
 func CmdSetDeveloperAccount() (*osmocli.TxCliDesc, *types.MsgSetDeveloperAccount) {
 	return &osmocli.TxCliDesc{
-		Use:     "set-developer-account [sdk.AccAddress]",
+		Use:     "set-developer-account",
 		Short:   "set the protorev developer account",
 		NumArgs: 1,
 		ParseAndBuildMsg: func(clientCtx client.Context, args []string, flags *pflag.FlagSet) (sdk.Msg, error) {
@@ -104,7 +103,7 @@ func CmdSetDeveloperAccount() (*osmocli.TxCliDesc, *types.MsgSetDeveloperAccount
 // CmdSetMaxPoolPointsPerTx implements the command to set the max pool points per tx
 func CmdSetMaxPoolPointsPerTx() (*osmocli.TxCliDesc, *types.MsgSetMaxPoolPointsPerTx) {
 	return &osmocli.TxCliDesc{
-		Use:     "set-max-pool-points-per-tx [uint64]",
+		Use:     "set-max-pool-points-per-tx",
 		Short:   "set the max pool points that can be consumed per tx",
 		NumArgs: 1,
 		ParseAndBuildMsg: func(clientCtx client.Context, args []string, flags *pflag.FlagSet) (sdk.Msg, error) {
@@ -124,7 +123,7 @@ func CmdSetMaxPoolPointsPerTx() (*osmocli.TxCliDesc, *types.MsgSetMaxPoolPointsP
 // CmdSetMaxPoolPointsPerBlock implements the command to set the max pool points per block
 func CmdSetMaxPoolPointsPerBlock() (*osmocli.TxCliDesc, *types.MsgSetMaxPoolPointsPerBlock) {
 	return &osmocli.TxCliDesc{
-		Use:     "set-max-pool-points-per-block [uint64]",
+		Use:     "set-max-pool-points-per-block",
 		Short:   "set the max pool points that can be consumed per block",
 		NumArgs: 1,
 		ParseAndBuildMsg: func(clientCtx client.Context, args []string, flags *pflag.FlagSet) (sdk.Msg, error) {
@@ -141,22 +140,35 @@ func CmdSetMaxPoolPointsPerBlock() (*osmocli.TxCliDesc, *types.MsgSetMaxPoolPoin
 	}, &types.MsgSetMaxPoolPointsPerBlock{}
 }
 
-// CmdSetPoolWeights implements the command to set the pool weights used to estimate execution costs
-func CmdSetPoolWeights() *osmocli.TxCliDesc {
+// CmdSetInfoByPoolType implements the command to set the pool information used throughout the module
+func CmdSetInfoByPoolType() *osmocli.TxCliDesc {
 	desc := osmocli.TxCliDesc{
-		Use:   "set-pool-weights [path/to/routes.json]",
-		Short: "set the protorev pool weights",
-		Long: `Must provide a json file with all the pool weights that will be set. 
+		Use:   "set-info-by-pool-type",
+		Short: "set the protorev pool type info",
+		Long: `Must provide a json file with all the pool info that will be set. This does NOT set info for a single pool type.
+		All information must be provided across all pool types in the json file.
 		Sample json file:
 		{
-			"stable_weight" : 1,
-			"balancer_weight" : 1,
-			"concentrated_weight" : 1
+			"stable" : {
+				"weight" : 1,
+			},
+			"concentrated" : {
+				"weight" : 1,
+				"max_ticks_crossed": 10,
+			},
+			"balancer" : {
+				"weight" : 1,
+			},
+			"cosmwasm" : {
+				"weight_maps" : [
+					{"contract_address" : "cosmos123...", "weight" : 1}
+				],
+			},
 		}
 		`,
-		Example:          fmt.Sprintf(`$ %s tx protorev set-pool-weights weights.json --from mykey`, version.AppName),
+		Example:          fmt.Sprintf(`$ %s tx protorev set-info-by-pool-type pool_info.json --from mykey`, version.AppName),
 		NumArgs:          1,
-		ParseAndBuildMsg: BuildSetPoolWeightsMsg,
+		ParseAndBuildMsg: BuildSetInfoByPoolTypeMsg,
 	}
 
 	return &desc
@@ -165,7 +177,7 @@ func CmdSetPoolWeights() *osmocli.TxCliDesc {
 // CmdSetBaseDenoms implements the command to set the base denoms used in the highest liquidity method
 func CmdSetBaseDenoms() *osmocli.TxCliDesc {
 	desc := osmocli.TxCliDesc{
-		Use:   "set-base-denoms [path/to/denoms.json]",
+		Use:   "set-base-denoms",
 		Short: "set the protorev base denoms",
 		Long: `Must provide a json file with all the base denoms that will be set. 
 		Sample json file:
@@ -196,20 +208,14 @@ func CmdSetProtoRevAdminAccountProposal() *cobra.Command {
 		Short:   "submit a set protorev admin account proposal to set the admin account for x/protorev",
 		Example: fmt.Sprintf(`$ %s tx protorev set-protorev-admin-account osmo123... --from mykey`, version.AppName),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			createContent := func(title string, description string, args ...string) (govtypes.Content, error) {
+			createContent := func(title string, description string, args ...string) (govtypesv1beta1.Content, error) {
 				return types.NewSetProtoRevAdminAccountProposal(title, description, args[0]), nil
 			}
 
 			return ProposalExecute(cmd, args, createContent)
 		},
 	}
-
-	cmd.Flags().String(cli.FlagTitle, "", "title of proposal")
-	cmd.Flags().String(cli.FlagDescription, "", "description of proposal")
-	cmd.Flags().String(cli.FlagDeposit, "", "deposit of proposal")
-	flags.AddTxFlagsToCmd(cmd)
-	_ = cmd.MarkFlagRequired(cli.FlagTitle)
-	_ = cmd.MarkFlagRequired(cli.FlagDescription)
+	osmocli.AddCommonProposalFlags(cmd)
 
 	return cmd
 }
@@ -222,7 +228,7 @@ func CmdSetProtoRevEnabledProposal() *cobra.Command {
 		Short:   "submit a set protorev enabled proposal to enable or disable the protocol",
 		Example: fmt.Sprintf(`$ %s tx protorev set-protorev-enabled true --from mykey`, version.AppName),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			createContent := func(title string, description string, args ...string) (govtypes.Content, error) {
+			createContent := func(title string, description string, args ...string) (govtypesv1beta1.Content, error) {
 				res, err := strconv.ParseBool(args[0])
 				if err != nil {
 					return nil, err
@@ -235,59 +241,34 @@ func CmdSetProtoRevEnabledProposal() *cobra.Command {
 			return ProposalExecute(cmd, args, createContent)
 		},
 	}
-
-	cmd.Flags().String(cli.FlagTitle, "", "title of proposal")
-	cmd.Flags().String(cli.FlagDescription, "", "description of proposal")
-	cmd.Flags().String(cli.FlagDeposit, "", "deposit of proposal")
-	flags.AddTxFlagsToCmd(cmd)
-	_ = cmd.MarkFlagRequired(cli.FlagTitle)
-	_ = cmd.MarkFlagRequired(cli.FlagDescription)
+	osmocli.AddCommonProposalFlags(cmd)
 
 	return cmd
 }
 
 // ProposalExecute is a helper function to execute a proposal command. It takes in a function to create the proposal content.
-func ProposalExecute(cmd *cobra.Command, args []string, createContent func(title string, description string, args ...string) (govtypes.Content, error)) error {
-	clientCtx, err := client.GetClientTxContext(cmd)
+func ProposalExecute(cmd *cobra.Command, args []string, createContent func(title string, description string, args ...string) (govtypesv1beta1.Content, error)) error {
+	clientCtx, proposalTitle, summary, deposit, isExpedited, authority, err := osmocli.GetProposalInfo(cmd)
 	if err != nil {
 		return err
 	}
 
-	title, err := cmd.Flags().GetString(cli.FlagTitle)
+	content, err := createContent(proposalTitle, summary, args...)
 	if err != nil {
 		return err
 	}
 
-	description, err := cmd.Flags().GetString(cli.FlagDescription)
+	contentMsg, err := v1.NewLegacyContent(content, authority.String())
 	if err != nil {
 		return err
 	}
 
-	depositStr, err := cmd.Flags().GetString(cli.FlagDeposit)
+	msg := v1.NewMsgExecLegacyContent(contentMsg.Content, authority.String())
+
+	proposalMsg, err := v1.NewMsgSubmitProposal([]sdk.Msg{msg}, deposit, clientCtx.GetFromAddress().String(), "", proposalTitle, summary, isExpedited)
 	if err != nil {
 		return err
 	}
 
-	deposit, err := sdk.ParseCoinsNormalized(depositStr)
-	if err != nil {
-		return err
-	}
-
-	from := clientCtx.GetFromAddress()
-
-	content, err := createContent(title, description, args...)
-	if err != nil {
-		return err
-	}
-
-	msg, err := govtypes.NewMsgSubmitProposal(content, deposit, from)
-	if err != nil {
-		return err
-	}
-
-	if err = msg.ValidateBasic(); err != nil {
-		return err
-	}
-
-	return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+	return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), proposalMsg)
 }

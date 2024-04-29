@@ -1,18 +1,18 @@
 package concentrated_liquidity_test
 
 import (
-	"fmt"
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils/accum"
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
-	cl "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity"
-	clmath "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/math"
-	clmodel "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/model"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/osmoutils/osmoassert"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
+	cl "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity"
+	clmath "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/math"
+	clmodel "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/model"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
 )
 
 const (
@@ -27,11 +27,11 @@ type positionFields struct {
 	lowerTick  int64
 	upperTick  int64
 	positionId uint64
-	liquidity  sdk.Dec
+	liquidity  osmomath.Dec
 }
 
 var (
-	oneEth      = sdk.NewDecCoin(ETH, sdk.OneInt())
+	oneEth      = sdk.NewDecCoin(ETH, osmomath.OneInt())
 	oneEthCoins = sdk.NewDecCoins(oneEth)
 	onlyUSDC    = [][]string{{USDC}, {USDC}, {USDC}, {USDC}}
 	onlyETH     = [][]string{{ETH}, {ETH}, {ETH}, {ETH}}
@@ -77,7 +77,7 @@ func (s *KeeperTestSuite) TestCreateAndGetSpreadRewardAccumulator() {
 				s.Require().NoError(err)
 			} else {
 				s.Require().Error(err)
-				s.Require().Equal(accum.AccumulatorObject{}, poolSpreadRewardAccumulator)
+				s.Require().Equal(&accum.AccumulatorObject{}, poolSpreadRewardAccumulator)
 			}
 		})
 	}
@@ -125,7 +125,7 @@ func (s *KeeperTestSuite) TestInitOrUpdatePositionSpreadRewardAccumulator() {
 		return posFields
 	}
 
-	withLiquidity := func(posFields positionFields, liquidity sdk.Dec) positionFields {
+	withLiquidity := func(posFields positionFields, liquidity osmomath.Dec) positionFields {
 		posFields.liquidity = liquidity
 		return posFields
 	}
@@ -137,7 +137,7 @@ func (s *KeeperTestSuite) TestInitOrUpdatePositionSpreadRewardAccumulator() {
 		name           string
 		positionFields positionFields
 
-		expectedLiquidity sdk.Dec
+		expectedLiquidity osmomath.Dec
 		expectedError     error
 	}
 	tests := []initSpreadRewardAccumTest{
@@ -257,9 +257,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 		expectedError                     bool
 	}
 
-	defaultAccumCoins := sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10)))
+	defaultAccumCoins := sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))).MulDecTruncate(cl.PerUnitLiqScalingFactor)
 	defaultPoolId := uint64(1)
-	defaultInitialLiquidity := sdk.OneDec()
+	defaultInitialLiquidity := osmomath.OneDec()
 
 	defaultUpperTickIndex := int64(5)
 	defaultLowerTickIndex := int64(3)
@@ -278,9 +278,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          0,
 			upperTick:                          1,
 			currentTick:                        2,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -289,9 +289,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          0,
 			upperTick:                          2,
 			currentTick:                        3,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -300,9 +300,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          0,
 			upperTick:                          1,
 			currentTick:                        0,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -311,9 +311,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          1,
 			upperTick:                          2,
 			currentTick:                        0,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -322,9 +322,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          0,
 			upperTick:                          1,
 			currentTick:                        1,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -338,9 +338,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          0,
 			upperTick:                          1,
 			currentTick:                        0,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -349,9 +349,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          0,
 			upperTick:                          1,
 			currentTick:                        1,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -360,9 +360,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          0,
 			upperTick:                          1,
 			currentTick:                        -1,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -371,9 +371,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          -1,
 			upperTick:                          1,
 			currentTick:                        0,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -382,9 +382,9 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			lowerTick:                          -1,
 			upperTick:                          1,
 			currentTick:                        2,
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, sdk.NewInt(10)),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			globalSpreadRewardGrowth:           sdk.NewDecCoin(ETH, osmomath.NewInt(10)),
 			expectedSpreadRewardGrowthOutside:  defaultAccumCoins,
 			expectedError:                      false,
 		},
@@ -402,10 +402,13 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 			var pool types.ConcentratedPoolExtension
 			if tc.poolSetup {
 				pool = s.PrepareConcentratedPool()
-				currentTick := pool.GetCurrentTick()
 
-				s.initializeTick(s.Ctx, currentTick, tc.lowerTick, defaultInitialLiquidity, tc.lowerTickSpreadRewardGrowthOutside, emptyUptimeTrackers, false)
-				s.initializeTick(s.Ctx, currentTick, tc.upperTick, defaultInitialLiquidity, tc.upperTickSpreadRewardGrowthOutside, emptyUptimeTrackers, true)
+				// Upscale accumulator values
+				tc.lowerTickSpreadRewardGrowthOutside = tc.lowerTickSpreadRewardGrowthOutside.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+				tc.upperTickSpreadRewardGrowthOutside = tc.upperTickSpreadRewardGrowthOutside.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+
+				s.initializeTick(s.Ctx, tc.lowerTick, defaultInitialLiquidity, tc.lowerTickSpreadRewardGrowthOutside, emptyUptimeTrackers, false)
+				s.initializeTick(s.Ctx, tc.upperTick, defaultInitialLiquidity, tc.upperTickSpreadRewardGrowthOutside, emptyUptimeTrackers, true)
 				pool.SetCurrentTick(tc.currentTick)
 				err := s.App.ConcentratedLiquidityKeeper.SetPool(s.Ctx, pool)
 				s.Require().NoError(err)
@@ -427,8 +430,8 @@ func (s *KeeperTestSuite) TestGetSpreadRewardGrowthOutside() {
 }
 
 func (s *KeeperTestSuite) TestCalculateSpreadRewardGrowth() {
-	defaultGeeFrowthGlobal := sdk.NewDecCoins(sdk.NewDecCoin("uosmo", sdk.NewInt(10)))
-	defaultGeeFrowthOutside := sdk.NewDecCoins(sdk.NewDecCoin("uosmo", sdk.NewInt(3)))
+	defaultGeeFrowthGlobal := sdk.NewDecCoins(sdk.NewDecCoin("uosmo", osmomath.NewInt(10)))
+	defaultGeeFrowthOutside := sdk.NewDecCoins(sdk.NewDecCoin("uosmo", osmomath.NewInt(3)))
 
 	defaultSmallerTargetTick := int64(1)
 	defaultCurrentTick := int64(2)
@@ -484,59 +487,48 @@ func (s *KeeperTestSuite) TestCalculateSpreadRewardGrowth() {
 	}
 }
 
-func (s *KeeperTestSuite) TestGetInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTick() {
-	const (
-		validPoolId = 1
-	)
-
-	sqrtPrice := osmomath.MustMonotonicSqrt(DefaultAmt1.ToDec().Quo(DefaultAmt0.ToDec()))
-	initialPoolTick, err := clmath.SqrtPriceToTickRoundDownSpacing(sqrtPrice, DefaultTickSpacing)
+// Test what happens if somehow the accumulator didn't exist.
+// TODO: Does this test even matter? We should never be in a situation where the accumulator doesn't exist
+func (s *KeeperTestSuite) TestGetInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTickAccumDoesntExist() {
+	pool, err := clmodel.NewConcentratedLiquidityPool(validPoolId, ETH, USDC, DefaultTickSpacing, DefaultZeroSpreadFactor)
 	s.Require().NoError(err)
 
+	// N.B.: we set the listener mock because we would like to avoid
+	// utilizing the production listeners, because we are testing a case that should be impossible
+	s.setListenerMockOnConcentratedLiquidityKeeper()
+
+	err = s.Clk.SetPool(s.Ctx, &pool)
+	s.Require().NoError(err)
+
+	// System under test.
+	_, err = s.Clk.GetInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTick(s.Ctx, &pool, 0)
+	s.Require().Error(err)
+	s.Require().ErrorIs(err, accum.AccumDoesNotExistError{AccumName: types.KeySpreadRewardPoolAccumulator(validPoolId)})
+}
+
+func (s *KeeperTestSuite) TestGetInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTick() {
+	sqrtPrice := osmomath.MustMonotonicSqrt(DefaultAmt1.ToLegacyDec().Quo(DefaultAmt0.ToLegacyDec()))
+	initialPoolTick, err := clmath.SqrtPriceToTickRoundDownSpacing(osmomath.BigDecFromDec(sqrtPrice), DefaultTickSpacing)
+	s.Require().NoError(err)
+	initialGlobalSpreadRewardGrowth := oneEth
+
 	tests := map[string]struct {
-		poolId                          uint64
 		tick                            int64
 		initialGlobalSpreadRewardGrowth sdk.DecCoin
-		shouldAvoidCreatingAccum        bool
 
 		expectedInitialSpreadRewardGrowthOppositeDirectionOfLastTraversal sdk.DecCoins
-		expectError                                                       error
 	}{
 		"current tick > tick -> spread reward growth global": {
-			poolId:                          validPoolId,
-			tick:                            initialPoolTick - 1,
-			initialGlobalSpreadRewardGrowth: oneEth,
-
+			tick: initialPoolTick - 1,
 			expectedInitialSpreadRewardGrowthOppositeDirectionOfLastTraversal: sdk.NewDecCoins(oneEth),
 		},
 		"current tick == tick -> spread reward growth global": {
-			poolId:                          validPoolId,
-			tick:                            initialPoolTick,
-			initialGlobalSpreadRewardGrowth: oneEth,
-
+			tick: initialPoolTick,
 			expectedInitialSpreadRewardGrowthOppositeDirectionOfLastTraversal: sdk.NewDecCoins(oneEth),
 		},
 		"current tick < tick -> empty coins": {
-			poolId:                          validPoolId,
-			tick:                            initialPoolTick + 1,
-			initialGlobalSpreadRewardGrowth: oneEth,
-
+			tick: initialPoolTick + 1,
 			expectedInitialSpreadRewardGrowthOppositeDirectionOfLastTraversal: cl.EmptyCoins,
-		},
-		"pool does not exist": {
-			poolId:                          validPoolId + 1,
-			tick:                            initialPoolTick - 1,
-			initialGlobalSpreadRewardGrowth: oneEth,
-
-			expectError: types.PoolNotFoundError{PoolId: validPoolId + 1},
-		},
-		"accumulator does not exist": {
-			poolId:                          validPoolId,
-			tick:                            0,
-			initialGlobalSpreadRewardGrowth: oneEth,
-			shouldAvoidCreatingAccum:        true,
-
-			expectError: accum.AccumDoesNotExistError{AccumName: types.KeySpreadRewardPoolAccumulator(validPoolId)},
 		},
 	}
 
@@ -544,44 +536,15 @@ func (s *KeeperTestSuite) TestGetInitialSpreadRewardGrowthOppositeDirectionOfLas
 		tc := tc
 		s.Run(name, func() {
 			s.SetupTest()
-			ctx := s.Ctx
-			clKeeper := s.App.ConcentratedLiquidityKeeper
+			pool := s.preparePoolAndDefaultPosition()
+			s.AddToSpreadRewardAccumulator(pool.GetId(), initialGlobalSpreadRewardGrowth)
 
-			pool, err := clmodel.NewConcentratedLiquidityPool(validPoolId, ETH, USDC, DefaultTickSpacing, DefaultZeroSpreadFactor)
+			// Upscale accumulator values
+			tc.expectedInitialSpreadRewardGrowthOppositeDirectionOfLastTraversal = tc.expectedInitialSpreadRewardGrowthOppositeDirectionOfLastTraversal.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+
+			clpool, err := s.Clk.GetPoolById(s.Ctx, pool.GetId())
 			s.Require().NoError(err)
-
-			// N.B.: we set the listener mock because we would like to avoid
-			// utilizing the production listeners. The production listeners
-			// are irrelevant in the context of the system under test. However,
-			// setting them up would require compromising being able to set up other
-			// edge case tests. For example, the test case where spread reward accumulator
-			// is not initialized.
-			s.setListenerMockOnConcentratedLiquidityKeeper()
-
-			err = clKeeper.SetPool(ctx, &pool)
-			s.Require().NoError(err)
-
-			if !tc.shouldAvoidCreatingAccum {
-				err = clKeeper.CreateSpreadRewardAccumulator(ctx, validPoolId)
-				s.Require().NoError(err)
-
-				// Setup test position to make sure that tick is initialized
-				// We also set up uptime accums to ensure position creation works as intended
-				err = clKeeper.CreateUptimeAccumulators(ctx, validPoolId)
-				s.Require().NoError(err)
-				s.SetupDefaultPosition(validPoolId)
-
-				s.AddToSpreadRewardAccumulator(validPoolId, tc.initialGlobalSpreadRewardGrowth)
-			}
-
-			// System under test.
-			initialSpreadRewardGrowthOppositeDirectionOfLastTraversal, err := clKeeper.GetInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTick(ctx, tc.poolId, tc.tick)
-
-			if tc.expectError != nil {
-				s.Require().Error(err)
-				s.Require().ErrorIs(err, tc.expectError)
-				return
-			}
+			initialSpreadRewardGrowthOppositeDirectionOfLastTraversal, err := s.Clk.GetInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTick(s.Ctx, clpool, tc.tick)
 			s.Require().NoError(err)
 			s.Require().Equal(tc.expectedInitialSpreadRewardGrowthOppositeDirectionOfLastTraversal, initialSpreadRewardGrowthOppositeDirectionOfLastTraversal)
 		})
@@ -594,7 +557,7 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 	tests := map[string]struct {
 		// setup parameters.
-		initialLiquidity                   sdk.Dec
+		initialLiquidity                   osmomath.Dec
 		lowerTickSpreadRewardGrowthOutside sdk.DecCoins
 		upperTickSpreadRewardGrowthOutside sdk.DecCoins
 		globalSpreadRewardGrowth           sdk.DecCoins
@@ -618,12 +581,12 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 		// Since we track spread rewards accrued below a tick, upper tick is updated
 		// while lower tick is zero.
 		"single swap left -> right: 2 ticks, one share, current tick > upper tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -632,15 +595,15 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			currentTick: 2,
 
-			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(10))),
+			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap left -> right: 3 ticks, two shares, current tick > upper tick": {
-			initialLiquidity: sdk.NewDec(2),
+			initialLiquidity: osmomath.NewDec(2),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -649,15 +612,15 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			currentTick: 3,
 
-			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(20))),
+			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(20))),
 		},
 		"single swap left -> right: 3 ticks, two shares, current tick is in between lower and upper tick": {
-			initialLiquidity: sdk.NewDec(2),
+			initialLiquidity: osmomath.NewDec(2),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -666,15 +629,15 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			currentTick: 1,
 
-			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(20))),
+			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(20))),
 		},
 		"single swap left -> right: 2 ticks, one share, current tick == upper tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -683,7 +646,7 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			currentTick: 1,
 
-			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(10))),
+			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(10))),
 		},
 
 		// imagine single swap over entire position
@@ -692,13 +655,13 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 		// Since we track spread rewards accrued below a tick, both upper and lower position
 		// ticks are zero
 		"single swap right -> left: 2 ticks, one share, current tick == lower tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
 			// lower tick accumulator is not updated yet.
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -707,16 +670,16 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			currentTick: 0,
 
-			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(10))),
+			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap right -> left: 2 ticks, one share, current tick < lower tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
 			// lower tick accumulator updated when crossed.
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -725,15 +688,15 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			currentTick: -1,
 
-			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(10))),
+			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap right -> left: 2 ticks, two shares, current tick is in between lower and upper tick": {
-			initialLiquidity: sdk.NewDec(2),
+			initialLiquidity: osmomath.NewDec(2),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -742,19 +705,19 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			currentTick: 1,
 
-			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(20))),
+			expectedSpreadRewardsClaimed: sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(20))),
 		},
 
 		// imagine swap occurring outside of the position
 		// As a result, lower and upper ticks are not updated.
 		"swap occurs above the position, current tick > upper tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
 			// none are updated.
 			lowerTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 			upperTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -766,13 +729,13 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 			expectedSpreadRewardsClaimed: sdk.NewCoins(),
 		},
 		"swap occurs below the position, current tick < lower tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
 			// none are updated.
 			lowerTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 			upperTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   -10,
@@ -787,12 +750,12 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 		// error cases.
 
 		"position does not exist": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       ownerWithValidPosition,
 			lowerTick:                   0,
@@ -804,12 +767,12 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 			expectedError: types.PositionIdNotFoundError{PositionId: 2},
 		},
 		"non owner attempts to collect": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			owner:                       s.TestAccs[1], // different owner from the one who initialized the position.
 			lowerTick:                   0,
@@ -830,6 +793,10 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 			validPool := s.PrepareConcentratedPool()
 			validPoolId := validPool.GetId()
 
+			// Upscale accumulator values
+			tc.lowerTickSpreadRewardGrowthOutside = tc.lowerTickSpreadRewardGrowthOutside.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+			tc.upperTickSpreadRewardGrowthOutside = tc.upperTickSpreadRewardGrowthOutside.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+
 			s.FundAcc(validPool.GetSpreadRewardsAddress(), tc.expectedSpreadRewardsClaimed)
 
 			clKeeper := s.App.ConcentratedLiquidityKeeper
@@ -841,9 +808,9 @@ func (s *KeeperTestSuite) TestQueryAndCollectSpreadRewards() {
 
 			s.initializeSpreadRewardAccumulatorPositionWithLiquidity(ctx, validPoolId, tc.lowerTick, tc.upperTick, DefaultPositionId, tc.initialLiquidity)
 
-			s.initializeTick(ctx, tc.currentTick, tc.lowerTick, tc.initialLiquidity, tc.lowerTickSpreadRewardGrowthOutside, emptyUptimeTrackers, false)
+			s.initializeTick(ctx, tc.lowerTick, tc.initialLiquidity, tc.lowerTickSpreadRewardGrowthOutside, emptyUptimeTrackers, false)
 
-			s.initializeTick(ctx, tc.currentTick, tc.upperTick, tc.initialLiquidity, tc.upperTickSpreadRewardGrowthOutside, emptyUptimeTrackers, true)
+			s.initializeTick(ctx, tc.upperTick, tc.initialLiquidity, tc.upperTickSpreadRewardGrowthOutside, emptyUptimeTrackers, true)
 
 			validPool.SetCurrentTick(tc.currentTick)
 			err = clKeeper.SetPool(ctx, validPool)
@@ -908,11 +875,11 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 	tests := map[string]struct {
 		// setup parameters.
-		initialLiquidity                   sdk.Dec
+		initialLiquidity                   osmomath.Dec
 		lowerTickSpreadRewardGrowthOutside sdk.DecCoins
 		upperTickSpreadRewardGrowthOutside sdk.DecCoins
 		globalSpreadRewardGrowth           sdk.DecCoins
-		expectedReinvestedDustAmount       sdk.Dec
+		expectedReinvestedDustAmount       osmomath.Dec
 		currentTick                        int64
 		isInvalidPoolIdGiven               bool
 
@@ -926,12 +893,12 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 		expectedError          error
 	}{
 		"single swap left -> right: 2 ticks, one share, current tick > upper tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           1,
@@ -939,15 +906,15 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 			currentTick: 2,
 
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap left -> right: 3 ticks, two shares, current tick > upper tick": {
-			initialLiquidity: sdk.NewDec(2),
+			initialLiquidity: osmomath.NewDec(2),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           2,
@@ -955,15 +922,15 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 			currentTick: 3,
 
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap left -> right: 3 ticks, two shares, current tick in between lower and upper tick": {
-			initialLiquidity: sdk.NewDec(2),
+			initialLiquidity: osmomath.NewDec(2),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           2,
@@ -971,15 +938,15 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 			currentTick: 1,
 
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap left -> right: 2 ticks, one share, current tick == upper tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           1,
@@ -987,16 +954,16 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 			currentTick: 1,
 
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap right -> left: 2 ticks, one share, current tick == lower tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
 			// lower tick accumulator is not updated yet.
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           1,
@@ -1004,15 +971,15 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 			currentTick: 0,
 
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap right -> left: 2 ticks, one share, current tick < lower tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           1,
@@ -1020,15 +987,15 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 			currentTick: -1,
 
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 		},
 		"single swap right -> left: 2 ticks, two shares, current tick in between lower and upper tick": {
-			initialLiquidity: sdk.NewDec(2),
+			initialLiquidity: osmomath.NewDec(2),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           2,
@@ -1036,15 +1003,15 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 			currentTick: 1,
 
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 		},
-		"dust reinvested: single swap right -> left: 2 ticks, two shares, current tick in between lower and upper tick": {
-			initialLiquidity: sdk.NewDec(2),
+		"dust: single swap right -> left: 2 ticks, two shares, current tick in between lower and upper tick": {
+			initialLiquidity: osmomath.NewDec(2),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoinFromDec(ETH, sdk.MustNewDecFromStr("3.3"))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoinFromDec(ETH, osmomath.MustNewDecFromStr("3.3"))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           2,
@@ -1053,19 +1020,17 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 			currentTick: 1,
 
 			// expected = global - below lower - above upper = 10 - 3.3 = 6.7
-			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoinFromDec(ETH, sdk.MustNewDecFromStr("6.7"))),
-			// expected reinvested dust = (6.7 * 2 % floor(6.7 * 2)) / 2
-			// This can be thought of as the diffence between the non-truncated total amount of spread rewards and the truncated toal amount of spread rewards
-			// divided by the number of shares.
-			expectedReinvestedDustAmount: sdk.MustNewDecFromStr("0.2"),
+			expectedInitAccumValue: sdk.NewDecCoins(sdk.NewDecCoinFromDec(ETH, osmomath.MustNewDecFromStr("6.7"))),
+			// we no longer reinvest dust, so we expect this to be thrown out
+			expectedReinvestedDustAmount: osmomath.ZeroDec(),
 		},
 		"swap occurs above the position, current tick > upper tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
 			lowerTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 			upperTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           1,
@@ -1076,12 +1041,12 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 			expectedInitAccumValue: sdk.DecCoins(nil),
 		},
 		"swap occurs below the position, current tick < lower tick": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
 			lowerTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 			upperTickSpreadRewardGrowthOutside: cl.EmptyCoins,
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           -10,
 			upperTick:           -4,
@@ -1094,12 +1059,12 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 
 		// error cases.
 		"position does not exist": {
-			initialLiquidity: sdk.OneDec(),
+			initialLiquidity: osmomath.OneDec(),
 
-			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(0))),
-			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			lowerTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(0))),
+			upperTickSpreadRewardGrowthOutside: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
-			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, sdk.NewInt(10))),
+			globalSpreadRewardGrowth: sdk.NewDecCoins(sdk.NewDecCoin(ETH, osmomath.NewInt(10))),
 
 			lowerTick:           0,
 			upperTick:           1,
@@ -1122,13 +1087,18 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 			clKeeper := s.App.ConcentratedLiquidityKeeper
 			ctx := s.Ctx
 
+			// Upscale accumulator value
+			tc.lowerTickSpreadRewardGrowthOutside = tc.lowerTickSpreadRewardGrowthOutside.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+			tc.upperTickSpreadRewardGrowthOutside = tc.upperTickSpreadRewardGrowthOutside.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+			tc.expectedInitAccumValue = tc.expectedInitAccumValue.MulDecTruncate(cl.PerUnitLiqScalingFactor)
+
 			// Set the position in store.
 			err := clKeeper.SetPosition(ctx, validPoolId, s.TestAccs[0], tc.lowerTick, tc.upperTick, time.Now().UTC(), tc.initialLiquidity, DefaultPositionId, DefaultUnderlyingLockId)
 			s.Require().NoError(err)
 
 			s.initializeSpreadRewardAccumulatorPositionWithLiquidity(ctx, validPoolId, tc.lowerTick, tc.upperTick, DefaultPositionId, tc.initialLiquidity)
-			s.initializeTick(ctx, tc.currentTick, tc.lowerTick, tc.initialLiquidity, tc.lowerTickSpreadRewardGrowthOutside, emptyUptimeTrackers, false)
-			s.initializeTick(ctx, tc.currentTick, tc.upperTick, tc.initialLiquidity, tc.upperTickSpreadRewardGrowthOutside, emptyUptimeTrackers, true)
+			s.initializeTick(ctx, tc.lowerTick, tc.initialLiquidity, tc.lowerTickSpreadRewardGrowthOutside, emptyUptimeTrackers, false)
+			s.initializeTick(ctx, tc.upperTick, tc.initialLiquidity, tc.upperTickSpreadRewardGrowthOutside, emptyUptimeTrackers, true)
 			validPool.SetCurrentTick(tc.currentTick)
 
 			_ = clKeeper.SetPool(ctx, validPool)
@@ -1162,12 +1132,12 @@ func (s *KeeperTestSuite) TestPrepareClaimableSpreadRewards() {
 			s.Require().Equal(tc.expectedInitAccumValue, postPreparePosition.AccumValuePerShare)
 			s.Require().Equal(tc.initialLiquidity, postPreparePosition.NumShares)
 
-			expectedClaimedAmountDec := tc.expectedInitAccumValue.AmountOf(ETH).Mul(tc.initialLiquidity)
+			expectedClaimedAmountDec := tc.expectedInitAccumValue.AmountOf(ETH).QuoTruncate(cl.PerUnitLiqScalingFactor).Mul(tc.initialLiquidity)
 			expectedSpreadRewardClaimAmount := expectedClaimedAmountDec.TruncateInt()
 			s.Require().Equal(expectedSpreadRewardClaimAmount, actualSpreadRewardsClaimed.AmountOf(ETH))
 
 			// validate that truncated dust amount is reinvested back into the global accumulator
-			if expectedClaimedAmountDec.GT(expectedSpreadRewardClaimAmount.ToDec()) {
+			if expectedClaimedAmountDec.GT(expectedSpreadRewardClaimAmount.ToLegacyDec()) {
 				accumDelta, _ := accum.GetValue().SafeSub(originalAccumValue)
 				s.Require().Equal(tc.expectedReinvestedDustAmount, accumDelta.AmountOf(ETH))
 			}
@@ -1245,10 +1215,10 @@ func (s *KeeperTestSuite) TestInitOrUpdateSpreadRewardAccumulatorPosition_Updati
 				s.crossTickAndChargeSpreadReward(poolId, DefaultLowerTick)
 			}
 
-			err := s.App.ConcentratedLiquidityKeeper.InitOrUpdateTick(s.Ctx, poolId, pool.GetCurrentTick(), DefaultLowerTick, DefaultLiquidityAmt, false)
+			_, err := s.App.ConcentratedLiquidityKeeper.InitOrUpdateTick(s.Ctx, poolId, DefaultLowerTick, DefaultLiquidityAmt, false)
 			s.Require().NoError(err)
 
-			err = s.App.ConcentratedLiquidityKeeper.InitOrUpdateTick(s.Ctx, poolId, pool.GetCurrentTick(), DefaultUpperTick, DefaultLiquidityAmt, true)
+			_, err = s.App.ConcentratedLiquidityKeeper.InitOrUpdateTick(s.Ctx, poolId, DefaultUpperTick, DefaultLiquidityAmt, true)
 			s.Require().NoError(err)
 
 			// InitOrUpdateSpreadRewardAccumulatorPosition #1 lower tick to upper tick
@@ -1327,7 +1297,7 @@ func (s *KeeperTestSuite) TestUpdatePosValueToInitValuePlusGrowthOutside() {
 			positionKey := validPositionKey
 
 			// Initialize position accumulator.
-			err = poolSpreadRewardAccumulator.NewPosition(positionKey, sdk.OneDec(), nil)
+			err = poolSpreadRewardAccumulator.NewPosition(positionKey, osmomath.OneDec(), nil)
 			s.Require().NoError(err)
 
 			// Record the initial position accumulator value.
@@ -1385,7 +1355,7 @@ func (s *KeeperTestSuite) TestFunctional_SpreadRewards_Swaps() {
 	s.TestAccs = apptesting.CreateRandomAccounts(positions.numAccounts)
 
 	// Create a default CL pool, but with a 0.3 percent spread factor.
-	clPool := s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, DefaultTickSpacing, sdk.MustNewDecFromStr("0.002"))
+	clPool := s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, DefaultTickSpacing, osmomath.MustNewDecFromStr("0.002"))
 
 	positionIds := make([][]uint64, 4)
 	// Setup full range position across all four accounts
@@ -1413,16 +1383,16 @@ func (s *KeeperTestSuite) TestFunctional_SpreadRewards_Swaps() {
 	}
 
 	// Swap multiple times USDC for ETH, therefore increasing the spot price
-	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ := s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin1, ETH, types.MaxSpotPrice, positions.numSwaps)
+	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ := s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin1, ETH, types.MaxSpotPriceBigDec, positions.numSwaps)
 	s.CollectAndAssertSpreadRewards(s.Ctx, clPool.GetId(), totalSpreadRewardsExpected, positionIds, [][]int64{ticksActivatedAfterEachSwap}, onlyUSDC, positions)
 
 	// Swap multiple times ETH for USDC, therefore decreasing the spot price
-	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ = s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin0, USDC, types.MinSpotPrice, positions.numSwaps)
+	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ = s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin0, USDC, types.MinSpotPriceBigDec, positions.numSwaps)
 	s.CollectAndAssertSpreadRewards(s.Ctx, clPool.GetId(), totalSpreadRewardsExpected, positionIds, [][]int64{ticksActivatedAfterEachSwap}, onlyETH, positions)
 
 	// Do the same swaps as before, however this time we collect spread rewards after both swap directions are complete.
-	ticksActivatedAfterEachSwapUp, totalSpreadRewardsExpectedUp, _, _ := s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin1, ETH, types.MaxSpotPrice, positions.numSwaps)
-	ticksActivatedAfterEachSwapDown, totalSpreadRewardsExpectedDown, _, _ := s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin0, USDC, types.MinSpotPrice, positions.numSwaps)
+	ticksActivatedAfterEachSwapUp, totalSpreadRewardsExpectedUp, _, _ := s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin1, ETH, types.MaxSpotPriceBigDec, positions.numSwaps)
+	ticksActivatedAfterEachSwapDown, totalSpreadRewardsExpectedDown, _, _ := s.swapAndTrackXTimesInARow(clPool.GetId(), DefaultCoin0, USDC, types.MinSpotPriceBigDec, positions.numSwaps)
 	totalSpreadRewardsExpected = totalSpreadRewardsExpectedUp.Add(totalSpreadRewardsExpectedDown...)
 
 	// We expect all positions to have both denoms in their spread reward accumulators except USDC for the overlapping range position since
@@ -1451,73 +1421,74 @@ func (s *KeeperTestSuite) TestFunctional_SpreadRewards_LP() {
 	)
 
 	// Create pool with 0.2% spread factor.
-	pool := s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, DefaultTickSpacing, sdk.MustNewDecFromStr("0.002"))
+	pool := s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, DefaultTickSpacing, osmomath.MustNewDecFromStr("0.002"))
 	fundCoins := sdk.NewCoins(sdk.NewCoin(ETH, DefaultAmt0.MulRaw(2)), sdk.NewCoin(USDC, DefaultAmt1.MulRaw(2)))
 	s.FundAcc(owner, fundCoins)
 
 	// Errors since no position.
-	_, _, _, err := s.App.ConcentratedLiquidityKeeper.SwapOutAmtGivenIn(s.Ctx, owner, pool, sdk.NewCoin(ETH, sdk.OneInt()), USDC, pool.GetSpreadFactor(s.Ctx), types.MaxSpotPrice)
+	_, _, _, err := s.App.ConcentratedLiquidityKeeper.SwapOutAmtGivenIn(s.Ctx, owner, pool, sdk.NewCoin(ETH, osmomath.OneInt()), USDC, pool.GetSpreadFactor(s.Ctx), types.MaxSpotPriceBigDec)
 	s.Require().Error(err)
 
 	// Create position in the default range 1.
-	positionIdOne, _, _, liquidity, _, _, err := concentratedLiquidityKeeper.CreatePosition(ctx, pool.GetId(), owner, DefaultCoins, sdk.ZeroInt(), sdk.ZeroInt(), DefaultLowerTick, DefaultUpperTick)
+	positionDataOne, err := concentratedLiquidityKeeper.CreatePosition(ctx, pool.GetId(), owner, DefaultCoins, osmomath.ZeroInt(), osmomath.ZeroInt(), DefaultLowerTick, DefaultUpperTick)
 	s.Require().NoError(err)
 
 	// Swap once.
-	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ := s.swapAndTrackXTimesInARow(pool.GetId(), DefaultCoin1, ETH, types.MaxSpotPrice, 1)
+	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ := s.swapAndTrackXTimesInARow(pool.GetId(), DefaultCoin1, ETH, types.MaxSpotPriceBigDec, 1)
 
 	// Withdraw half.
-	halfLiquidity := liquidity.Mul(sdk.NewDecWithPrec(5, 1))
-	_, _, err = concentratedLiquidityKeeper.WithdrawPosition(ctx, owner, positionIdOne, halfLiquidity)
+	halfLiquidity := positionDataOne.Liquidity.Mul(osmomath.NewDecWithPrec(5, 1))
+	_, _, err = concentratedLiquidityKeeper.WithdrawPosition(ctx, owner, positionDataOne.ID, halfLiquidity)
 	s.Require().NoError(err)
 
 	// Collect spread rewards.
-	spreadRewardsCollected := s.collectSpreadRewardsAndCheckInvariance(ctx, 0, DefaultMinTick, DefaultMaxTick, positionIdOne, sdk.NewCoins(), []string{USDC}, [][]int64{ticksActivatedAfterEachSwap})
+	spreadRewardsCollected := s.collectSpreadRewardsAndCheckInvariance(ctx, 0, DefaultMinTick, DefaultMaxTick, positionDataOne.ID, sdk.NewCoins(), []string{USDC}, [][]int64{ticksActivatedAfterEachSwap})
 	expectedSpreadRewardsTruncated := totalSpreadRewardsExpected
 	for i, spreadRewardToken := range totalSpreadRewardsExpected {
-		// We run expected spread rewards through a cycle of divison and multiplication by liquidity to capture appropriate rounding behavior
-		expectedSpreadRewardsTruncated[i] = sdk.NewCoin(spreadRewardToken.Denom, spreadRewardToken.Amount.ToDec().QuoTruncate(liquidity).MulTruncate(liquidity).TruncateInt())
+		// We run expected spread rewards through a cycle of division and multiplication by liquidity to capture appropriate rounding behavior
+		expectedSpreadRewardsTruncated[i] = sdk.NewCoin(spreadRewardToken.Denom, spreadRewardToken.Amount.ToLegacyDec().QuoTruncate(positionDataOne.Liquidity).MulTruncate(positionDataOne.Liquidity).TruncateInt())
 	}
 	s.Require().Equal(expectedSpreadRewardsTruncated, spreadRewardsCollected)
 
 	// Unclaimed rewards should be emptied since spread rewards were collected.
-	s.validatePositionSpreadRewardGrowth(pool.GetId(), positionIdOne, cl.EmptyCoins)
+	s.validatePositionSpreadRewardGrowth(pool.GetId(), positionDataOne.ID, cl.EmptyCoins)
 
 	// Create position in the default range 2.
-	positionIdTwo, _, _, fullLiquidity, _, _, err := concentratedLiquidityKeeper.CreatePosition(ctx, pool.GetId(), owner, DefaultCoins, sdk.ZeroInt(), sdk.ZeroInt(), DefaultLowerTick, DefaultUpperTick)
+	positionDataTwo, err := concentratedLiquidityKeeper.CreatePosition(ctx, pool.GetId(), owner, DefaultCoins, osmomath.ZeroInt(), osmomath.ZeroInt(), DefaultLowerTick, DefaultUpperTick)
 	s.Require().NoError(err)
+	fullLiquidity := positionDataTwo.Liquidity
 
 	// Swap once in the other direction.
-	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ = s.swapAndTrackXTimesInARow(pool.GetId(), DefaultCoin0, USDC, types.MinSpotPrice, 1)
+	ticksActivatedAfterEachSwap, totalSpreadRewardsExpected, _, _ = s.swapAndTrackXTimesInARow(pool.GetId(), DefaultCoin0, USDC, types.MinSpotPriceBigDec, 1)
 
 	// This should claim under the hood for position 2 since full liquidity is removed.
 	balanceBeforeWithdraw := s.App.BankKeeper.GetBalance(ctx, owner, ETH)
-	amtDenom0, _, err := concentratedLiquidityKeeper.WithdrawPosition(ctx, owner, positionIdTwo, fullLiquidity)
+	amtDenom0, _, err := concentratedLiquidityKeeper.WithdrawPosition(ctx, owner, positionDataTwo.ID, positionDataTwo.Liquidity)
 	s.Require().NoError(err)
 	balanceAfterWithdraw := s.App.BankKeeper.GetBalance(ctx, owner, ETH)
 
 	// Validate that the correct amount of ETH was collected in withdraw for position two.
 	// total spread rewards * full liquidity / (full liquidity + half liquidity)
-	expectedPositionToWithdraw := totalSpreadRewardsExpected.AmountOf(ETH).ToDec().Mul(fullLiquidity.Quo(fullLiquidity.Add(halfLiquidity))).TruncateInt()
+	expectedPositionToWithdraw := totalSpreadRewardsExpected.AmountOf(ETH).ToLegacyDec().Mul(fullLiquidity.Quo(fullLiquidity.Add(halfLiquidity))).TruncateInt()
 	s.Require().Equal(expectedPositionToWithdraw.String(), balanceAfterWithdraw.Sub(balanceBeforeWithdraw).Amount.Sub(amtDenom0).String())
 
 	// Validate cannot claim for withdrawn position.
-	_, err = s.App.ConcentratedLiquidityKeeper.CollectSpreadRewards(ctx, owner, positionIdTwo)
+	_, err = s.App.ConcentratedLiquidityKeeper.CollectSpreadRewards(ctx, owner, positionDataTwo.ID)
 	s.Require().Error(err)
 
-	spreadRewardsCollected = s.collectSpreadRewardsAndCheckInvariance(ctx, 0, DefaultMinTick, DefaultMaxTick, positionIdOne, sdk.NewCoins(), []string{ETH}, [][]int64{ticksActivatedAfterEachSwap})
+	spreadRewardsCollected = s.collectSpreadRewardsAndCheckInvariance(ctx, 0, DefaultMinTick, DefaultMaxTick, positionDataOne.ID, sdk.NewCoins(), []string{ETH}, [][]int64{ticksActivatedAfterEachSwap})
 
 	// total spread rewards * half liquidity / (full liquidity + half liquidity)
-	expectesSpreadRewardsCollected := totalSpreadRewardsExpected.AmountOf(ETH).ToDec().Mul(halfLiquidity.Quo(fullLiquidity.Add(halfLiquidity))).TruncateInt()
+	expectesSpreadRewardsCollected := totalSpreadRewardsExpected.AmountOf(ETH).ToLegacyDec().Mul(halfLiquidity.Quo(fullLiquidity.Add(halfLiquidity))).TruncateInt()
 	s.Require().Equal(expectesSpreadRewardsCollected.String(), spreadRewardsCollected.AmountOf(ETH).String())
 
 	// Create position in the default range 3.
-	positionIdThree, _, _, fullLiquidity, _, _, err := concentratedLiquidityKeeper.CreatePosition(ctx, pool.GetId(), owner, DefaultCoins, sdk.ZeroInt(), sdk.ZeroInt(), DefaultLowerTick, DefaultUpperTick)
+	positionDataThree, err := concentratedLiquidityKeeper.CreatePosition(ctx, pool.GetId(), owner, DefaultCoins, osmomath.ZeroInt(), osmomath.ZeroInt(), DefaultLowerTick, DefaultUpperTick)
 	s.Require().NoError(err)
 
-	collectedThree, err := s.App.ConcentratedLiquidityKeeper.CollectSpreadRewards(ctx, owner, positionIdThree)
+	collectedThree, err := s.App.ConcentratedLiquidityKeeper.CollectSpreadRewards(ctx, owner, positionDataThree.ID)
 	s.Require().NoError(err)
-	s.Require().Equal(sdk.Coins(nil), collectedThree)
+	s.Require().Equal(sdk.Coins{}, collectedThree)
 }
 
 // CollectAndAssertSpreadRewards collects spread rewards from a given pool for all positions and verifies that the total spread rewards collected match the expected total spread rewards.
@@ -1547,14 +1518,14 @@ func (s *KeeperTestSuite) CollectAndAssertSpreadRewards(ctx sdk.Context, poolId 
 
 	// Define error tolerance
 	var errTolerance osmomath.ErrTolerance
-	errTolerance.AdditiveTolerance = sdk.NewDec(10)
+	errTolerance.AdditiveTolerance = osmomath.NewDec(10)
 	errTolerance.RoundingDir = osmomath.RoundDown
 
 	// Check that the total spread rewards collected is equal to the total spread rewards (within a tolerance)
 	for _, coin := range totalSpreadRewardsCollected {
 		expected := totalSpreadRewards.AmountOf(coin.Denom)
 		actual := coin.Amount
-		s.Require().Equal(0, errTolerance.Compare(expected, actual), fmt.Sprintf("expected (%s), actual (%s)", expected, actual))
+		osmoassert.Equal(s.T(), errTolerance, expected, actual)
 	}
 }
 
@@ -1573,36 +1544,36 @@ func (s *KeeperTestSuite) tickStatusInvariance(ticksActivatedAfterEachSwap [][]i
 		if positionWasActive {
 			// If the position was active, check that the spread rewards collected are non-zero
 			if expectedSpreadRewardDenoms[i] != NoUSDCExpected && expectedSpreadRewardDenoms[i] != NoETHExpected {
-				s.Require().True(coins.AmountOf(expectedSpreadRewardDenoms[i]).GT(sdk.ZeroInt()), "denom: %s", expectedSpreadRewardDenoms[i])
+				s.Require().True(coins.AmountOf(expectedSpreadRewardDenoms[i]).GT(osmomath.ZeroInt()), "denom: %s", expectedSpreadRewardDenoms[i])
 			}
 		} else {
 			// If the position was not active, check that the spread rewards collected are zero
-			s.Require().Nil(coins)
+			s.Require().Equal(sdk.Coins{}, coins)
 		}
 	}
 }
 
 // swapAndTrackXTimesInARow performs `numSwaps` swaps and tracks the tick activated after each swap.
 // It also returns the total spread rewards collected, the total token in, and the total token out.
-func (s *KeeperTestSuite) swapAndTrackXTimesInARow(poolId uint64, coinIn sdk.Coin, coinOutDenom string, priceLimit sdk.Dec, numSwaps int) (ticksActivatedAfterEachSwap []int64, totalSpreadRewards sdk.Coins, totalTokenIn sdk.Coin, totalTokenOut sdk.Coin) {
+func (s *KeeperTestSuite) swapAndTrackXTimesInARow(poolId uint64, coinIn sdk.Coin, coinOutDenom string, priceLimit osmomath.BigDec, numSwaps int) (ticksActivatedAfterEachSwap []int64, totalSpreadRewards sdk.Coins, totalTokenIn sdk.Coin, totalTokenOut sdk.Coin) {
 	// Retrieve pool
 	clPool, err := s.App.ConcentratedLiquidityKeeper.GetPoolById(s.Ctx, poolId)
 	s.Require().NoError(err)
 
 	// Determine amount needed to fulfill swap numSwaps times and fund account that much
-	amountNeededForSwap := coinIn.Amount.Mul(sdk.NewInt(int64(numSwaps)))
+	amountNeededForSwap := coinIn.Amount.Mul(osmomath.NewInt(int64(numSwaps)))
 	swapCoin := sdk.NewCoin(coinIn.Denom, amountNeededForSwap)
 	s.FundAcc(s.TestAccs[4], sdk.NewCoins(swapCoin))
 
 	ticksActivatedAfterEachSwap = append(ticksActivatedAfterEachSwap, clPool.GetCurrentTick())
-	totalSpreadRewards = sdk.NewCoins(sdk.NewCoin(USDC, sdk.ZeroInt()), sdk.NewCoin(ETH, sdk.ZeroInt()))
+	totalSpreadRewards = sdk.NewCoins(sdk.NewCoin(USDC, osmomath.ZeroInt()), sdk.NewCoin(ETH, osmomath.ZeroInt()))
 	// Swap numSwaps times, recording the tick activated after and swap and spread rewards we expect to collect based on the amount in
-	totalTokenIn = sdk.NewCoin(coinIn.Denom, sdk.ZeroInt())
-	totalTokenOut = sdk.NewCoin(coinOutDenom, sdk.ZeroInt())
+	totalTokenIn = sdk.NewCoin(coinIn.Denom, osmomath.ZeroInt())
+	totalTokenOut = sdk.NewCoin(coinOutDenom, osmomath.ZeroInt())
 	for i := 0; i < numSwaps; i++ {
 		coinIn, coinOut, _, err := s.App.ConcentratedLiquidityKeeper.SwapOutAmtGivenIn(s.Ctx, s.TestAccs[4], clPool, coinIn, coinOutDenom, clPool.GetSpreadFactor(s.Ctx), priceLimit)
 		s.Require().NoError(err)
-		spreadReward := coinIn.Amount.ToDec().Mul(clPool.GetSpreadFactor(s.Ctx))
+		spreadReward := coinIn.Amount.ToLegacyDec().Mul(clPool.GetSpreadFactor(s.Ctx))
 		totalSpreadRewards = totalSpreadRewards.Add(sdk.NewCoin(coinIn.Denom, spreadReward.TruncateInt()))
 		clPool, err = s.App.ConcentratedLiquidityKeeper.GetPoolById(s.Ctx, clPool.GetId())
 		s.Require().NoError(err)
@@ -1620,4 +1591,33 @@ func (s *KeeperTestSuite) collectSpreadRewardsAndCheckInvariance(ctx sdk.Context
 	totalSpreadRewardsCollected = spreadRewardsCollected.Add(coins...)
 	s.tickStatusInvariance(activeTicks, minTick, maxTick, coins, expectedSpreadRewardDenoms)
 	return totalSpreadRewardsCollected
+}
+
+func (s *KeeperTestSuite) TestScaleDownSpreadRewardAmount() {
+	tests := []struct {
+		name            string
+		incentiveAmount osmomath.Int
+		scalingFactor   osmomath.Dec
+		expectedAmount  osmomath.Int
+	}{
+		{
+			name:            "PerUnitLiqScalingFactor with no remainder",
+			incentiveAmount: osmomath.MustNewDecFromStr("123456789").Mul(apptesting.PerUnitLiqScalingFactor).TruncateInt(),
+			scalingFactor:   apptesting.PerUnitLiqScalingFactor,
+			expectedAmount:  osmomath.NewInt(123456789),
+		},
+		{
+			name:            "PerUnitLiqScalingFactor with remainder",
+			incentiveAmount: osmomath.MustNewDecFromStr("123456789.123456789123456789").Mul(apptesting.PerUnitLiqScalingFactor).TruncateInt(),
+			scalingFactor:   apptesting.PerUnitLiqScalingFactor,
+			expectedAmount:  osmomath.NewInt(123456789),
+		},
+	}
+
+	for _, test := range tests {
+		s.Run(test.name, func() {
+			scaledAmount := cl.ScaleDownSpreadRewardAmount(test.incentiveAmount, test.scalingFactor)
+			s.Require().Equal(test.expectedAmount, scaledAmount, "scaledAmount does not match")
+		})
+	}
 }

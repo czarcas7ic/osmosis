@@ -7,8 +7,9 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 type AccountKeeper interface {
@@ -18,7 +19,7 @@ type AccountKeeper interface {
 // BankKeeper defines the banking contract that must be fulfilled when
 // creating a x/concentrated-liquidity keeper.
 type BankKeeper interface {
-	GetAllBalances(ctx sdk.Context, addr sdk.AccAddress) sdk.Coins
+	GetBalance(ctx sdk.Context, addr sdk.AccAddress, denom string) sdk.Coin
 	GetDenomMetaData(ctx sdk.Context, denom string) (banktypes.Metadata, bool)
 	SendCoins(ctx sdk.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error
 	HasBalance(ctx sdk.Context, addr sdk.AccAddress, amt sdk.Coin) bool
@@ -30,6 +31,8 @@ type BankKeeper interface {
 // PoolManagerKeeper defines the interface needed to be fulfilled for
 // the poolmanager keeper.
 type PoolManagerKeeper interface {
+	GetParams(ctx sdk.Context) (params poolmanagertypes.Params)
+	SetParams(ctx sdk.Context, params poolmanagertypes.Params)
 	CreatePool(ctx sdk.Context, msg poolmanagertypes.CreatePoolMsg) (uint64, error)
 	GetNextPoolId(ctx sdk.Context) uint64
 	CreateConcentratedPoolAsPoolManager(ctx sdk.Context, msg poolmanagertypes.CreatePoolMsg) (poolmanagertypes.PoolI, error)
@@ -38,7 +41,7 @@ type PoolManagerKeeper interface {
 type GAMMKeeper interface {
 	GetTotalPoolLiquidity(ctx sdk.Context, poolId uint64) (sdk.Coins, error)
 	GetLinkedBalancerPoolID(ctx sdk.Context, poolIdEntering uint64) (uint64, error)
-	GetTotalPoolShares(ctx sdk.Context, poolId uint64) (sdk.Int, error)
+	GetTotalPoolShares(ctx sdk.Context, poolId uint64) (osmomath.Int, error)
 }
 
 type PoolIncentivesKeeper interface {
@@ -60,10 +63,15 @@ type LockupKeeper interface {
 	CreateLock(ctx sdk.Context, owner sdk.AccAddress, coins sdk.Coins, duration time.Duration) (lockuptypes.PeriodLock, error)
 	CreateLockNoSend(ctx sdk.Context, owner sdk.AccAddress, coins sdk.Coins, duration time.Duration) (lockuptypes.PeriodLock, error)
 	SlashTokensFromLockByID(ctx sdk.Context, lockID uint64, coins sdk.Coins) (*lockuptypes.PeriodLock, error)
-	GetLockedDenom(ctx sdk.Context, denom string, duration time.Duration) sdk.Int
+	GetLockedDenom(ctx sdk.Context, denom string, duration time.Duration) osmomath.Int
 }
 
 // CommunityPoolKeeper defines the contract needed to be fulfilled for distribution keeper.
 type CommunityPoolKeeper interface {
 	FundCommunityPool(ctx sdk.Context, amount sdk.Coins, sender sdk.AccAddress) error
+}
+
+// ContractKeeper handles logic related to CosmWasm contract interactions.
+type ContractKeeper interface {
+	Sudo(ctx sdk.Context, contractAddress sdk.AccAddress, msg []byte) ([]byte, error)
 }

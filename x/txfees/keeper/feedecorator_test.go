@@ -3,28 +3,22 @@ package keeper_test
 import (
 	"fmt"
 
-	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
-	"github.com/cosmos/cosmos-sdk/simapp"
-	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
-	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
-
-	"github.com/osmosis-labs/osmosis/v16/x/txfees/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 )
 
 func (s *KeeperTestSuite) TestFeeDecorator() {
 	s.SetupTest(false)
 
 	mempoolFeeOpts := types.NewDefaultMempoolFeeOptions()
-	mempoolFeeOpts.MinGasPriceForHighGasTx = sdk.MustNewDecFromStr("0.0025")
+	mempoolFeeOpts.MinGasPriceForHighGasTx = osmomath.MustNewDecFromStr("0.0025")
 	baseDenom, _ := s.App.TxFeesKeeper.GetBaseDenom(s.Ctx)
-	baseGas := uint64(10000)
 	consensusMinFeeAmt := int64(25)
 	point1BaseDenomMinGasPrices := sdk.NewDecCoins(sdk.NewDecCoinFromDec(baseDenom,
-		sdk.MustNewDecFromStr("0.1")))
+		osmomath.MustNewDecFromStr("0.1")))
 
 	// uion is setup with a relative price of 1:1
 	uion := "uion"
@@ -153,62 +147,16 @@ func (s *KeeperTestSuite) TestFeeDecorator() {
 		// reset pool and accounts for each test
 		s.SetupTest(false)
 		s.Run(tc.name, func() {
-			// setup uion with 1:1 fee
-			uionPoolId := s.PrepareBalancerPoolWithCoins(
-				sdk.NewInt64Coin(sdk.DefaultBondDenom, 500),
-				sdk.NewInt64Coin(uion, 500),
-			)
-			err := s.ExecuteUpgradeFeeTokenProposal(uion, uionPoolId)
-			s.Require().NoError(err)
+			// See DeductFeeDecorator AnteHandler for how this is used
+			s.FundAcc(sdk.MustAccAddressFromBech32("osmo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmcn030"), sdk.NewCoins(sdk.NewInt64Coin("uosmo", 1)))
 
-			if tc.minGasPrices == nil {
-				tc.minGasPrices = sdk.NewDecCoins()
-			}
-			if tc.gasRequested == 0 {
-				tc.gasRequested = baseGas
-			}
-			s.Ctx = s.Ctx.WithIsCheckTx(tc.isCheckTx).WithMinGasPrices(tc.minGasPrices)
-
-			// TODO: Cleanup this code.
-			// TxBuilder components reset for every test case
-			txBuilder := s.clientCtx.TxConfig.NewTxBuilder()
-			priv0, _, addr0 := testdata.KeyTestPubAddr()
-			acc1 := s.App.AccountKeeper.NewAccountWithAddress(s.Ctx, addr0)
-			s.App.AccountKeeper.SetAccount(s.Ctx, acc1)
-			msgs := []sdk.Msg{testdata.NewTestMsg(addr0)}
-			privs, accNums, accSeqs := []cryptotypes.PrivKey{priv0}, []uint64{0}, []uint64{0}
-			signerData := authsigning.SignerData{
-				ChainID:       s.Ctx.ChainID(),
-				AccountNumber: accNums[0],
-				Sequence:      accSeqs[0],
-			}
-
-			gasLimit := tc.gasRequested
-			sigV2, _ := clienttx.SignWithPrivKey(
-				1,
-				signerData,
-				txBuilder,
-				privs[0],
-				s.clientCtx.TxConfig,
-				accSeqs[0],
-			)
-
-			err = simapp.FundAccount(s.App.BankKeeper, s.Ctx, addr0, tc.txFee)
-			s.Require().NoError(err)
-
-			tx := s.BuildTx(txBuilder, msgs, sigV2, "", tc.txFee, gasLimit)
-
-			mfd := keeper.NewMempoolFeeDecorator(*s.App.TxFeesKeeper, mempoolFeeOpts)
-			dfd := keeper.NewDeductFeeDecorator(*s.App.TxFeesKeeper, *s.App.AccountKeeper, *s.App.BankKeeper, nil)
-			antehandlerMFD := sdk.ChainAnteDecorators(mfd, dfd)
-			_, err = antehandlerMFD(s.Ctx, tx, tc.isSimulate)
-
+			err := s.SetupTxFeeAnteHandlerAndChargeFee(s.clientCtx, tc.minGasPrices, tc.gasRequested, tc.isCheckTx, tc.isSimulate, tc.txFee)
 			if tc.expectPass {
 				// ensure fee was collected
 				if !tc.txFee.IsZero() {
-					moduleName := types.FeeCollectorName
+					moduleName := authtypes.FeeCollectorName
 					if tc.txFee[0].Denom != baseDenom {
-						moduleName = types.NonNativeFeeCollectorName
+						moduleName = types.NonNativeTxFeeCollectorName
 					}
 					moduleAddr := s.App.AccountKeeper.GetModuleAddress(moduleName)
 					s.Require().Equal(tc.txFee[0], s.App.BankKeeper.GetBalance(s.Ctx, moduleAddr, tc.txFee[0].Denom), tc.name)

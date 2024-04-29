@@ -1,5 +1,7 @@
 package keeper_test
 
+import sdk "github.com/cosmos/cosmos-sdk/types"
+
 // TestInitGenesis tests the initialization and export of the module's genesis state.
 func (s *KeeperTestSuite) TestInitGenesis() {
 	// Export the genesis state
@@ -23,8 +25,8 @@ func (s *KeeperTestSuite) TestInitGenesis() {
 	params := s.App.ProtoRevKeeper.GetParams(s.Ctx)
 	s.Require().Equal(params, exportedGenesis.Params)
 
-	poolWeights := s.App.ProtoRevKeeper.GetPoolWeights(s.Ctx)
-	s.Require().Equal(poolWeights, exportedGenesis.PoolWeights)
+	poolInfo := s.App.ProtoRevKeeper.GetInfoByPoolType(s.Ctx)
+	s.Require().Equal(poolInfo, exportedGenesis.InfoByPoolType)
 
 	daysSinceGenesis, err := s.App.ProtoRevKeeper.GetDaysSinceModuleGenesis(s.Ctx)
 	s.Require().NoError(err)
@@ -60,4 +62,10 @@ func (s *KeeperTestSuite) TestInitGenesis() {
 	profits := s.App.ProtoRevKeeper.GetAllProfits(s.Ctx)
 	s.Require().Equal(len(profits), len(exportedGenesis.Profits))
 	s.Require().Equal(profits, exportedGenesis.Profits)
+
+	cyclicArbProfit := s.App.ProtoRevKeeper.GetCyclicArbProfitTrackerValue(s.Ctx)
+	s.Require().Equal([]sdk.Coin(cyclicArbProfit), exportedGenesis.CyclicArbTracker.CyclicArb)
+
+	cyclicArbProfitAccountingHeight := s.App.ProtoRevKeeper.GetCyclicArbProfitTrackerStartHeight(s.Ctx)
+	s.Require().Equal(cyclicArbProfitAccountingHeight, exportedGenesis.CyclicArbTracker.HeightAccountingStartsFrom)
 }

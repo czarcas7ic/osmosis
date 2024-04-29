@@ -4,18 +4,19 @@ import (
 	"testing"
 	time "time"
 
+	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/stretchr/testify/require"
-	"github.com/tendermint/tendermint/crypto/ed25519"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	incentivestypes "github.com/osmosis-labs/osmosis/v16/x/incentives/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	incentivestypes "github.com/osmosis-labs/osmosis/v24/x/incentives/types"
 
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
 
-	appParams "github.com/osmosis-labs/osmosis/v16/app/params"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
+	appParams "github.com/osmosis-labs/osmosis/v24/app/params"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
 )
 
 // TestMsgCreateGauge tests if valid/invalid create gauge messages are properly validated/invalidated
@@ -208,19 +209,6 @@ func TestMsgCreateGauge(t *testing.T) {
 			}),
 			expectPass: false,
 		},
-		{
-			name: "invalid due to no lock with non-zero lock duration",
-			msg: createMsg(func(msg incentivestypes.MsgCreateGauge) incentivestypes.MsgCreateGauge {
-				msg.DistributeTo.LockQueryType = lockuptypes.NoLock
-				msg.DistributeTo.Denom = ""
-				msg.PoolId = 1
-
-				// breaks
-				msg.DistributeTo.Duration = time.Hour
-				return msg
-			}),
-			expectPass: false,
-		},
 	}
 
 	for _, test := range tests {
@@ -301,12 +289,102 @@ func TestMsgAddToGauge(t *testing.T) {
 	}
 }
 
+func TestMsgCreateGroup(t *testing.T) {
+	// generate a private/public key pair and get the respective address
+	pk1 := ed25519.GenPrivKey().PubKey()
+	addr1 := sdk.AccAddress(pk1.Address())
+
+	// make a proper createGroup message
+	createMsg := func(after func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+		properMsg := *incentivestypes.NewMsgCreateGroup(
+			sdk.Coins{sdk.NewInt64Coin("stake", 10)},
+			0,
+			addr1,
+			[]uint64{1, 2, 3},
+		)
+
+		return after(properMsg)
+	}
+
+	// validate createGroup message was created as intended
+	msg := createMsg(func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+		return msg
+	})
+	require.Equal(t, msg.Route(), incentivestypes.RouterKey)
+	require.Equal(t, msg.Type(), "create_group")
+	signers := msg.GetSigners()
+	require.Equal(t, len(signers), 1)
+	require.Equal(t, signers[0].String(), addr1.String())
+
+	tests := []struct {
+		name       string
+		msg        incentivestypes.MsgCreateGroup
+		expectPass bool
+	}{
+		{
+			name: "proper msg",
+			msg: createMsg(func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+				return msg
+			}),
+			expectPass: true,
+		},
+		{
+			name: "empty owner",
+			msg: createMsg(func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+				msg.Owner = ""
+				return msg
+			}),
+			expectPass: false,
+		},
+		{
+			name: "only one pool id",
+			msg: createMsg(func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+				msg.PoolIds = []uint64{1}
+				return msg
+			}),
+			expectPass: false,
+		},
+		{
+			name: "greater than 30 pool ids",
+			msg: createMsg(func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+				msg.PoolIds = []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31}
+				return msg
+			}),
+			expectPass: false,
+		},
+		{
+			name: "repeated pool id",
+			msg: createMsg(func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+				msg.PoolIds = []uint64{1, 2, 1}
+				return msg
+			}),
+			expectPass: false,
+		},
+		{
+			name: "non-perpetual group creation is disabled",
+			msg: createMsg(func(msg incentivestypes.MsgCreateGroup) incentivestypes.MsgCreateGroup {
+				msg.NumEpochsPaidOver = 2
+				return msg
+			}),
+			expectPass: false,
+		},
+	}
+
+	for _, test := range tests {
+		if test.expectPass {
+			require.NoError(t, test.msg.ValidateBasic(), "test: %v", test.name)
+		} else {
+			require.Error(t, test.msg.ValidateBasic(), "test: %v", test.name)
+		}
+	}
+}
+
 // // Test authz serialize and de-serializes for incentives msg.
 func TestAuthzMsg(t *testing.T) {
 	appParams.SetAddressPrefixes()
 	pk1 := ed25519.GenPrivKey().PubKey()
 	addr1 := sdk.AccAddress(pk1.Address()).String()
-	coin := sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(1))
+	coin := sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(1))
 	someDate := time.Date(1, 1, 1, 1, 1, 1, 1, time.UTC)
 
 	testCases := []struct {

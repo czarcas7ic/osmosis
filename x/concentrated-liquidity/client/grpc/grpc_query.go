@@ -1,7 +1,8 @@
-package grpc 
+
+package grpc
 
 // THIS FILE IS GENERATED CODE, DO NOT EDIT
-// SOURCE AT `proto/osmosis/concentrated-liquidity/query.yml`
+// SOURCE AT `proto/osmosis/concentratedliquidity/v1beta1/query.yml`
 
 import (
 	context "context"
@@ -10,8 +11,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/client"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/client/queryproto"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/client"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/client/queryproto"
 )
 
 type Querier struct {
@@ -19,6 +20,16 @@ type Querier struct {
 }
 
 var _ queryproto.QueryServer = Querier{}
+
+func (q Querier) UserUnbondingPositions(grpcCtx context.Context,
+	req *queryproto.UserUnbondingPositionsRequest,
+) (*queryproto.UserUnbondingPositionsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(grpcCtx)
+	return q.Q.UserUnbondingPositions(ctx, *req)
+}
 
 func (q Querier) UserPositions(grpcCtx context.Context,
 	req *queryproto.UserPositionsRequest,
@@ -80,6 +91,26 @@ func (q Querier) Params(grpcCtx context.Context,
 	return q.Q.Params(ctx, *req)
 }
 
+func (q Querier) NumPoolPositions(grpcCtx context.Context,
+	req *queryproto.NumPoolPositionsRequest,
+) (*queryproto.NumPoolPositionsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(grpcCtx)
+	return q.Q.NumPoolPositions(ctx, *req)
+}
+
+func (q Querier) NumNextInitializedTicks(grpcCtx context.Context,
+	req *queryproto.NumNextInitializedTicksRequest,
+) (*queryproto.NumNextInitializedTicksResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(grpcCtx)
+	return q.Q.NumNextInitializedTicks(ctx, *req)
+}
+
 func (q Querier) LiquidityPerTickRange(grpcCtx context.Context,
 	req *queryproto.LiquidityPerTickRangeRequest,
 ) (*queryproto.LiquidityPerTickRangeResponse, error) {
@@ -108,6 +139,16 @@ func (q Querier) IncentiveRecords(grpcCtx context.Context,
 	}
 	ctx := sdk.UnwrapSDKContext(grpcCtx)
 	return q.Q.IncentiveRecords(ctx, *req)
+}
+
+func (q Querier) GetTotalLiquidity(grpcCtx context.Context,
+	req *queryproto.GetTotalLiquidityRequest,
+) (*queryproto.GetTotalLiquidityResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(grpcCtx)
+	return q.Q.GetTotalLiquidity(ctx, *req)
 }
 
 func (q Querier) ClaimableSpreadRewards(grpcCtx context.Context,

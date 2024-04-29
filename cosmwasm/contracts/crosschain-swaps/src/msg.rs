@@ -1,5 +1,6 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Uint128};
+use osmosis_std::types::osmosis::poolmanager::v1beta1::SwapAmountInRoute;
 use registry::msg::SerializableJson;
 use swaprouter::msg::Slippage;
 
@@ -11,6 +12,9 @@ pub struct InstantiateMsg {
 
     /// This should be an instance of the Osmosis swaprouter contract
     pub swap_contract: String,
+
+    /// This should be an instance of the Osmosis registry contract
+    pub registry_contract: String,
 }
 
 /// An enum specifying what resolution the user expects in the case of a bad IBC
@@ -21,8 +25,18 @@ pub enum FailedDeliveryAction {
     /// An osmosis addres used to recover any tokens that get stuck in the
     /// contract due to IBC failures
     LocalRecoveryAddr(Addr),
+    //
     // Here we could potentially add new actions in the future
     // example: SendBackToSender, SwapBackAndReturn, etc
+    //
+    // If a failure occures, any tokens belonging (either before or after a
+    // swap) to the user will be sent to `SendTo.address` on `SendTo.chain`.
+    // If that send fails, the tokens will be recoverable by `SendTo.emergency_recover_addr`
+    // SendTo {
+    //     chain: String,
+    //     address: String,
+    //     emergency_recovery_addr: String,
+    // },
 }
 
 /// message type for `execute` entry_point
@@ -44,6 +58,8 @@ pub enum ExecuteMsg {
         /// "recovery address" that can clain the funds on osmosis after a
         /// confirmed failure.
         on_failed_delivery: FailedDeliveryAction,
+        /// Users can optionally specify which route to use for the swap
+        route: Option<Vec<SwapAmountInRoute>>,
     },
     /// Executing a recover will transfer any recoverable tokens that the sender
     /// has in this contract to its account.

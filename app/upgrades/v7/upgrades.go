@@ -7,10 +7,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
-	"github.com/osmosis-labs/osmosis/v16/app/keepers"
-	"github.com/osmosis-labs/osmosis/v16/app/upgrades"
-	lockupkeeper "github.com/osmosis-labs/osmosis/v16/x/lockup/keeper"
-	superfluidtypes "github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
+	"github.com/osmosis-labs/osmosis/v24/app/keepers"
+	"github.com/osmosis-labs/osmosis/v24/app/upgrades"
+	lockupkeeper "github.com/osmosis-labs/osmosis/v24/x/lockup/keeper"
+	superfluidtypes "github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
 )
 
 func CreateUpgradeHandler(
@@ -37,6 +37,8 @@ func CreateUpgradeHandler(
 		// here when migrating (is it is not customized).
 		params := keepers.WasmKeeper.GetParams(ctx)
 		params.CodeUploadAccess = wasmtypes.AllowNobody
+
+		//nolint:errcheck
 		keepers.WasmKeeper.SetParams(ctx, params)
 
 		// Merge similar duration lockups

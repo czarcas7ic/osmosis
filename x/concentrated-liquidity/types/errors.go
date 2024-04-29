@@ -6,6 +6,8 @@ import (
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 )
 
 var (
@@ -17,6 +19,7 @@ var (
 	ErrZeroLiquidity                      = errors.New("liquidity cannot be 0")
 	ErrNextTickInfoNil                    = errors.New("next tick info cannot be nil")
 	ErrPoolNil                            = errors.New("pool cannot be nil")
+	ErrCalculateSqrtPriceToTick           = errors.New("internal error in computing square roots within CalculateSqrtPriceToTick")
 )
 
 // x/concentrated-liquidity module sentinel errors.
@@ -48,8 +51,8 @@ func (e NotPositiveRequireAmountError) Error() string {
 }
 
 type QualifyingLiquidityOrTimeElapsedNotPositiveError struct {
-	QualifyingLiquidity sdk.Dec
-	TimeElapsed         sdk.Dec
+	QualifyingLiquidity osmomath.Dec
+	TimeElapsed         osmomath.Dec
 }
 
 func (e QualifyingLiquidityOrTimeElapsedNotPositiveError) Error() string {
@@ -57,7 +60,7 @@ func (e QualifyingLiquidityOrTimeElapsedNotPositiveError) Error() string {
 }
 
 type TimeElapsedNotPositiveError struct {
-	TimeElapsed sdk.Dec
+	TimeElapsed osmomath.Dec
 }
 
 func (e TimeElapsedNotPositiveError) Error() string {
@@ -115,8 +118,8 @@ func (e InvalidTickError) Error() string {
 }
 
 type InsufficientLiquidityError struct {
-	Actual    sdk.Dec
-	Available sdk.Dec
+	Actual    osmomath.Dec
+	Available osmomath.Dec
 }
 
 func (e InsufficientLiquidityError) Error() string {
@@ -124,8 +127,8 @@ func (e InsufficientLiquidityError) Error() string {
 }
 
 type InsufficientLiquidityCreatedError struct {
-	Actual      sdk.Int
-	Minimum     sdk.Int
+	Actual      osmomath.Int
+	Minimum     osmomath.Int
 	IsTokenZero bool
 }
 
@@ -134,11 +137,11 @@ func (e InsufficientLiquidityCreatedError) Error() string {
 	if !e.IsTokenZero {
 		tokenNum = 1
 	}
-	return fmt.Sprintf("insufficient amount of token %d created. Actual: (%s). Minimum (%s)", tokenNum, e.Actual, e.Minimum)
+	return fmt.Sprintf("slippage bound: insufficient amount of token %d created. Actual: (%s). Minimum estimated: (%s)", tokenNum, e.Actual, e.Minimum)
 }
 
 type NegativeLiquidityError struct {
-	Liquidity sdk.Dec
+	Liquidity osmomath.Dec
 }
 
 func (e NegativeLiquidityError) Error() string {
@@ -155,8 +158,8 @@ func (e DenomDuplicatedError) Error() string {
 }
 
 type AmountLessThanMinError struct {
-	TokenAmount sdk.Int
-	TokenMin    sdk.Int
+	TokenAmount osmomath.Int
+	TokenMin    osmomath.Int
 }
 
 func (e AmountLessThanMinError) Error() string {
@@ -164,8 +167,8 @@ func (e AmountLessThanMinError) Error() string {
 }
 
 type AmountGreaterThanMaxError struct {
-	TokenAmount sdk.Int
-	TokenMax    sdk.Int
+	TokenAmount osmomath.Int
+	TokenMax    osmomath.Int
 }
 
 func (e AmountGreaterThanMaxError) Error() string {
@@ -189,9 +192,9 @@ func (e TokenOutDenomNotInPoolError) Error() string {
 }
 
 type SqrtPriceValidationError struct {
-	SqrtPriceLimit sdk.Dec
-	LowerBound     sdk.Dec
-	UpperBound     sdk.Dec
+	SqrtPriceLimit osmomath.BigDec
+	LowerBound     osmomath.BigDec
+	UpperBound     osmomath.BigDec
 }
 
 func (e SqrtPriceValidationError) Error() string {
@@ -219,8 +222,8 @@ func (e TickSpacingBoundaryError) Error() string {
 }
 
 type InitialLiquidityZeroError struct {
-	Amount0 sdk.Int
-	Amount1 sdk.Int
+	Amount0 osmomath.Int
+	Amount1 osmomath.Int
 }
 
 func (e InitialLiquidityZeroError) Error() string {
@@ -262,9 +265,9 @@ func (e TickNotFoundError) Error() string {
 }
 
 type PriceBoundError struct {
-	ProvidedPrice sdk.Dec
-	MinSpotPrice  sdk.Dec
-	MaxSpotPrice  sdk.Dec
+	ProvidedPrice osmomath.BigDec
+	MinSpotPrice  osmomath.BigDec
+	MaxSpotPrice  osmomath.Dec
 }
 
 func (e PriceBoundError) Error() string {
@@ -272,7 +275,7 @@ func (e PriceBoundError) Error() string {
 }
 
 type SpotPriceNegativeError struct {
-	ProvidedPrice sdk.Dec
+	ProvidedPrice osmomath.Dec
 }
 
 func (e SpotPriceNegativeError) Error() string {
@@ -280,7 +283,7 @@ func (e SpotPriceNegativeError) Error() string {
 }
 
 type SqrtPriceNegativeError struct {
-	ProvidedSqrtPrice sdk.Dec
+	ProvidedSqrtPrice osmomath.BigDec
 }
 
 func (e SqrtPriceNegativeError) Error() string {
@@ -288,7 +291,7 @@ func (e SqrtPriceNegativeError) Error() string {
 }
 
 type InvalidSpreadFactorError struct {
-	ActualSpreadFactor sdk.Dec
+	ActualSpreadFactor osmomath.Dec
 }
 
 func (e InvalidSpreadFactorError) Error() string {
@@ -329,7 +332,7 @@ func (e StartTimeTooEarlyError) Error() string {
 type IncentiveInsufficientBalanceError struct {
 	PoolId          uint64
 	IncentiveDenom  string
-	IncentiveAmount sdk.Int
+	IncentiveAmount osmomath.Int
 }
 
 func (e IncentiveInsufficientBalanceError) Error() string {
@@ -377,7 +380,7 @@ func (e InvalidIncentiveCoinError) Error() string {
 
 type NonPositiveEmissionRateError struct {
 	PoolId       uint64
-	EmissionRate sdk.Dec
+	EmissionRate osmomath.Dec
 }
 
 func (e NonPositiveEmissionRateError) Error() string {
@@ -404,8 +407,8 @@ func (e InvalidUptimeIndexError) Error() string {
 }
 
 type QueryRangeUnsupportedError struct {
-	RequestedRange sdk.Int
-	MaxRange       sdk.Int
+	RequestedRange osmomath.Int
+	MaxRange       osmomath.Int
 }
 
 func (e QueryRangeUnsupportedError) Error() string {
@@ -491,7 +494,7 @@ func (e InsufficientUserBalanceError) Error() string {
 func (e *InsufficientUserBalanceError) Unwrap() error { return e.Err }
 
 type InvalidAmountCalculatedError struct {
-	Amount sdk.Int
+	Amount osmomath.Int
 }
 
 func (e InvalidAmountCalculatedError) Error() string {
@@ -606,7 +609,7 @@ func (e PositionsNotInSameTickRangeError) Error() string {
 }
 
 type InvalidDiscountRateError struct {
-	DiscountRate sdk.Dec
+	DiscountRate osmomath.Dec
 }
 
 func (e InvalidDiscountRateError) Error() string {
@@ -665,8 +668,8 @@ func (e AddToLastPositionInPoolError) Error() string {
 
 type NegativeAmountAddedError struct {
 	PositionId   uint64
-	Asset0Amount sdk.Int
-	Asset1Amount sdk.Int
+	Asset0Amount osmomath.Int
+	Asset1Amount osmomath.Int
 }
 
 func (e NegativeAmountAddedError) Error() string {
@@ -691,8 +694,8 @@ func (e UnauthorizedQuoteDenomError) Error() string {
 }
 
 type UnauthorizedSpreadFactorError struct {
-	ProvidedSpreadFactor    sdk.Dec
-	AuthorizedSpreadFactors []sdk.Dec
+	ProvidedSpreadFactor    osmomath.Dec
+	AuthorizedSpreadFactors []osmomath.Dec
 }
 
 func (e UnauthorizedSpreadFactorError) Error() string {
@@ -709,7 +712,7 @@ func (e UnauthorizedTickSpacingError) Error() string {
 }
 
 type NonPositiveLiquidityForNewPositionError struct {
-	LiquidityDelta sdk.Dec
+	LiquidityDelta osmomath.Dec
 	PositionId     uint64
 }
 
@@ -719,8 +722,8 @@ func (e NonPositiveLiquidityForNewPositionError) Error() string {
 
 type LiquidityWithdrawalError struct {
 	PositionID       uint64
-	RequestedAmount  sdk.Dec
-	CurrentLiquidity sdk.Dec
+	RequestedAmount  osmomath.Dec
+	CurrentLiquidity osmomath.Dec
 }
 
 func (e LiquidityWithdrawalError) Error() string {
@@ -777,7 +780,7 @@ func (e PositionNotFullRangeError) Error() string {
 }
 
 type Amount0IsNegativeError struct {
-	Amount0 sdk.Int
+	Amount0 osmomath.Int
 }
 
 func (e Amount0IsNegativeError) Error() string {
@@ -785,7 +788,7 @@ func (e Amount0IsNegativeError) Error() string {
 }
 
 type Amount1IsNegativeError struct {
-	Amount1 sdk.Int
+	Amount1 osmomath.Int
 }
 
 func (e Amount1IsNegativeError) Error() string {
@@ -826,7 +829,7 @@ func (e RanOutOfTicksForPoolError) Error() string {
 }
 
 type SqrtRootCalculationError struct {
-	SqrtPriceLimit sdk.Dec
+	SqrtPriceLimit osmomath.BigDec
 }
 
 func (e SqrtRootCalculationError) Error() string {
@@ -839,4 +842,117 @@ type TickToSqrtPriceConversionError struct {
 
 func (e TickToSqrtPriceConversionError) Error() string {
 	return fmt.Sprintf("could not convert next tick  to nextSqrtPrice (%v)", e.NextTick)
+}
+
+type SwapNoProgressError struct {
+	PoolId           uint64
+	UserProvidedCoin sdk.Coin
+}
+
+func (e SwapNoProgressError) Error() string {
+	return fmt.Sprintf("ran out of iterations during swap. Possibly entered an infinite loop. Pool id (%d), user provided coin (%s)", e.PoolId, e.UserProvidedCoin)
+}
+
+type SwapNoProgressWithConsumptionError struct {
+	ComputedSqrtPrice osmomath.BigDec
+	AmountIn          osmomath.Dec
+	AmountOut         osmomath.Dec
+}
+
+func (e SwapNoProgressWithConsumptionError) Error() string {
+	return fmt.Sprintf("did not advance sqrt price after swap step %s, with amounts in (%s), out (%s)", e.ComputedSqrtPrice, e.AmountIn, e.AmountOut)
+}
+
+type SqrtPriceToTickError struct {
+	OutOfBounds bool
+}
+
+func (e SqrtPriceToTickError) Error() string {
+	return fmt.Sprintf("sqrt price to tick could not find a satisfying tick index. Hit bounds: %v", e.OutOfBounds)
+}
+
+type OverChargeSwapOutGivenInError struct {
+	AmountSpecifiedRemaining osmomath.Dec
+}
+
+func (e OverChargeSwapOutGivenInError) Error() string {
+	return fmt.Sprintf("over charge problem swap out given in by (%s)", e.AmountSpecifiedRemaining)
+}
+
+type ComputedSqrtPriceInequalityError struct {
+	IsZeroForOne                 bool
+	NextInitializedTickSqrtPrice osmomath.BigDec
+	ComputedSqrtPrice            osmomath.BigDec
+}
+
+func (e ComputedSqrtPriceInequalityError) Error() string {
+	return fmt.Sprintf("edge case has occurred when swapping at tick boundaries, with izZeroForOne (%t), NextInitializedTickSqrtPrice (%s), computedSqrtPrice (%s). Please try again with a different swap amount", e.IsZeroForOne, e.NextInitializedTickSqrtPrice, e.ComputedSqrtPrice)
+}
+
+type NumberOfTicksExceedsMaxError struct {
+	NumberOfTicks    uint64
+	MaxNumberOfTicks uint64
+}
+
+func (e NumberOfTicksExceedsMaxError) Error() string {
+	return fmt.Sprintf("number of ticks exceeds max ticks. Provided number of ticks (%d), max ticks (%d)", e.NumberOfTicks, e.MaxNumberOfTicks)
+}
+
+type DuplicatePositionIdsError struct {
+	PositionIds []uint64
+}
+
+func (e DuplicatePositionIdsError) Error() string {
+	return fmt.Sprintf("duplicate position ids found (%v)", e.PositionIds)
+}
+
+type LastPositionTransferError struct {
+	PositionId uint64
+	PoolId     uint64
+}
+
+func (e LastPositionTransferError) Error() string {
+	return fmt.Sprintf("cannot transfer position %d because it is the last position in pool %d", e.PositionId, e.PoolId)
+}
+
+type ContractHookOutOfGasError struct {
+	GasLimit uint64
+}
+
+func (e ContractHookOutOfGasError) Error() string {
+	return fmt.Sprintf("A single contract call cannot exceed %d gas in a CL hook call.", e.GasLimit)
+}
+
+type InvalidActionPrefixError struct {
+	ActionPrefix string
+	ValidActions []string
+}
+
+func (e InvalidActionPrefixError) Error() string {
+	return fmt.Sprintf("invalid action prefix (%s). Valid actions: %s", e.ActionPrefix, e.ValidActions)
+}
+
+type IncentiveScalingFactorOverflowError struct {
+	PanicMessage string
+}
+
+func (e IncentiveScalingFactorOverflowError) Error() string {
+	return fmt.Sprintf("totalEmittedAmount is too high, causing overflow when applying scaling factor: %s", e.PanicMessage)
+}
+
+type IncentiveEmissionOvrflowError struct {
+	PanicMessage string
+}
+
+func (e IncentiveEmissionOvrflowError) Error() string {
+	return fmt.Sprintf("either too much time has passed since last pool update or the emission rate is too high, causing overflow: %s", e.PanicMessage)
+}
+
+type InvalidForfeitedIncentivesLengthError struct {
+	ForfeitedIncentivesLength int
+	ExpectedLength            int
+}
+
+func (e InvalidForfeitedIncentivesLengthError) Error() string {
+	return fmt.Sprintf("attempted to redeposit incorrectly constructed forfeited incentives slice. forfeited incentives must have an entry for each supported uptime. forfeit entries: %d, expected: %d", e.ForfeitedIncentivesLength, e.ExpectedLength)
 }

@@ -6,15 +6,15 @@ import (
 	"sort"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto"
+	cryptoenc "github.com/cometbft/cometbft/crypto/encoding"
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	tmtypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/types/simulation"
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/crypto"
-	cryptoenc "github.com/tendermint/tendermint/crypto/encoding"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	tmtypes "github.com/tendermint/tendermint/types"
 	"golang.org/x/exp/maps"
 
-	markov "github.com/osmosis-labs/osmosis/v16/simulation/simtypes/transitionmatrix"
+	markov "github.com/osmosis-labs/osmosis/v24/simulation/simtypes/transitionmatrix"
 )
 
 type mockValidator struct {
@@ -119,10 +119,13 @@ func updateValidators(
 	params simulation.Params,
 	current map[string]mockValidator,
 	updates []abci.ValidatorUpdate,
-	// logWriter LogWriter,
 	event func(route, op, evResult string),
 ) (map[string]mockValidator, error) {
 	nextSet := mockValidators(current).Clone()
+
+	// Count the number of validators that are about to be kicked
+	kickedValidators := 0
+
 	for _, update := range updates {
 		str := fmt.Sprintf("%X", update.PubKey.GetEd25519())
 
@@ -131,9 +134,9 @@ func updateValidators(
 				return nil, fmt.Errorf("tried to delete a nonexistent validator: %s", str)
 			}
 
-			// logWriter.AddEntry(NewOperationEntry())("kicked", str)
+			kickedValidators++
+
 			event("end_block", "validator_updates", "kicked")
-			delete(nextSet, str)
 		} else if _, ok := nextSet[str]; ok {
 			// validator already exists, update weight
 			nextSet[str] = mockValidator{update, nextSet[str].livenessState}
@@ -145,6 +148,19 @@ func updateValidators(
 				markov.GetMemberOfInitialState(r, params.InitialLivenessWeightings()),
 			}
 			event("end_block", "validator_updates", "added")
+		}
+	}
+
+	// Check if all the validators are about to be kicked, if so, don't perform the deletions
+	if kickedValidators == len(nextSet) {
+		return nextSet, nil
+	}
+
+	// Perform the deletions for validators that are to be kicked
+	for _, update := range updates {
+		str := fmt.Sprintf("%X", update.PubKey.GetEd25519())
+		if update.Power == 0 {
+			delete(nextSet, str)
 		}
 	}
 
@@ -165,11 +181,11 @@ func RandomRequestBeginBlock(r *rand.Rand, params Params,
 	}
 
 	voteInfos := randomVoteInfos(r, params, validators)
-	evidence := randomDoubleSignEvidence(r, params, validators, pastTimes, pastVoteInfos, event, header, voteInfos)
+	evidence := randomDoubleSignEvidence(r, params, pastTimes, pastVoteInfos, event, header, voteInfos)
 
 	return abci.RequestBeginBlock{
 		Header: header,
-		LastCommitInfo: abci.LastCommitInfo{
+		LastCommitInfo: abci.CommitInfo{
 			Votes: voteInfos,
 		},
 		ByzantineValidators: evidence,
@@ -214,12 +230,11 @@ func randomVoteInfos(r *rand.Rand, simParams Params, validators mockValidators,
 	return voteInfos
 }
 
-func randomDoubleSignEvidence(r *rand.Rand, params Params,
-	validators mockValidators, pastTimes []time.Time,
+func randomDoubleSignEvidence(r *rand.Rand, params Params, pastTimes []time.Time,
 	pastVoteInfos [][]abci.VoteInfo,
 	event func(route, op, evResult string), header tmproto.Header, voteInfos []abci.VoteInfo,
-) []abci.Evidence {
-	evidence := []abci.Evidence{}
+) []abci.Misbehavior {
+	evidence := []abci.Misbehavior{}
 	// return if no past times or if only 10 validators remaining in the active set
 	if len(pastTimes) == 0 {
 		return evidence
@@ -254,8 +269,8 @@ func randomDoubleSignEvidence(r *rand.Rand, params Params,
 		}
 
 		evidence = append(evidence,
-			abci.Evidence{
-				Type:             abci.EvidenceType_DUPLICATE_VOTE,
+			abci.Misbehavior{
+				Type:             abci.MisbehaviorType_DUPLICATE_VOTE,
 				Validator:        validator,
 				Height:           height,
 				Time:             time,

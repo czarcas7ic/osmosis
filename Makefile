@@ -1,18 +1,63 @@
 #!/usr/bin/make -f
 
+# the subcommands are located in the specific makefiles
+include scripts/makefiles/build.mk
+include scripts/makefiles/deps.mk
+include scripts/makefiles/docker.mk
+include scripts/makefiles/e2e.mk
+include scripts/makefiles/lint.mk
+include scripts/makefiles/localnet.mk
+include scripts/makefiles/proto.mk
+include scripts/makefiles/release.mk
+include scripts/makefiles/sqs.mk
+include scripts/makefiles/tests.mk
+
+.DEFAULT_GOAL := help
+help:
+	@echo "Available top-level commands:"
+	@echo ""
+	@echo "Usage:"
+	@echo "    make [command]"
+	@echo ""
+	@echo "  make build                 Build osmosisd binary"
+	@echo "  make build-help            Show available build commands"
+	@echo "  make deps                  Show available deps commands"
+	@echo "  make docker                Show available docker commands"
+	@echo "  make e2e                   Show available e2e commands"
+	@echo "  make go-mock-update        Generate mock files"
+	@echo "  make install               Install osmosisd binary"
+	@echo "  make lint                  Show available lint commands"
+	@echo "  make localnet              Show available localnet commands"
+	@echo "  make proto                 Show available proto commands"
+	@echo "  make release               Show available release commands"
+	@echo "  make release-help          Show available release commands"
+	@echo "  make run-querygen          Generating GRPC queries, and queryproto logic"
+	@echo "  make sqs                   Show available sqs commands"
+	@echo "  make test                  Show available test commands"
+	@echo ""
+	@echo "Run 'make [subcommand]' to see the available commands for each subcommand."
+
 VERSION := $(shell echo $(shell git describe --tags) | sed 's/^v//')
 COMMIT := $(shell git log -1 --format='%H')
+
 LEDGER_ENABLED ?= true
 SDK_PACK := $(shell go list -m github.com/cosmos/cosmos-sdk | sed  's/ /\@/g')
-GO_VERSION := $(shell cat go.mod | grep -E 'go [0-9].[0-9]+' | cut -d ' ' -f 2)
-GO_MODULE := $(shell cat go.mod | grep "module " | cut -d ' ' -f 2)
 BUILDDIR ?= $(CURDIR)/build
 DOCKER := $(shell which docker)
-E2E_UPGRADE_VERSION := "v16"
+E2E_UPGRADE_VERSION := "v25"
+#SHELL := /bin/bash
 
-
+# Go version to be used in docker images
+GO_VERSION := $(shell cat go.mod | grep -E 'go [0-9].[0-9]+' | cut -d ' ' -f 2)
+# currently installed Go version
+GO_MODULE := $(shell cat go.mod | grep "module " | cut -d ' ' -f 2)
 GO_MAJOR_VERSION = $(shell go version | cut -c 14- | cut -d' ' -f1 | cut -d'.' -f1)
 GO_MINOR_VERSION = $(shell go version | cut -c 14- | cut -d' ' -f1 | cut -d'.' -f2)
+# minimum supported Go version
+GO_MINIMUM_MAJOR_VERSION = $(shell cat go.mod | grep -E 'go [0-9].[0-9]+' | cut -d ' ' -f2 | cut -d'.' -f1)
+GO_MINIMUM_MINOR_VERSION = $(shell cat go.mod | grep -E 'go [0-9].[0-9]+' | cut -d ' ' -f2 | cut -d'.' -f2)
+# message to be printed if Go does not meet the minimum required version
+GO_VERSION_ERR_MSG = "ERROR: Go version $(GO_MINIMUM_MAJOR_VERSION).$(GO_MINIMUM_MINOR_VERSION)+ is required"
 
 export GO111MODULE = on
 
@@ -95,419 +140,59 @@ else
     # In WSL
     SKIP_WASM_WSL_TESTS := "true"
 endif
-
 ###############################################################################
-###                                  Build                                  ###
+###                            Build & Install                              ###
 ###############################################################################
 
-check_version:
-ifneq ($(GO_MINOR_VERSION),20)
-	@echo "ERROR: Go version 1.20 is required for this version of Osmosis."
-	exit 1
-endif
-
-all: install lint test
-
-build: check_version go.sum
+build: build-check-version go.sum
 	mkdir -p $(BUILDDIR)/
 	GOWORK=off go build -mod=readonly  $(BUILD_FLAGS) -o $(BUILDDIR)/ $(GO_MODULE)/cmd/osmosisd
 
-build-all: check_version go.sum
-	mkdir -p $(BUILDDIR)/
-	GOWORK=off go build -mod=readonly $(BUILD_FLAGS) -o $(BUILDDIR)/ ./...
-
-install: check_version go.sum
+install: build-check-version go.sum
 	GOWORK=off go install -mod=readonly $(BUILD_FLAGS) $(GO_MODULE)/cmd/osmosisd
 
-# Cross-building for arm64 from amd64 (or viceversa) takes
-# a lot of time due to QEMU virtualization but it's the only way (afaik)
-# to get a statically linked binary with CosmWasm
-
-build-reproducible: build-reproducible-amd64 build-reproducible-arm64
-
-build-reproducible-amd64: go.sum
-	mkdir -p $(BUILDDIR)
-	$(DOCKER) buildx create --name osmobuilder || true
-	$(DOCKER) buildx use osmobuilder
-	$(DOCKER) buildx build \
-		--build-arg GO_VERSION=$(GO_VERSION) \
-		--build-arg GIT_VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(COMMIT) \
-		--build-arg RUNNER_IMAGE=alpine:3.17 \
-		--platform linux/amd64 \
-		-t osmosis:local-amd64 \
-		--load \
-		-f Dockerfile .
-	$(DOCKER) rm -f osmobinary || true
-	$(DOCKER) create -ti --name osmobinary osmosis:local-amd64
-	$(DOCKER) cp osmobinary:/bin/osmosisd $(BUILDDIR)/osmosisd-linux-amd64
-	$(DOCKER) rm -f osmobinary
-
-build-reproducible-arm64: go.sum
-	mkdir -p $(BUILDDIR)
-	$(DOCKER) buildx create --name osmobuilder || true
-	$(DOCKER) buildx use osmobuilder
-	$(DOCKER) buildx build \
-		--build-arg GO_VERSION=$(GO_VERSION) \
-		--build-arg GIT_VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(COMMIT) \
-		--build-arg RUNNER_IMAGE=alpine:3.17 \
-		--platform linux/arm64 \
-		-t osmosis:local-arm64 \
-		--load \
-		-f Dockerfile .
-	$(DOCKER) rm -f osmobinary || true
-	$(DOCKER) create -ti --name osmobinary osmosis:local-arm64
-	$(DOCKER) cp osmobinary:/bin/osmosisd $(BUILDDIR)/osmosisd-linux-arm64
-	$(DOCKER) rm -f osmobinary
-
-build-linux: go.sum
-	LEDGER_ENABLED=false GOOS=linux GOARCH=amd64 $(MAKE) build
-
-build-contract-tests-hooks:
-	mkdir -p $(BUILDDIR)
-	go build -mod=readonly $(BUILD_FLAGS) -o $(BUILDDIR)/ ./cmd/contract_tests
-
-go-mod-cache: go.sum
-	@echo "--> Download go modules to local cache"
-	@go mod download
-
-go.sum: go.mod
-	@echo "--> Ensure dependencies have not been modified"
-	@GOWORK=off go mod verify
-
-draw-deps:
-	@# requires brew install graphviz or apt-get install graphviz
-	go get github.com/RobotsAndPencils/goviz
-	@goviz -i ./cmd/osmosisd -d 2 | dot -Tpng -o dependency-graph.png
-
-clean:
-	rm -rf $(CURDIR)/artifacts/
-
-distclean: clean
-	rm -rf vendor/
-
 ###############################################################################
-###                                  Proto                                  ###
-###############################################################################
-
-proto-all: proto-format proto-gen
-
-proto:
-	@echo
-	@echo "=========== Generate Message ============"
-	@echo
-	./scripts/protocgen.sh
-	@echo
-	@echo "=========== Generate Complete ============"
-	@echo
-
-test:
-	@go test -v ./x/...
-
-docs:
-	@echo
-	@echo "=========== Generate Message ============"
-	@echo
-	./scripts/generate-docs.sh
-
-	statik -src=client/docs/static -dest=client/docs -f -m
-	@if [ -n "$(git status --porcelain)" ]; then \
-        echo "\033[91mSwagger docs are out of sync!!!\033[0m";\
-        exit 1;\
-    else \
-        echo "\033[92mSwagger docs are in sync\033[0m";\
-    fi
-	@echo
-	@echo "=========== Generate Complete ============"
-	@echo
-.PHONY: docs
-
-protoVer=v0.9
-protoImageName=osmolabs/osmo-proto-gen:$(protoVer)
-containerProtoGen=cosmos-sdk-proto-gen-$(protoVer)
-containerProtoFmt=cosmos-sdk-proto-fmt-$(protoVer)
-
-proto-gen:
-	@echo "Generating Protobuf files"
-	@if docker ps -a --format '{{.Names}}' | grep -Eq "^${containerProtoGen}$$"; then docker start -a $(containerProtoGen); else docker run --name $(containerProtoGen) -v $(CURDIR):/workspace --workdir /workspace $(protoImageName) \
-		sh ./scripts/protocgen.sh; fi
-
-proto-format:
-	@echo "Formatting Protobuf files"
-	@if docker ps -a --format '{{.Names}}' | grep -Eq "^${containerProtoFmt}$$"; then docker start -a $(containerProtoFmt); else docker run --name $(containerProtoFmt) -v $(CURDIR):/workspace --workdir /workspace tendermintdev/docker-build-proto \
-		find ./ -not -path "./third_party/*" -name "*.proto" -exec clang-format -i {} \; ; fi
-
-proto-image-build:
-	@DOCKER_BUILDKIT=1 docker build -t $(protoImageName) -f ./proto/Dockerfile ./proto
-
-proto-image-push:
-	docker push $(protoImageName)
-
-###############################################################################
-###                                Querygen                                 ###
+###                                Gen                                      ###
 ###############################################################################
 
 run-querygen:
 	@go run cmd/querygen/main.go
 
-###############################################################################
-###                           Tests & Simulation                            ###
-###############################################################################
-
-PACKAGES_UNIT=$(shell go list ./... ./osmomath/... ./osmoutils/... ./x/ibc-hooks/... ./x/epochs | grep -E -v 'tests/simulator|e2e')
-PACKAGES_E2E=$(shell go list ./... | grep '/e2e')
-PACKAGES_SIM=$(shell go list ./... | grep '/tests/simulator')
-TEST_PACKAGES=./...
-
-test: test-unit test-build
-
-test-all: test-race test-cover
-
-test-unit:
-	@VERSION=$(VERSION) SKIP_WASM_WSL_TESTS=$(SKIP_WASM_WSL_TESTS) go test -mod=readonly -tags='ledger test_ledger_mock norace' $(PACKAGES_UNIT)
-
-test-race:
-	@VERSION=$(VERSION) go test -mod=readonly -race -tags='ledger test_ledger_mock' $(PACKAGES_UNIT)
-
-test-cover:
-	@VERSION=$(VERSION) go test -mod=readonly -timeout 30m -coverprofile=coverage.txt -tags='norace' -covermode=atomic $(PACKAGES_UNIT)
-
-test-sim-suite:
-	@VERSION=$(VERSION) go test -mod=readonly $(PACKAGES_SIM)
-
-test-sim-app:
-	@VERSION=$(VERSION) go test -mod=readonly -run ^TestFullAppSimulation -v $(PACKAGES_SIM)
-
-test-sim-determinism:
-	@VERSION=$(VERSION) go test -mod=readonly -run ^TestAppStateDeterminism -v $(PACKAGES_SIM)
-
-test-sim-bench:
-	@VERSION=$(VERSION) go test -benchmem -run ^BenchmarkFullAppSimulation -bench ^BenchmarkFullAppSimulation -cpuprofile cpu.out $(PACKAGES_SIM)
-
-# test-e2e runs a full e2e test suite
-# deletes any pre-existing Osmosis containers before running.
-#
-# Deletes Docker resources at the end.
-# Utilizes Go cache.
-test-e2e: e2e-setup test-e2e-ci e2e-remove-resources
-
-# test-e2e-ci runs a full e2e test suite
-# does not do any validation about the state of the Docker environment
-# As a result, avoid using this locally.
-test-e2e-ci:
-	@VERSION=$(VERSION) OSMOSIS_E2E=True OSMOSIS_E2E_DEBUG_LOG=False OSMOSIS_E2E_UPGRADE_VERSION=$(E2E_UPGRADE_VERSION)  go test -mod=readonly -timeout=25m -v $(PACKAGES_E2E)
-
-# test-e2e-debug runs a full e2e test suite but does
-# not attempt to delete Docker resources at the end.
-test-e2e-debug: e2e-setup
-	@VERSION=$(VERSION) OSMOSIS_E2E=True OSMOSIS_E2E_DEBUG_LOG=True OSMOSIS_E2E_UPGRADE_VERSION=$(E2E_UPGRADE_VERSION) OSMOSIS_E2E_SKIP_CLEANUP=True go test -mod=readonly -timeout=25m -v $(PACKAGES_E2E) -count=1
-
-# test-e2e-short runs the e2e test with only short tests.
-# Does not delete any of the containers after running.
-# Deletes any existing containers before running.
-# Does not use Go cache.
-test-e2e-short: e2e-setup
-	@VERSION=$(VERSION) OSMOSIS_E2E=True OSMOSIS_E2E_DEBUG_LOG=True OSMOSIS_E2E_SKIP_UPGRADE=True OSMOSIS_E2E_SKIP_IBC=True OSMOSIS_E2E_SKIP_STATE_SYNC=True OSMOSIS_E2E_SKIP_CLEANUP=True go test -mod=readonly -timeout=25m -v $(PACKAGES_E2E) -count=1
-
-test-mutation:
-	@bash scripts/mutation-test.sh $(MODULES)
-
-benchmark:
-	@go test -mod=readonly -bench=. $(PACKAGES_UNIT)
-
-build-e2e-script:
-	mkdir -p $(BUILDDIR)
-	go build -mod=readonly $(BUILD_FLAGS) -o $(BUILDDIR)/ ./tests/e2e/initialization/$(E2E_SCRIPT_NAME)
-
-docker-build-debug:
-	@DOCKER_BUILDKIT=1 docker build -t osmosis:${COMMIT} --build-arg BASE_IMG_TAG=debug --build-arg RUNNER_IMAGE=$(RUNNER_BASE_IMAGE_ALPINE) -f Dockerfile .
-	@DOCKER_BUILDKIT=1 docker tag osmosis:${COMMIT} osmosis:debug
-
-docker-build-e2e-init-chain:
-	@DOCKER_BUILDKIT=1 docker build -t osmolabs/osmosis-e2e-init-chain:debug --build-arg E2E_SCRIPT_NAME=chain --platform=linux/x86_64 -f tests/e2e/initialization/init.Dockerfile .
-
-docker-build-e2e-init-node:
-	@DOCKER_BUILDKIT=1 docker build -t osmosis-e2e-init-node:debug --build-arg E2E_SCRIPT_NAME=node --platform=linux/x86_64 -f tests/e2e/initialization/init.Dockerfile .
-
-e2e-setup: e2e-check-image-sha e2e-remove-resources
-	@echo Finished e2e environment setup, ready to start the test
-
-e2e-check-image-sha:
-	tests/e2e/scripts/run/check_image_sha.sh
-
-e2e-remove-resources:
-	tests/e2e/scripts/run/remove_stale_resources.sh
-
-.PHONY: test-mutation
-
-###############################################################################
-###                                Docker                                  ###
-###############################################################################
-
-RUNNER_BASE_IMAGE_DISTROLESS := gcr.io/distroless/static-debian11
-RUNNER_BASE_IMAGE_ALPINE := alpine:3.17
-RUNNER_BASE_IMAGE_NONROOT := gcr.io/distroless/static-debian11:nonroot
-
-docker-build:
-	@DOCKER_BUILDKIT=1 docker build \
-		-t osmosis:local \
-		-t osmosis:local-distroless \
-		--build-arg GO_VERSION=$(GO_VERSION) \
-		--build-arg RUNNER_IMAGE=$(RUNNER_BASE_IMAGE_DISTROLESS) \
-		--build-arg GIT_VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(COMMIT) \
-		-f Dockerfile .
-
-docker-build-distroless: docker-build
-
-docker-build-alpine:
-	@DOCKER_BUILDKIT=1 docker build \
-		-t osmosis:local-alpine \
-		--build-arg GO_VERSION=$(GO_VERSION) \
-		--build-arg RUNNER_IMAGE=$(RUNNER_BASE_IMAGE_ALPINE) \
-		--build-arg GIT_VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(COMMIT) \
-		-f Dockerfile .
-
-docker-build-nonroot:
-	@DOCKER_BUILDKIT=1 docker build \
-		-t osmosis:local-nonroot \
-		--build-arg GO_VERSION=$(GO_VERSION) \
-		--build-arg RUNNER_IMAGE=$(RUNNER_BASE_IMAGE_NONROOT) \
-		--build-arg GIT_VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(COMMIT) \
-		-f Dockerfile .
-
-###############################################################################
-###                                Linting                                  ###
-###############################################################################
-
-lint:
-	@echo "--> Running linter"
-	@go run github.com/golangci/golangci-lint/cmd/golangci-lint run --timeout=10m
-	@docker run -v $(PWD):/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "**/*.md"
-
-format:
-	@go run github.com/golangci/golangci-lint/cmd/golangci-lint run ./... --fix
-	@go run mvdan.cc/gofumpt -l -w x/ app/ ante/ tests/
-	@docker run -v $(PWD):/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "**/*.md" --fix
-
-mdlint:
-	@echo "--> Running markdown linter"
-	@docker run -v $(PWD):/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "**/*.md"
-
-markdown:
-	@docker run -v $(PWD):/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "**/*.md" --fix
-
-###############################################################################
-###                                Localnet                                 ###
-###############################################################################
-
-localnet-keys:
-	. tests/localosmosis/scripts/add_keys.sh
-
-localnet-init: localnet-clean localnet-build
-
-localnet-build:
-	@DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker-compose -f tests/localosmosis/docker-compose.yml build
-
-localnet-start:
-	@STATE="" docker-compose -f tests/localosmosis/docker-compose.yml up
-
-localnet-start-with-state:
-	@STATE=-s docker-compose -f tests/localosmosis/docker-compose.yml up
-
-localnet-startd:
-	@STATE="" docker-compose -f tests/localosmosis/docker-compose.yml up -d
-
-localnet-startd-with-state:
-	@STATE=-s docker-compose -f tests/localosmosis/docker-compose.yml up -d
-
-localnet-stop:
-	@STATE="" docker-compose -f tests/localosmosis/docker-compose.yml down
-
-localnet-clean:
-	@rm -rfI $(HOME)/.osmosisd-local/
-
-localnet-state-export-init: localnet-state-export-clean localnet-state-export-build 
-
-localnet-state-export-build:
-	@DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker-compose -f tests/localosmosis/state_export/docker-compose.yml build
-
-localnet-state-export-start:
-	@docker-compose -f tests/localosmosis/state_export/docker-compose.yml up
-
-localnet-state-export-startd:
-	@docker-compose -f tests/localosmosis/state_export/docker-compose.yml up -d
-
-localnet-state-export-stop:
-	@docker-compose -f tests/localosmosis/docker-compose.yml down
-
-localnet-state-export-clean: localnet-clean
-
-# create 100 concentrated-liquidity positions in localosmosis at pool id 1
-localnet-cl-create-positions:
-	go run tests/cl-go-client/main.go --operation 0
-
-# does 100 small randomized swaps in localosmosis at pool id 1
-localnet-cl-small-swap:
-	go run tests/cl-go-client/main.go --operation 1
-
-# does 100 large swaps where the output of the previous swap is swapped back at the
-# next swap. localosmosis at pool id 1
-localnet-cl-large-swap:
-	go run tests/cl-go-client/main.go --operation 2
-
-# creates a gauge and waits for one epoch so that the gauge
-# is converted into an incentive record for pool id 1.
-localnet-cl-external-incentive:
-	go run tests/cl-go-client/main.go --operation 3
-
-# attempts to create a CL pool at id 1.
-# if pool already exists, this is a no-op.
-# if pool with different id is desired, tweak expectedPoolId
-# in the script.
-localnet-cl-create-pool:
-	go run tests/cl-go-client/main.go --operation 4
-
-# does both of localnet-cl-create-positions and localnet-cl-small-swap
-localnet-cl-positions-small-swaps: localnet-cl-create-positions localnet-cl-small-swap
-
-# does both of localnet-cl-create-positions and localnet-cl-large-swap
-localnet-cl-positions-large-swaps: localnet-cl-create-positions localnet-cl-large-swap
-
-# This script retrieves Uniswap v3 Ethereum position data
-# from subgraph. It uses WETH / USDC pool. This is helpful
-# for setting up somewhat realistic positions for testing
-# in localosmosis. It writes the file under
-# tests/cl-genesis-positions/subgraph_positions.json
-cl-refresh-subgraph-positions:
-	go run ./tests/cl-genesis-positions --operation 0
-
-# This script converts the positions data created by the
-# cl-refresh-subgraph-positions makefile step into an Osmosis
-# genesis. It writes the file under tests/cl-genesis-positions/genesis.json
-cl-refresh-subgraph-genesis:
-	go run ./tests/cl-genesis-positions --operation 1
-
-# This script converts the positions data created by the
-# cl-refresh-subgraph-positions makefile step into a Big Bang
-# configuration file for spinning up testnets.
-# It writes the file under tests/cl-genesis-positions/bigbang_positions.json
-cl-create-bigbang-config:
-	go run ./tests/cl-genesis-positions --operation 1 --big-bang
 
 ###############################################################################
 ###                                Go Mock                                  ###
 ###############################################################################
 
 go-mock-update:
-	mockgen -source=x/poolmanager/types/routes.go -destination=tests/mocks/pool_module.go -package=mocks
+	mockgen -source=x/poolmanager/types/expected_keepers.go -destination=tests/mocks/pool_module.go -package=mocks
 	mockgen -source=x/poolmanager/types/pool.go -destination=tests/mocks/pool.go -package=mocks
 	mockgen -source=x/gamm/types/pool.go -destination=tests/mocks/cfmm_pool.go -package=mocks
 	mockgen -source=x/concentrated-liquidity/types/cl_pool_extensionI.go -destination=tests/mocks/cl_pool.go -package=mocks
 
+###############################################################################
+###                                Release                                  ###
+###############################################################################
+GORELEASER_IMAGE := ghcr.io/goreleaser/goreleaser-cross:v$(GO_VERSION)
+COSMWASM_VERSION := $(shell go list -m github.com/CosmWasm/wasmvm | sed 's/.* //')
+
+ifdef GITHUB_TOKEN
+release:
+	docker run \
+		--rm \
+		-e GITHUB_TOKEN=$(GITHUB_TOKEN) \
+		-e COSMWASM_VERSION=$(COSMWASM_VERSION) \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v `pwd`:/go/src/osmosisd \
+		-w /go/src/osmosisd \
+		$(GORELEASER_IMAGE) \
+		release \
+		--clean
+else
+release:
+	@echo "Error: GITHUB_TOKEN is not defined. Please define it before running 'make release'."
+endif
+
 .PHONY: all build-linux install format lint \
 	go-mod-cache draw-deps clean build build-contract-tests-hooks \
-	test test-all test-build test-cover test-unit test-race benchmark
+	test test-all test-build test-cover test-unit test-race benchmark \
+	release release-dry-run release-snapshot

@@ -8,10 +8,11 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
-	incentivetypes "github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	tokenfactorytypes "github.com/osmosis-labs/osmosis/v16/x/tokenfactory/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
+	incentivetypes "github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	tokenfactorytypes "github.com/osmosis-labs/osmosis/v24/x/tokenfactory/types"
 )
 
 const (
@@ -26,7 +27,7 @@ type TransmuterSuite struct {
 
 var (
 	defaultPoolId       = uint64(1)
-	defaultAmount       = sdk.NewInt(100)
+	defaultAmount       = osmomath.NewInt(100)
 	initalDefaultSupply = sdk.NewCoins(sdk.NewCoin(denomA, defaultAmount), sdk.NewCoin(denomB, defaultAmount))
 	uosmo               = "uosmo"
 
@@ -48,6 +49,9 @@ func (s *TransmuterSuite) TestFunctionalTransmuter() {
 		exppectedDenomPrefix = tokenfactorytypes.ModuleDenomPrefix + "/"
 		expectedDenomSuffix  = "/transmuter/poolshare"
 	)
+
+	// Set base denom
+	s.App.IncentivesKeeper.SetParam(s.Ctx, incentivetypes.KeyMinValueForDistr, sdk.NewCoin("uosmo", osmomath.NewInt(10000)))
 
 	// Create Transmuter pool
 	transmuter := s.PrepareCosmWasmPool()
@@ -80,7 +84,7 @@ func (s *TransmuterSuite) TestFunctionalTransmuter() {
 	s.Require().NoError(err)
 
 	// Create gauge
-	incentive := sdk.NewCoins(sdk.NewCoin(uosmo, sdk.NewInt(1_000_000)))
+	incentive := sdk.NewCoins(sdk.NewCoin(uosmo, osmomath.NewInt(1_000_000)))
 	s.FundAcc(s.TestAccs[1], incentive)
 	gaugeId, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], incentive, lockuptypes.QueryCondition{
 		LockQueryType: lockuptypes.ByDuration,
@@ -91,7 +95,7 @@ func (s *TransmuterSuite) TestFunctionalTransmuter() {
 	gauge, err := s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, gaugeId)
 	s.Require().NoError(err)
 
-	// Distirbute rewards
+	// Distribute rewards
 	coins, err := s.App.IncentivesKeeper.Distribute(s.Ctx, []incentivetypes.Gauge{*gauge})
 	s.Require().NoError(err)
 

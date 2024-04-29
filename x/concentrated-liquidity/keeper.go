@@ -3,16 +3,17 @@ package concentrated_liquidity
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	gogotypes "github.com/gogo/protobuf/types"
+	gogotypes "github.com/cosmos/gogoproto/types"
 
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	"github.com/osmosis-labs/osmosis/osmoutils"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
 )
 
 type Keeper struct {
-	storeKey sdk.StoreKey
+	storeKey storetypes.StoreKey
 	cdc      codec.BinaryCodec
 
 	paramSpace paramtypes.Subspace
@@ -27,9 +28,10 @@ type Keeper struct {
 	incentivesKeeper     types.IncentivesKeeper
 	lockupKeeper         types.LockupKeeper
 	communityPoolKeeper  types.CommunityPoolKeeper
+	contractKeeper       types.ContractKeeper
 }
 
-func NewKeeper(cdc codec.BinaryCodec, storeKey sdk.StoreKey, accountKeeper types.AccountKeeper, bankKeeper types.BankKeeper, gammKeeper types.GAMMKeeper, poolIncentivesKeeper types.PoolIncentivesKeeper, incentivesKeeper types.IncentivesKeeper, lockupKeeper types.LockupKeeper, communityPoolKeeper types.CommunityPoolKeeper, paramSpace paramtypes.Subspace) *Keeper {
+func NewKeeper(cdc codec.BinaryCodec, storeKey storetypes.StoreKey, accountKeeper types.AccountKeeper, bankKeeper types.BankKeeper, gammKeeper types.GAMMKeeper, poolIncentivesKeeper types.PoolIncentivesKeeper, incentivesKeeper types.IncentivesKeeper, lockupKeeper types.LockupKeeper, communityPoolKeeper types.CommunityPoolKeeper, contractKeeper types.ContractKeeper, paramSpace paramtypes.Subspace) *Keeper {
 	// ParamSubspace must be initialized within app/keepers/keepers.go
 	if !paramSpace.HasKeyTable() {
 		paramSpace = paramSpace.WithKeyTable(types.ParamKeyTable())
@@ -45,6 +47,7 @@ func NewKeeper(cdc codec.BinaryCodec, storeKey sdk.StoreKey, accountKeeper types
 		incentivesKeeper:     incentivesKeeper,
 		lockupKeeper:         lockupKeeper,
 		communityPoolKeeper:  communityPoolKeeper,
+		contractKeeper:       contractKeeper,
 	}
 }
 
@@ -57,6 +60,11 @@ func (k Keeper) GetParams(ctx sdk.Context) (params types.Params) {
 // SetParams sets the concentrated-liquidity module's parameters with the provided parameters.
 func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
 	k.paramSpace.SetParamSet(ctx, &params)
+}
+
+// SetParam sets a specific concentrated-liquidity module's parameter with the provided parameter.
+func (k Keeper) SetParam(ctx sdk.Context, key []byte, value interface{}) {
+	k.paramSpace.Set(ctx, key, value)
 }
 
 // Set the poolmanager keeper.
@@ -77,6 +85,11 @@ func (k *Keeper) SetPoolIncentivesKeeper(poolIncentivesKeeper types.PoolIncentiv
 // Set the incentives keeper.
 func (k *Keeper) SetIncentivesKeeper(incentivesKeeper types.IncentivesKeeper) {
 	k.incentivesKeeper = incentivesKeeper
+}
+
+// Set the contract keeper.
+func (k *Keeper) SetContractKeeper(contractKeeper types.ContractKeeper) {
+	k.contractKeeper = contractKeeper
 }
 
 // GetNextPositionId returns the next position id.
@@ -118,11 +131,24 @@ func (k *Keeper) SetListeners(listeners types.ConcentratedLiquidityListeners) *K
 	return k
 }
 
-// ValidatePermissionlessPoolCreationEnabled returns nil if permissionless pool creation in the module is enabled.
-// Otherwise, returns an error.
-func (k Keeper) ValidatePermissionlessPoolCreationEnabled(ctx sdk.Context) error {
-	if !k.GetParams(ctx).IsPermissionlessPoolCreationEnabled {
-		return types.ErrPermissionlessPoolCreationDisabled
-	}
-	return nil
+// IsPermissionlessPoolCreationEnabled returns true if permissionless pool creation in the module is enabled.
+// Otherwise, returns false
+func (k Keeper) IsPermissionlessPoolCreationEnabled(ctx sdk.Context) bool {
+	return k.GetParams(ctx).IsPermissionlessPoolCreationEnabled
+}
+
+// GetAuthorizedQuoteDenoms gets the authorized quote denoms from the poolmanager keeper.
+// This method is meant to be used for getting access to x/poolmanager params
+// for use in sim_msgs.go for the CL module.
+func (k Keeper) GetAuthorizedQuoteDenoms(ctx sdk.Context) []string {
+	return k.poolmanagerKeeper.GetParams(ctx).AuthorizedQuoteDenoms
+}
+
+// SetAuthorizedQuoteDenoms sets the authorized quote denoms in the poolmanager keeper.
+// This method is meant to be used for getting access to x/poolmanager params
+// for use in sim_msgs.go for the CL module.
+func (k Keeper) SetAuthorizedQuoteDenoms(ctx sdk.Context, authorizedQuoteDenoms []string) {
+	params := k.poolmanagerKeeper.GetParams(ctx)
+	params.AuthorizedQuoteDenoms = authorizedQuoteDenoms
+	k.poolmanagerKeeper.SetParams(ctx, params)
 }

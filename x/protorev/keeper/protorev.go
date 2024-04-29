@@ -1,9 +1,11 @@
 package keeper
 
 import (
+	"errors"
 	"fmt"
 
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 
 	"github.com/cosmos/cosmos-sdk/store/prefix"
 
@@ -74,12 +76,13 @@ func (k Keeper) DeleteAllTokenPairArbRoutes(ctx sdk.Context) {
 	k.DeleteAllEntriesForKeyPrefix(ctx, types.KeyPrefixTokenPairRoutes)
 }
 
-// GetAllBaseDenoms returns all of the base denoms (sorted by priority in descending order) used to build cyclic arbitrage routes
-func (k Keeper) GetAllBaseDenoms(ctx sdk.Context) ([]types.BaseDenom, error) {
+// DeprecatedGetAllBaseDenoms returns all of the base denoms (sorted by priority in descending order) used to build cyclic arbitrage routes
+// After v24 upgrade, this method should be deleted. We now use the param store.
+func (k Keeper) DeprecatedGetAllBaseDenoms(ctx sdk.Context) ([]types.BaseDenom, error) {
 	baseDenoms := make([]types.BaseDenom, 0)
 
 	store := ctx.KVStore(k.storeKey)
-	iterator := sdk.KVStorePrefixIterator(store, types.KeyPrefixBaseDenoms)
+	iterator := sdk.KVStorePrefixIterator(store, types.KeyPrefixDeprecatedBaseDenoms)
 
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -95,13 +98,14 @@ func (k Keeper) GetAllBaseDenoms(ctx sdk.Context) ([]types.BaseDenom, error) {
 	return baseDenoms, nil
 }
 
-// SetBaseDenoms sets all of the base denoms used to build cyclic arbitrage routes. The base denoms priority
+// DeprecatedSetBaseDenoms sets all of the base denoms used to build cyclic arbitrage routes. The base denoms priority
 // order is going to match the order of the base denoms in the slice.
-func (k Keeper) SetBaseDenoms(ctx sdk.Context, baseDenoms []types.BaseDenom) error {
-	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixBaseDenoms)
+// After v24 upgrade, this method should be deleted. We now use the param store.
+func (k Keeper) DeprecatedSetBaseDenoms(ctx sdk.Context, baseDenoms []types.BaseDenom) error {
+	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixDeprecatedBaseDenoms)
 
 	for i, baseDenom := range baseDenoms {
-		key := types.GetKeyPrefixBaseDenom(uint64(i))
+		key := types.DeprecatedGetKeyPrefixBaseDenom(uint64(i))
 
 		bz, err := baseDenom.Marshal()
 		if err != nil {
@@ -113,22 +117,69 @@ func (k Keeper) SetBaseDenoms(ctx sdk.Context, baseDenoms []types.BaseDenom) err
 	return nil
 }
 
-// DeleteBaseDenoms deletes all of the base denoms
-func (k Keeper) DeleteBaseDenoms(ctx sdk.Context) {
-	k.DeleteAllEntriesForKeyPrefix(ctx, types.KeyPrefixBaseDenoms)
+// DeprecatedDeleteBaseDenoms deletes all of the base denoms.
+// After v24 upgrade, this method should be deleted. We now use the param store.
+func (k Keeper) DeprecatedDeleteBaseDenoms(ctx sdk.Context) {
+	k.DeleteAllEntriesForKeyPrefix(ctx, types.KeyPrefixDeprecatedBaseDenoms)
 }
 
-// GetPoolForDenomPair returns the id of the highest liquidty pool between the base denom and the denom to match
+// GetAllBaseDenoms returns all of the base denoms (sorted by priority in descending order) used to build cyclic arbitrage routes
+func (k Keeper) GetAllBaseDenoms(ctx sdk.Context) ([]types.BaseDenom, error) {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(types.KeyPrefixBaseDenoms)
+	baseDenoms := types.BaseDenoms{}
+	err := baseDenoms.Unmarshal(bz)
+	if err != nil {
+		return []types.BaseDenom{}, err
+	}
+	return baseDenoms.BaseDenoms, nil
+}
+
+// SetBaseDenoms sets all of the base denoms used to build cyclic arbitrage routes. The base denoms priority
+// order is going to match the order of the base denoms in the slice.
+func (k Keeper) SetBaseDenoms(ctx sdk.Context, baseDenoms []types.BaseDenom) error {
+	newBaseDenoms := types.BaseDenoms{BaseDenoms: baseDenoms}
+	store := ctx.KVStore(k.storeKey)
+	test, err := newBaseDenoms.Marshal()
+	if err != nil {
+		return err
+	}
+
+	store.Set(types.KeyPrefixBaseDenoms, test)
+	return nil
+}
+
+// GetPoolForDenomPair returns the id of the highest liquidity pool between the base denom and the denom to match
 func (k Keeper) GetPoolForDenomPair(ctx sdk.Context, baseDenom, denomToMatch string) (uint64, error) {
 	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixDenomPairToPool)
 	key := types.GetKeyPrefixDenomPairToPool(baseDenom, denomToMatch)
 
 	bz := store.Get(key)
 	if len(bz) == 0 {
-		return 0, fmt.Errorf("highest liquidity pool between base %s and match denom %s not found", baseDenom, denomToMatch)
+		return 0, types.NoPoolForDenomPairError{BaseDenom: baseDenom, MatchDenom: denomToMatch}
 	}
 
 	poolId := sdk.BigEndianToUint64(bz)
+	return poolId, nil
+}
+
+// GetPoolForDenomPairNoOrder returns the id of the pool between the two denoms.
+// It is order-independent. That is, tokenA can either be a base or a quote. Both cases are handled.
+// If no pool exists, an error is returned.
+// TODO: unit test
+func (k Keeper) GetPoolForDenomPairNoOrder(ctx sdk.Context, tokenA, tokenB string) (uint64, error) {
+	poolId, err := k.GetPoolForDenomPair(ctx, tokenA, tokenB)
+	if err != nil {
+		if errors.Is(err, types.NoPoolForDenomPairError{BaseDenom: tokenA, MatchDenom: tokenB}) {
+			// Attempt changing base and match denoms.
+			poolId, err = k.GetPoolForDenomPair(ctx, tokenB, tokenA)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			return 0, err
+		}
+	}
 	return poolId, nil
 }
 
@@ -148,8 +199,7 @@ func (k Keeper) DeleteAllPoolsForBaseDenom(ctx sdk.Context, baseDenom string) {
 
 // SetSwapsToBackrun sets the swaps to backrun, updated via hooks
 func (k Keeper) SetSwapsToBackrun(ctx sdk.Context, swapsToBackrun types.Route) error {
-	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixSwapsToBackrun)
-
+	store := prefix.NewStore(ctx.TransientStore(k.transientKey), types.KeyPrefixSwapsToBackrun)
 	bz, err := swapsToBackrun.Marshal()
 	if err != nil {
 		return err
@@ -162,7 +212,7 @@ func (k Keeper) SetSwapsToBackrun(ctx sdk.Context, swapsToBackrun types.Route) e
 
 // GetSwapsToBackrun returns the swaps to backrun, updated via hooks
 func (k Keeper) GetSwapsToBackrun(ctx sdk.Context) (types.Route, error) {
-	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixSwapsToBackrun)
+	store := prefix.NewStore(ctx.TransientStore(k.transientKey), types.KeyPrefixSwapsToBackrun)
 	bz := store.Get(types.KeyPrefixSwapsToBackrun)
 
 	swapsToBackrun := types.Route{}
@@ -176,7 +226,7 @@ func (k Keeper) GetSwapsToBackrun(ctx sdk.Context) (types.Route, error) {
 
 // DeleteSwapsToBackrun deletes the swaps to backrun
 func (k Keeper) DeleteSwapsToBackrun(ctx sdk.Context) {
-	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixSwapsToBackrun)
+	store := prefix.NewStore(ctx.TransientStore(k.transientKey), types.KeyPrefixSwapsToBackrun)
 	store.Delete(types.KeyPrefixSwapsToBackrun)
 }
 
@@ -448,17 +498,40 @@ func (k Keeper) SetMaxPointsPerBlock(ctx sdk.Context, maxPoints uint64) error {
 	return nil
 }
 
-// GetPoolWeights retrieves the weights of different pool types. The weight of a pool type roughly
-// corresponds to the amount of time it will take to simulate and execute a swap on that pool type (in ms).
-func (k Keeper) GetPoolWeights(ctx sdk.Context) types.PoolWeights {
-	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixPoolWeights)
-	poolWeights := &types.PoolWeights{}
-	osmoutils.MustGet(store, types.KeyPrefixPoolWeights, poolWeights)
+// GetInfoByPoolType retrieves the metadata about the different pool types. This is used to determine the execution costs of
+// different pool types when calculating the optimal route (in terms of time and gas consumption).
+func (k Keeper) GetInfoByPoolType(ctx sdk.Context) types.InfoByPoolType {
+	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixInfoByPoolType)
+	poolWeights := &types.InfoByPoolType{}
+	osmoutils.MustGet(store, types.KeyPrefixInfoByPoolType, poolWeights)
 	return *poolWeights
 }
 
-// SetPoolWeights sets the weights of different pool types.
-func (k Keeper) SetPoolWeights(ctx sdk.Context, poolWeights types.PoolWeights) {
-	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixPoolWeights)
-	osmoutils.MustSet(store, types.KeyPrefixPoolWeights, &poolWeights)
+// SetInfoByPoolType sets the pool type information.
+func (k Keeper) SetInfoByPoolType(ctx sdk.Context, poolWeights types.InfoByPoolType) {
+	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixInfoByPoolType)
+	osmoutils.MustSet(store, types.KeyPrefixInfoByPoolType, &poolWeights)
+}
+
+// GetAllProtocolRevenue returns all types of protocol revenue (txfees, taker fees, and cyclic arb profits), as well as the block height from which we started accounting
+// for each of these revenue sources.
+func (k Keeper) GetAllProtocolRevenue(ctx sdk.Context) types.AllProtocolRevenue {
+	currentCyclicArb := k.GetAllProfits(ctx)
+	currentCyclicArbCoins := osmoutils.ConvertCoinArrayToCoins(currentCyclicArb)
+
+	cyclicArbTracker := types.CyclicArbTracker{
+		CyclicArb:                  currentCyclicArbCoins.Sub(k.GetCyclicArbProfitTrackerValue(ctx)...),
+		HeightAccountingStartsFrom: k.GetCyclicArbProfitTrackerStartHeight(ctx),
+	}
+
+	takerFeesTracker := poolmanagertypes.TakerFeesTracker{
+		TakerFeesToStakers:         k.poolmanagerKeeper.GetTakerFeeTrackerForStakers(ctx),
+		TakerFeesToCommunityPool:   k.poolmanagerKeeper.GetTakerFeeTrackerForCommunityPool(ctx),
+		HeightAccountingStartsFrom: k.poolmanagerKeeper.GetTakerFeeTrackerStartHeight(ctx),
+	}
+
+	return types.AllProtocolRevenue{
+		TakerFeesTracker: takerFeesTracker,
+		CyclicArbTracker: cyclicArbTracker,
+	}
 }

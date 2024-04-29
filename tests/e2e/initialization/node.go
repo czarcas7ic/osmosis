@@ -7,7 +7,13 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
+	tmconfig "github.com/cometbft/cometbft/config"
+	tmos "github.com/cometbft/cometbft/libs/os"
+	"github.com/cometbft/cometbft/p2p"
+	"github.com/cometbft/cometbft/privval"
+	tmtypes "github.com/cometbft/cometbft/types"
 	sdkcrypto "github.com/cosmos/cosmos-sdk/crypto"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -23,21 +29,17 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/go-bip39"
 	"github.com/spf13/viper"
-	tmconfig "github.com/tendermint/tendermint/config"
-	tmos "github.com/tendermint/tendermint/libs/os"
-	"github.com/tendermint/tendermint/p2p"
-	"github.com/tendermint/tendermint/privval"
-	tmtypes "github.com/tendermint/tendermint/types"
 
-	osmosisApp "github.com/osmosis-labs/osmosis/v16/app"
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/util"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	osmosisApp "github.com/osmosis-labs/osmosis/v24/app"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/util"
 )
 
 type internalNode struct {
 	chain        *internalChain
 	moniker      string
 	mnemonic     string
-	keyInfo      keyring.Info
+	keyInfo      keyring.Record
 	privateKey   cryptotypes.PrivKey
 	consensusKey privval.FilePVKey
 	nodeKey      p2p.NodeKey
@@ -76,21 +78,26 @@ func (n *internalNode) configDir() string {
 func (n *internalNode) buildCreateValidatorMsg(amount sdk.Coin) (sdk.Msg, error) {
 	description := stakingtypes.NewDescription(n.moniker, "", "", "", "")
 	commissionRates := stakingtypes.CommissionRates{
-		Rate:          sdk.MustNewDecFromStr("0.1"),
-		MaxRate:       sdk.MustNewDecFromStr("0.2"),
-		MaxChangeRate: sdk.MustNewDecFromStr("0.01"),
+		Rate:          osmomath.MustNewDecFromStr("0.1"),
+		MaxRate:       osmomath.MustNewDecFromStr("0.2"),
+		MaxChangeRate: osmomath.MustNewDecFromStr("0.01"),
 	}
 
 	// get the initial validator min self delegation
-	minSelfDelegation, _ := sdk.NewIntFromString("1")
+	minSelfDelegation, _ := osmomath.NewIntFromString("1")
 
 	valPubKey, err := cryptocodec.FromTmPubKeyInterface(n.consensusKey.PubKey)
 	if err != nil {
 		return nil, err
 	}
 
+	addr, err := n.keyInfo.GetAddress()
+	if err != nil {
+		return nil, err
+	}
+
 	return stakingtypes.NewMsgCreateValidator(
-		sdk.ValAddress(n.keyInfo.GetAddress()),
+		sdk.ValAddress(addr),
 		valPubKey,
 		amount,
 		description,
@@ -116,6 +123,8 @@ func (n *internalNode) createAppConfig(nodeConfig *NodeConfig) {
 	appConfig.MinGasPrices = fmt.Sprintf("%s%s", MinGasPrice, OsmoDenom)
 	appConfig.StateSync.SnapshotInterval = nodeConfig.SnapshotInterval
 	appConfig.StateSync.SnapshotKeepRecent = nodeConfig.SnapshotKeepRecent
+	appConfig.GRPC.Address = "0.0.0.0:9090"
+	appConfig.API.Address = "tcp://0.0.0.0:1317"
 
 	srvconfig.WriteConfigFile(appCfgPath, appConfig)
 }
@@ -160,7 +169,7 @@ func (n *internalNode) createConsensusKey() error {
 }
 
 func (n *internalNode) createKeyFromMnemonic(name, mnemonic string) error {
-	kb, err := keyring.New(keyringAppName, keyring.BackendTest, n.configDir(), nil)
+	kb, err := keyring.New(keyringAppName, keyring.BackendTest, n.configDir(), nil, util.Cdc)
 	if err != nil {
 		return err
 	}
@@ -186,7 +195,7 @@ func (n *internalNode) createKeyFromMnemonic(name, mnemonic string) error {
 		return err
 	}
 
-	n.keyInfo = info
+	n.keyInfo = *info
 	n.mnemonic = mnemonic
 	n.privateKey = privKey
 
@@ -203,12 +212,20 @@ func (n *internalNode) createKey(name string) error {
 }
 
 func (n *internalNode) export() *Node {
+	addr, err := n.keyInfo.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	pubkey, err := n.keyInfo.GetPubKey()
+	if err != nil {
+		panic(err)
+	}
 	return &Node{
 		Name:          n.moniker,
 		ConfigDir:     n.configDir(),
 		Mnemonic:      n.mnemonic,
-		PublicAddress: n.keyInfo.GetAddress().String(),
-		PublicKey:     n.keyInfo.GetPubKey().Address().String(),
+		PublicAddress: addr.String(),
+		PublicKey:     pubkey.Address().String(),
 		PeerId:        n.peerId,
 		IsValidator:   n.isValidator,
 	}
@@ -312,6 +329,14 @@ func (n *internalNode) initNodeConfigs(persistentPeers []string) error {
 	valConfig.P2P.PersistentPeers = strings.Join(persistentPeers, ",")
 	valConfig.Storage.DiscardABCIResponses = true
 
+	valConfig.Consensus.TimeoutPropose = time.Millisecond * 300
+	valConfig.Consensus.TimeoutProposeDelta = 0
+	valConfig.Consensus.TimeoutPrevote = 0
+	valConfig.Consensus.TimeoutPrevoteDelta = 0
+	valConfig.Consensus.TimeoutPrecommit = 0
+	valConfig.Consensus.TimeoutPrecommitDelta = 0
+	valConfig.Consensus.TimeoutCommit = 0
+
 	tmconfig.WriteConfigFile(tmCfgPath, valConfig)
 	return nil
 }
@@ -368,8 +393,13 @@ func (n *internalNode) signMsg(msgs ...sdk.Msg) (*sdktx.Tx, error) {
 	// Note: This line is not needed for SIGN_MODE_LEGACY_AMINO, but putting it
 	// also doesn't affect its generated sign bytes, so for code's simplicity
 	// sake, we put it here.
+	pubkey, err := n.keyInfo.GetPubKey()
+	if err != nil {
+		return nil, err
+	}
+
 	sig := txsigning.SignatureV2{
-		PubKey: n.keyInfo.GetPubKey(),
+		PubKey: pubkey,
 		Data: &txsigning.SingleSignatureData{
 			SignMode:  txsigning.SignMode_SIGN_MODE_DIRECT,
 			Signature: nil,
@@ -396,7 +426,7 @@ func (n *internalNode) signMsg(msgs ...sdk.Msg) (*sdktx.Tx, error) {
 	}
 
 	sig = txsigning.SignatureV2{
-		PubKey: n.keyInfo.GetPubKey(),
+		PubKey: pubkey,
 		Data: &txsigning.SingleSignatureData{
 			SignMode:  txsigning.SignMode_SIGN_MODE_DIRECT,
 			Signature: sigBytes,

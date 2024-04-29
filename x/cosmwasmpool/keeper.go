@@ -6,15 +6,16 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/cosmwasmpool/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/cosmwasmpool/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 type Keeper struct {
 	cdc        codec.BinaryCodec
-	storeKey   sdk.StoreKey
+	storeKey   storetypes.StoreKey
 	paramSpace paramtypes.Subspace
 
 	// keepers
@@ -25,7 +26,7 @@ type Keeper struct {
 	wasmKeeper        types.WasmKeeper
 }
 
-func NewKeeper(cdc codec.BinaryCodec, storeKey sdk.StoreKey, paramSpace paramtypes.Subspace, accountKeeper types.AccountKeeper, bankKeeper types.BankKeeper) *Keeper {
+func NewKeeper(cdc codec.BinaryCodec, storeKey storetypes.StoreKey, paramSpace paramtypes.Subspace, accountKeeper types.AccountKeeper, bankKeeper types.BankKeeper) *Keeper {
 	// set KeyTable if it has not already been set
 	if !paramSpace.HasKeyTable() {
 		paramSpace = paramSpace.WithKeyTable(types.ParamKeyTable())
@@ -43,6 +44,11 @@ func (k Keeper) GetParams(ctx sdk.Context) (params types.Params) {
 // SetParams sets the total set of cosmwasmpool parameters.
 func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
 	k.paramSpace.SetParamSet(ctx, &params)
+}
+
+// SetParam sets a specific cosmwasmpool module's parameter with the provided parameter.
+func (k Keeper) SetParam(ctx sdk.Context, key []byte, value interface{}) {
+	k.paramSpace.Set(ctx, key, value)
 }
 
 // Set the poolmanager keeper.

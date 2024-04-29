@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 
 	"github.com/spf13/cobra"
@@ -13,11 +12,13 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govcli "github.com/cosmos/cosmos-sdk/x/gov/client/cli"
 
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	govtypesv1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
-	clmodel "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/model"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
+	clmodel "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/model"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
 )
 
 func NewTxCmd() *cobra.Command {
@@ -29,6 +30,7 @@ func NewTxCmd() *cobra.Command {
 	osmocli.AddTxCmd(txCmd, NewCollectSpreadRewardsCmd)
 	osmocli.AddTxCmd(txCmd, NewCollectIncentivesCmd)
 	osmocli.AddTxCmd(txCmd, NewFungifyChargedPositionsCmd)
+	osmocli.AddTxCmd(txCmd, NewTransferPositionsCmd)
 	return txCmd
 }
 
@@ -38,7 +40,7 @@ var poolIdFlagOverride = map[string]string{
 
 func NewCreateConcentratedPoolCmd() (*osmocli.TxCliDesc, *clmodel.MsgCreateConcentratedPool) {
 	return &osmocli.TxCliDesc{
-		Use:     "create-pool [denom-0] [denom-1] [tick-spacing] [spread-factor]",
+		Use:     "create-pool",
 		Short:   "create a concentrated liquidity pool with the given denom pair, tick spacing, and spread factor",
 		Long:    "denom-1 (the quote denom), tick spacing, and spread factors must all be authorized by the concentrated liquidity module",
 		Example: "osmosisd tx concentratedliquidity create-pool uion uosmo 100 0.01 --from val --chain-id osmosis-1 -b block --keyring-backend test --fees 1000uosmo",
@@ -47,7 +49,7 @@ func NewCreateConcentratedPoolCmd() (*osmocli.TxCliDesc, *clmodel.MsgCreateConce
 
 func NewCreatePositionCmd() (*osmocli.TxCliDesc, *types.MsgCreatePosition) {
 	return &osmocli.TxCliDesc{
-		Use:     "create-position [pool-id] [lower-tick] [upper-tick] [tokensProvided] [token-0-min-amount] [token-1-min-amount]",
+		Use:     "create-position",
 		Short:   "create or add to existing concentrated liquidity position",
 		Example: "osmosisd tx concentratedliquidity create-position 1 \"[-69082]\" 69082 10000uosmo,10000uion 0 0 --from val --chain-id osmosis-1 -b block --keyring-backend test --fees 1000uosmo",
 	}, &types.MsgCreatePosition{}
@@ -55,7 +57,7 @@ func NewCreatePositionCmd() (*osmocli.TxCliDesc, *types.MsgCreatePosition) {
 
 func NewAddToPositionCmd() (*osmocli.TxCliDesc, *types.MsgAddToPosition) {
 	return &osmocli.TxCliDesc{
-		Use:     "add-to-position [position-id] [token-0] [token-1]",
+		Use:     "add-to-position",
 		Short:   "add to an existing concentrated liquidity position",
 		Example: "osmosisd tx concentratedliquidity add-to-position 10 1000000000uosmo 10000000uion --from val --chain-id localosmosis -b block --keyring-backend test --fees 1000000uosmo",
 	}, &types.MsgAddToPosition{}
@@ -63,7 +65,7 @@ func NewAddToPositionCmd() (*osmocli.TxCliDesc, *types.MsgAddToPosition) {
 
 func NewWithdrawPositionCmd() (*osmocli.TxCliDesc, *types.MsgWithdrawPosition) {
 	return &osmocli.TxCliDesc{
-		Use:     "withdraw-position [position-id] [liquidity]",
+		Use:     "withdraw-position",
 		Short:   "withdraw from an existing concentrated liquidity position",
 		Example: "osmosisd tx concentratedliquidity withdraw-position 1 1000 --from val --chain-id localosmosis --keyring-backend=test --fees=1000uosmo",
 	}, &types.MsgWithdrawPosition{}
@@ -71,7 +73,7 @@ func NewWithdrawPositionCmd() (*osmocli.TxCliDesc, *types.MsgWithdrawPosition) {
 
 func NewCollectSpreadRewardsCmd() (*osmocli.TxCliDesc, *types.MsgCollectSpreadRewards) {
 	return &osmocli.TxCliDesc{
-		Use:     "collect-spread-rewards [position-ids]",
+		Use:     "collect-spread-rewards",
 		Short:   "collect spread rewards from liquidity position(s)",
 		Example: "osmosisd tx concentratedliquidity collect-spread-rewards 998 --from val --chain-id localosmosis -b block --keyring-backend test --fees 1000000uosmo",
 	}, &types.MsgCollectSpreadRewards{}
@@ -79,7 +81,7 @@ func NewCollectSpreadRewardsCmd() (*osmocli.TxCliDesc, *types.MsgCollectSpreadRe
 
 func NewCollectIncentivesCmd() (*osmocli.TxCliDesc, *types.MsgCollectIncentives) {
 	return &osmocli.TxCliDesc{
-		Use:     "collect-incentives [position-ids]",
+		Use:     "collect-incentives",
 		Short:   "collect incentives from liquidity position(s)",
 		Example: "osmosisd tx concentratedliquidity collect-incentives 1 --from val --chain-id localosmosis -b block --keyring-backend test --fees 10000uosmo",
 	}, &types.MsgCollectIncentives{}
@@ -87,10 +89,18 @@ func NewCollectIncentivesCmd() (*osmocli.TxCliDesc, *types.MsgCollectIncentives)
 
 func NewFungifyChargedPositionsCmd() (*osmocli.TxCliDesc, *types.MsgFungifyChargedPositions) {
 	return &osmocli.TxCliDesc{
-		Use:     "fungify-positions [position-ids]",
+		Use:     "fungify-positions",
 		Short:   "Combine fully charged positions within the same range into a new single fully charged position",
 		Example: "osmosisd tx concentratedliquidity fungify-positions 1,2 --from val --keyring-backend test -b=block --chain-id=localosmosis --gas=1000000 --fees 20000uosmo",
 	}, &types.MsgFungifyChargedPositions{}
+}
+
+func NewTransferPositionsCmd() (*osmocli.TxCliDesc, *types.MsgTransferPositions) {
+	return &osmocli.TxCliDesc{
+		Use:     "transfer-positions",
+		Short:   "transfer a list of concentrated liquidity positions to a new owner",
+		Example: "osmosisd tx concentratedliquidity transfer-positions 56,89,1011 osmo10fhdy8zhepstpwsr9l4a8yxuyggqmpqx4ktheq --from val --chain-id osmosis-1 -b block --keyring-backend test --fees 1000uosmo",
+	}, &types.MsgTransferPositions{}
 }
 
 // NewCmdCreateConcentratedLiquidityPoolsProposal implements a command handler for create concentrated liquidity pool proposal
@@ -102,13 +112,13 @@ func NewCmdCreateConcentratedLiquidityPoolsProposal() *cobra.Command {
 		Long: strings.TrimSpace(`Submit a create concentrated liquidity pool proposal.
 
 Passing in FlagPoolRecords separated by commas would be parsed automatically to pairs of pool records.
-Ex) --pool-records=uion,uosmo,100,-6,0.003,stake,uosmo,1000,-6,0.005 ->
-[uion<>uosmo, tickSpacing 100, exponentAtPriceOne -6, spreadFactor 0.3%]
-[stake<>uosmo, tickSpacing 1000, exponentAtPriceOne -6, spreadFactor 0.5%]
+Ex) --pool-records=uion,uosmo,100,0.003,stake,uosmo,1000,0.005 ->
+[uion<>uosmo, tickSpacing 100, spreadFactor 0.3%]
+[stake<>uosmo, tickSpacing 1000, spreadFactor 0.5%]
 
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clientCtx, err := client.GetClientTxContext(cmd)
+			clientCtx, proposalTitle, summary, deposit, isExpedited, authority, err := osmocli.GetProposalInfo(cmd)
 			if err != nil {
 				return err
 			}
@@ -118,34 +128,19 @@ Ex) --pool-records=uion,uosmo,100,-6,0.003,stake,uosmo,1000,-6,0.005 ->
 				return err
 			}
 
-			from := clientCtx.GetFromAddress()
-
-			depositStr, err := cmd.Flags().GetString(govcli.FlagDeposit)
+			msg, err := v1.NewLegacyContent(content, authority.String())
 			if err != nil {
 				return err
 			}
-			deposit, err := sdk.ParseCoinsNormalized(depositStr)
-			if err != nil {
-				return err
-			}
-
-			msg, err := govtypes.NewMsgSubmitProposal(content, deposit, from)
+			proposalMsg, err := v1.NewMsgSubmitProposal([]sdk.Msg{msg}, deposit, clientCtx.GetFromAddress().String(), "", proposalTitle, summary, isExpedited)
 			if err != nil {
 				return err
 			}
 
-			if err = msg.ValidateBasic(); err != nil {
-				return err
-			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), proposalMsg)
 		},
 	}
-	cmd.Flags().String(govcli.FlagTitle, "", "title of proposal")
-	cmd.Flags().String(govcli.FlagDescription, "", "description of proposal")
-	cmd.Flags().String(govcli.FlagDeposit, "", "deposit of proposal")
-	cmd.Flags().Bool(govcli.FlagIsExpedited, false, "If true, makes the proposal an expedited one")
-	cmd.Flags().String(govcli.FlagProposal, "", "Proposal file path (if this path is given, other proposal flags are ignored)")
+	osmocli.AddCommonProposalFlags(cmd)
 	cmd.Flags().String(FlagPoolRecords, "", "The pool records array")
 
 	return cmd
@@ -164,56 +159,44 @@ Note: The new tick spacing value must be less than the current tick spacing valu
 
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clientCtx, err := client.GetClientTxContext(cmd)
+			clientCtx, proposalTitle, summary, deposit, isExpedited, authority, err := osmocli.GetProposalInfo(cmd)
 			if err != nil {
 				return err
 			}
+
 			content, err := parsePoolIdToTickSpacingRecordsArgsToContent(cmd)
 			if err != nil {
 				return err
 			}
 
-			from := clientCtx.GetFromAddress()
-
-			depositStr, err := cmd.Flags().GetString(govcli.FlagDeposit)
-			if err != nil {
-				return err
-			}
-			deposit, err := sdk.ParseCoinsNormalized(depositStr)
+			contentMsg, err := v1.NewLegacyContent(content, authority.String())
 			if err != nil {
 				return err
 			}
 
-			msg, err := govtypes.NewMsgSubmitProposal(content, deposit, from)
+			msg := v1.NewMsgExecLegacyContent(contentMsg.Content, authority.String())
+
+			proposalMsg, err := v1.NewMsgSubmitProposal([]sdk.Msg{msg}, deposit, clientCtx.GetFromAddress().String(), "", proposalTitle, summary, isExpedited)
 			if err != nil {
 				return err
 			}
 
-			if err = msg.ValidateBasic(); err != nil {
-				return err
-			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), proposalMsg)
 		},
 	}
-
-	cmd.Flags().String(govcli.FlagTitle, "", "title of proposal")
-	cmd.Flags().String(govcli.FlagDescription, "", "description of proposal")
-	cmd.Flags().String(govcli.FlagDeposit, "", "deposit of proposal")
-	cmd.Flags().Bool(govcli.FlagIsExpedited, false, "If true, makes the proposal an expedited one")
-	cmd.Flags().String(govcli.FlagProposal, "", "Proposal file path (if this path is given, other proposal flags are ignored)")
+	osmocli.AddCommonProposalFlags(cmd)
 	cmd.Flags().String(FlagPoolIdToTickSpacingRecords, "", "The pool ID to new tick spacing records array")
 
 	return cmd
 }
 
-func parseCreateConcentratedLiquidityPoolArgsToContent(cmd *cobra.Command) (govtypes.Content, error) {
+func parseCreateConcentratedLiquidityPoolArgsToContent(cmd *cobra.Command) (govtypesv1beta1.Content, error) {
 	title, err := cmd.Flags().GetString(govcli.FlagTitle)
 	if err != nil {
 		return nil, err
 	}
 
-	description, err := cmd.Flags().GetString(govcli.FlagDescription)
+	description, err := cmd.Flags().GetString(govcli.FlagSummary)
 	if err != nil {
 		return nil, err
 	}
@@ -232,13 +215,13 @@ func parseCreateConcentratedLiquidityPoolArgsToContent(cmd *cobra.Command) (govt
 	return content, nil
 }
 
-func parsePoolIdToTickSpacingRecordsArgsToContent(cmd *cobra.Command) (govtypes.Content, error) {
+func parsePoolIdToTickSpacingRecordsArgsToContent(cmd *cobra.Command) (govtypesv1beta1.Content, error) {
 	title, err := cmd.Flags().GetString(govcli.FlagTitle)
 	if err != nil {
 		return nil, err
 	}
 
-	description, err := cmd.Flags().GetString(govcli.FlagDescription)
+	description, err := cmd.Flags().GetString(govcli.FlagSummary)
 	if err != nil {
 		return nil, err
 	}
@@ -300,8 +283,8 @@ func parsePoolRecords(cmd *cobra.Command) ([]types.PoolRecord, error) {
 
 	poolRecords := strings.Split(poolRecordsStr, ",")
 
-	if len(poolRecords)%5 != 0 {
-		return nil, fmt.Errorf("poolRecords must be a list of denom0, denom1, tickSpacing, exponentAtPriceOne, and spreadFactor")
+	if len(poolRecords)%4 != 0 {
+		return nil, fmt.Errorf("poolRecords must be a list of denom0, denom1, tickSpacing, and spreadFactor")
 	}
 
 	finalPoolRecords := []types.PoolRecord{}
@@ -315,28 +298,21 @@ func parsePoolRecords(cmd *cobra.Command) ([]types.PoolRecord, error) {
 			return nil, err
 		}
 
-		exponentAtPriceOneStr := poolRecords[i+3]
-		exponentAtPriceOne, ok := sdk.NewIntFromString(exponentAtPriceOneStr)
-		if !ok {
-			return nil, fmt.Errorf("invalid exponentAtPriceOne: %s", exponentAtPriceOneStr)
-		}
-
-		spreadFactorStr := poolRecords[i+4]
-		spreadFactor, err := sdk.NewDecFromStr(spreadFactorStr)
+		spreadFactorStr := poolRecords[i+3]
+		spreadFactor, err := osmomath.NewDecFromStr(spreadFactorStr)
 		if err != nil {
 			return nil, err
 		}
 
 		finalPoolRecords = append(finalPoolRecords, types.PoolRecord{
-			Denom0:             denom0,
-			Denom1:             denom1,
-			TickSpacing:        uint64(tickSpacing),
-			ExponentAtPriceOne: exponentAtPriceOne,
-			SpreadFactor:       spreadFactor,
+			Denom0:       denom0,
+			Denom1:       denom1,
+			TickSpacing:  uint64(tickSpacing),
+			SpreadFactor: spreadFactor,
 		})
 
-		// increase counter by the next 5
-		i = i + 5
+		// increase counter by the next 4
+		i = i + 4
 	}
 
 	return finalPoolRecords, nil

@@ -3,17 +3,18 @@ package keeper
 import (
 	"fmt"
 
-	gogotypes "github.com/gogo/protobuf/types"
+	gogotypes "github.com/cosmos/gogoproto/types"
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/balancer"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/stableswap"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/stableswap"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 func (k Keeper) MarshalPool(pool poolmanagertypes.PoolI) ([]byte, error) {
@@ -149,7 +150,7 @@ func (k Keeper) DeletePool(ctx sdk.Context, poolId uint64) error {
 // on remaining locks before calling this function.
 // func (k Keeper) CleanupBalancerPool(ctx sdk.Context, poolIds []uint64, excludedModules []string) (err error) {
 // 	pools := make(map[string]types.CFMMPoolI)
-// 	totalShares := make(map[string]sdk.Int)
+// 	totalShares := make(map[string]osmomath.Int)
 // 	for _, poolId := range poolIds {
 // 		pool, err := k.GetPool(ctx, poolId)
 // 		if err != nil {
@@ -240,8 +241,7 @@ func (k Keeper) GetPoolDenoms(ctx sdk.Context, poolId uint64) ([]string, error) 
 		return nil, err
 	}
 
-	denoms := osmoutils.CoinsDenoms(pool.GetTotalPoolLiquidity(ctx))
-	return denoms, err
+	return pool.GetTotalPoolLiquidity(ctx).Denoms(), err
 }
 
 // setNextPoolId sets next pool Id.
@@ -299,10 +299,10 @@ func (k Keeper) GetTotalPoolLiquidity(ctx sdk.Context, poolId uint64) (sdk.Coins
 }
 
 // GetTotalPoolShares returns the total number of pool shares for the given pool.
-func (k Keeper) GetTotalPoolShares(ctx sdk.Context, poolId uint64) (sdk.Int, error) {
+func (k Keeper) GetTotalPoolShares(ctx sdk.Context, poolId uint64) (osmomath.Int, error) {
 	pool, err := k.GetCFMMPool(ctx, poolId)
 	if err != nil {
-		return sdk.Int{}, err
+		return osmomath.Int{}, err
 	}
 
 	return pool.GetTotalShares(), nil
@@ -327,6 +327,23 @@ func (k Keeper) setStableSwapScalingFactors(ctx sdk.Context, poolId uint64, scal
 	return k.setPool(ctx, stableswapPool)
 }
 
+// setStableSwapScalingFactorController updates the scaling factor controller address for a stable swap pool
+// errors if the pool does not exist or is not a stable swap pool
+func (k Keeper) setStableSwapScalingFactorController(ctx sdk.Context, poolId uint64, controllerAddress string) error {
+	pool, err := k.GetPoolAndPoke(ctx, poolId)
+	if err != nil {
+		return err
+	}
+	stableswapPool, ok := pool.(*stableswap.Pool)
+	if !ok {
+		return fmt.Errorf("pool id %d is not of type stableswap pool", poolId)
+	}
+
+	stableswapPool.ScalingFactorController = controllerAddress
+
+	return k.setPool(ctx, stableswapPool)
+}
+
 // asCFMMPool converts PoolI to CFMMPoolI by casting the input.
 // Returns the pool of the CFMMPoolI or error if the given pool does not implement
 // CFMMPoolI.
@@ -336,4 +353,10 @@ func asCFMMPool(pool poolmanagertypes.PoolI) (types.CFMMPoolI, error) {
 		return nil, fmt.Errorf("given pool does not implement CFMMPoolI, implements %T", pool)
 	}
 	return cfmmPool, nil
+}
+
+// GetTradingPairTakerFee is a wrapper for poolmanager's GetTradingPairTakerFee, and is solely used
+// to get access to this method for use in sim_msgs.go for the GAMM module.
+func (k Keeper) GetTradingPairTakerFee(ctx sdk.Context, denom0, denom1 string) (osmomath.Dec, error) {
+	return k.poolManager.GetTradingPairTakerFee(ctx, denom0, denom1)
 }

@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	proto "github.com/gogo/protobuf/proto"
-	"github.com/osmosis-labs/osmosis/v16/x/pool-incentives/types"
+	proto "github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/pool-incentives/types"
 )
 
 func TestGenesisStateMarshalUnmarshal(t *testing.T) {
@@ -23,7 +23,7 @@ func TestGenesisStateMarshalUnmarshal(t *testing.T) {
 				Params:            types.DefaultParams(),
 				LockableDurations: []time.Duration(nil),
 				DistrInfo: &types.DistrInfo{
-					TotalWeight: sdk.ZeroInt(),
+					TotalWeight: osmomath.ZeroInt(),
 					Records:     nil,
 				},
 			},
@@ -33,7 +33,7 @@ func TestGenesisStateMarshalUnmarshal(t *testing.T) {
 				Params:            types.DefaultParams(),
 				LockableDurations: []time.Duration(nil),
 				DistrInfo: &types.DistrInfo{
-					TotalWeight: sdk.ZeroInt(),
+					TotalWeight: osmomath.ZeroInt(),
 					Records:     nil,
 				},
 			},
@@ -43,11 +43,11 @@ func TestGenesisStateMarshalUnmarshal(t *testing.T) {
 				Params:            types.DefaultParams(),
 				LockableDurations: []time.Duration(nil),
 				DistrInfo: &types.DistrInfo{
-					TotalWeight: sdk.NewInt(1),
+					TotalWeight: osmomath.NewInt(1),
 					Records: []types.DistrRecord{
 						{
 							GaugeId: 1,
-							Weight:  sdk.NewInt(1),
+							Weight:  osmomath.NewInt(1),
 						},
 					},
 				},
@@ -58,7 +58,7 @@ func TestGenesisStateMarshalUnmarshal(t *testing.T) {
 				Params:            types.Params{},
 				LockableDurations: []time.Duration(nil),
 				DistrInfo: &types.DistrInfo{
-					TotalWeight: sdk.ZeroInt(),
+					TotalWeight: osmomath.ZeroInt(),
 					Records:     nil,
 				},
 			},

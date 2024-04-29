@@ -7,7 +7,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
@@ -27,6 +27,7 @@ type QueryCliTestCase[Q proto.Message] struct {
 }
 
 func RunTxTestCases[M sdk.Msg](t *testing.T, desc *TxCliDesc, testcases map[string]TxCliTestCase[M]) {
+	t.Helper()
 	for name, tc := range testcases {
 		t.Run(name, func(t *testing.T) {
 			RunTxTestCase(t, desc, &tc)
@@ -35,6 +36,7 @@ func RunTxTestCases[M sdk.Msg](t *testing.T, desc *TxCliDesc, testcases map[stri
 }
 
 func RunQueryTestCases[Q proto.Message](t *testing.T, desc *QueryDescriptor, testcases map[string]QueryCliTestCase[Q]) {
+	t.Helper()
 	for name, tc := range testcases {
 		t.Run(name, func(t *testing.T) {
 			RunQueryTestCase(t, desc, &tc)
@@ -43,6 +45,7 @@ func RunQueryTestCases[Q proto.Message](t *testing.T, desc *QueryDescriptor, tes
 }
 
 func RunTxTestCase[M sdk.Msg](t *testing.T, desc *TxCliDesc, tc *TxCliTestCase[M]) {
+	t.Helper()
 	cmd := BuildTxCli[M](desc)
 	err := resetCommandFlagValues(cmd)
 	require.NoError(t, err, "error in resetCommandFlagValues")
@@ -66,6 +69,7 @@ func RunTxTestCase[M sdk.Msg](t *testing.T, desc *TxCliDesc, tc *TxCliTestCase[M
 }
 
 func RunQueryTestCase[Q proto.Message](t *testing.T, desc *QueryDescriptor, tc *QueryCliTestCase[Q]) {
+	t.Helper()
 	cmd := BuildQueryCli[Q, int](desc, nil)
 	err := resetCommandFlagValues(cmd)
 	require.NoError(t, err, "error in resetCommandFlagValues")
@@ -85,12 +89,10 @@ func RunQueryTestCase[Q proto.Message](t *testing.T, desc *QueryDescriptor, tc *
 // This logic is copied from the SDK, it should've just been publicly exposed.
 // But instead its buried within a mega-method.
 func newClientContextWithFrom(t *testing.T, fs *pflag.FlagSet) client.Context {
+	t.Helper()
 	clientCtx := client.Context{}
 	from, _ := fs.GetString(flags.FlagFrom)
-	fromAddr, fromName, _, err := client.GetFromFields(nil, from, true)
-	require.NoError(t, err)
-
-	clientCtx = clientCtx.WithFrom(from).WithFromAddress(fromAddr).WithFromName(fromName)
+	clientCtx = clientCtx.WithFrom(from).WithFromAddress(sdk.MustAccAddressFromBech32(from)).WithFromName(from)
 	return clientCtx
 }
 

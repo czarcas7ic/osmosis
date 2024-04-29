@@ -8,37 +8,47 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 
+	tmabcitypes "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	govtypesv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
-	tmabcitypes "github.com/tendermint/tendermint/abci/types"
 
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/util"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/client/queryproto"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/model"
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	poolmanagerqueryproto "github.com/osmosis-labs/osmosis/v16/x/poolmanager/client/queryproto"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
-	protorevtypes "github.com/osmosis-labs/osmosis/v16/x/protorev/types"
-	superfluidtypes "github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
-	twapqueryproto "github.com/osmosis-labs/osmosis/v16/x/twap/client/queryproto"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/util"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/client/queryproto"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/model"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	poolmanagerqueryproto "github.com/osmosis-labs/osmosis/v24/x/poolmanager/client/queryproto"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
+	protorevtypes "github.com/osmosis-labs/osmosis/v24/x/protorev/types"
+	superfluidtypes "github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
+	twapqueryproto "github.com/osmosis-labs/osmosis/v24/x/twap/client/queryproto"
 	epochstypes "github.com/osmosis-labs/osmosis/x/epochs/types"
 )
 
+// PropTallyResult is the result of a proposal tally.
+type PropTallyResult struct {
+	Yes        osmomath.Int
+	No         osmomath.Int
+	Abstain    osmomath.Int
+	NoWithVeto osmomath.Int
+}
+
 // QueryProtoRevNumberOfTrades gets the number of trades the protorev module has executed.
-func (n *NodeConfig) QueryProtoRevNumberOfTrades() (sdk.Int, error) {
-	path := "/osmosis/v14/protorev/number_of_trades"
+func (n *NodeConfig) QueryProtoRevNumberOfTrades() (osmomath.Int, error) {
+	path := "/osmosis/protorev/number_of_trades"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
-		return sdk.Int{}, err
+		return osmomath.Int{}, err
 	}
 
 	// nolint: staticcheck
@@ -50,7 +60,7 @@ func (n *NodeConfig) QueryProtoRevNumberOfTrades() (sdk.Int, error) {
 
 // QueryProtoRevProfits gets the profits the protorev module has made.
 func (n *NodeConfig) QueryProtoRevProfits() ([]sdk.Coin, error) {
-	path := "/osmosis/v14/protorev/all_profits"
+	path := "/osmosis/protorev/all_profits"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -66,7 +76,7 @@ func (n *NodeConfig) QueryProtoRevProfits() ([]sdk.Coin, error) {
 
 // QueryProtoRevAllRouteStatistics gets all of the route statistics that the module has recorded.
 func (n *NodeConfig) QueryProtoRevAllRouteStatistics() ([]protorevtypes.RouteStatistics, error) {
-	path := "/osmosis/v14/protorev/all_route_statistics"
+	path := "/osmosis/protorev/all_route_statistics"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -82,7 +92,7 @@ func (n *NodeConfig) QueryProtoRevAllRouteStatistics() ([]protorevtypes.RouteSta
 
 // QueryProtoRevTokenPairArbRoutes gets all of the token pair hot routes that the module is currently using.
 func (n *NodeConfig) QueryProtoRevTokenPairArbRoutes() ([]protorevtypes.TokenPairArbRoutes, error) {
-	path := "/osmosis/v14/protorev/token_pair_arb_routes"
+	path := "/osmosis/protorev/token_pair_arb_routes"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -98,7 +108,7 @@ func (n *NodeConfig) QueryProtoRevTokenPairArbRoutes() ([]protorevtypes.TokenPai
 
 // QueryProtoRevDeveloperAccount gets the developer account of the module.
 func (n *NodeConfig) QueryProtoRevDeveloperAccount() (sdk.AccAddress, error) {
-	path := "/osmosis/v14/protorev/developer_account"
+	path := "/osmosis/protorev/developer_account"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -118,25 +128,25 @@ func (n *NodeConfig) QueryProtoRevDeveloperAccount() (sdk.AccAddress, error) {
 	return account, nil
 }
 
-// QueryProtoRevPoolWeights gets the pool point weights of the module.
-func (n *NodeConfig) QueryProtoRevPoolWeights() (protorevtypes.PoolWeights, error) {
-	path := "/osmosis/v14/protorev/pool_weights"
+// QueryProtoRevInfoByPoolType gets information on how the module handles different pool types.
+func (n *NodeConfig) QueryProtoRevInfoByPoolType() (*protorevtypes.InfoByPoolType, error) {
+	path := "/osmosis/protorev/info_by_pool_type"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
-		return protorevtypes.PoolWeights{}, err
+		return nil, err
 	}
 
 	// nolint: staticcheck
-	var response protorevtypes.QueryGetProtoRevPoolWeightsResponse
+	var response protorevtypes.QueryGetProtoRevInfoByPoolTypeResponse
 	err = util.Cdc.UnmarshalJSON(bz, &response)
 	require.NoError(n.t, err) // this error should not happen
-	return response.PoolWeights, nil
+	return &response.InfoByPoolType, nil
 }
 
 // QueryProtoRevMaxPoolPointsPerTx gets the max pool points per tx of the module.
 func (n *NodeConfig) QueryProtoRevMaxPoolPointsPerTx() (uint64, error) {
-	path := "/osmosis/v14/protorev/max_pool_points_per_tx"
+	path := "/osmosis/protorev/max_pool_points_per_tx"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -152,7 +162,7 @@ func (n *NodeConfig) QueryProtoRevMaxPoolPointsPerTx() (uint64, error) {
 
 // QueryProtoRevMaxPoolPointsPerBlock gets the max pool points per block of the module.
 func (n *NodeConfig) QueryProtoRevMaxPoolPointsPerBlock() (uint64, error) {
-	path := "/osmosis/v14/protorev/max_pool_points_per_block"
+	path := "/osmosis/protorev/max_pool_points_per_block"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -168,7 +178,7 @@ func (n *NodeConfig) QueryProtoRevMaxPoolPointsPerBlock() (uint64, error) {
 
 // QueryProtoRevBaseDenoms gets the base denoms used to construct cyclic arbitrage routes.
 func (n *NodeConfig) QueryProtoRevBaseDenoms() ([]protorevtypes.BaseDenom, error) {
-	path := "/osmosis/v14/protorev/base_denoms"
+	path := "/osmosis/protorev/base_denoms"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -184,7 +194,7 @@ func (n *NodeConfig) QueryProtoRevBaseDenoms() ([]protorevtypes.BaseDenom, error
 
 // QueryProtoRevEnabled queries if the protorev module is enabled.
 func (n *NodeConfig) QueryProtoRevEnabled() (bool, error) {
-	path := "/osmosis/v14/protorev/enabled"
+	path := "/osmosis/protorev/enabled"
 
 	bz, err := n.QueryGRPCGateway(path)
 	if err != nil {
@@ -203,7 +213,7 @@ func (n *NodeConfig) QueryGRPCGateway(path string, parameters ...string) ([]byte
 		return nil, fmt.Errorf("invalid number of parameters, must follow the format of key + value")
 	}
 
-	// add the URL for the given validator ID, and pre-pend to to path.
+	// add the URL for the given validator ID, and prepend to to path.
 	hostPort, err := n.containerManager.GetHostPort(n.Name, "1317/tcp")
 	require.NoError(n.t, err)
 	endpoint := fmt.Sprintf("http://%s", hostPort)
@@ -231,7 +241,7 @@ func (n *NodeConfig) QueryGRPCGateway(path string, parameters ...string) ([]byte
 		}
 
 		return resp.StatusCode != http.StatusServiceUnavailable
-	}, time.Minute, time.Millisecond*10, "failed to execute HTTP request")
+	}, time.Minute, 10*time.Millisecond, "failed to execute HTTP request")
 
 	defer resp.Body.Close()
 
@@ -339,14 +349,26 @@ func (n *NodeConfig) QueryBalances(address string) (sdk.Coins, error) {
 	return balancesResp.GetBalances(), nil
 }
 
-func (n *NodeConfig) QuerySupplyOf(denom string) (sdk.Int, error) {
+func (n *NodeConfig) QueryBalance(address, denom string) (sdk.Coin, error) {
+	path := fmt.Sprintf("cosmos/bank/v1beta1/balances/%s/by_denom?denom=%s", address, denom)
+	bz, err := n.QueryGRPCGateway(path)
+	require.NoError(n.t, err)
+
+	var balancesResp banktypes.QueryBalanceResponse
+	if err := util.Cdc.UnmarshalJSON(bz, &balancesResp); err != nil {
+		return sdk.Coin{}, err
+	}
+	return *balancesResp.GetBalance(), nil
+}
+
+func (n *NodeConfig) QuerySupplyOf(denom string) (osmomath.Int, error) {
 	path := fmt.Sprintf("cosmos/bank/v1beta1/supply/%s", denom)
 	bz, err := n.QueryGRPCGateway(path)
 	require.NoError(n.t, err)
 
 	var supplyResp banktypes.QuerySupplyOfResponse
 	if err := util.Cdc.UnmarshalJSON(bz, &supplyResp); err != nil {
-		return sdk.NewInt(0), err
+		return osmomath.NewInt(0), err
 	}
 	return supplyResp.Amount.Amount, nil
 }
@@ -431,21 +453,31 @@ func (n *NodeConfig) QueryWasmSmartArray(contract string, msg string) (resultArr
 	return resultArray, nil
 }
 
-func (n *NodeConfig) QueryPropTally(proposalNumber int) (sdk.Int, sdk.Int, sdk.Int, sdk.Int, error) {
+func (n *NodeConfig) QueryPropTally(proposalNumber int) (PropTallyResult, error) {
 	path := fmt.Sprintf("cosmos/gov/v1beta1/proposals/%d/tally", proposalNumber)
 	bz, err := n.QueryGRPCGateway(path)
 	require.NoError(n.t, err)
 
-	var balancesResp govtypes.QueryTallyResultResponse
+	var balancesResp govtypesv1.QueryTallyResultResponse
 	if err := util.Cdc.UnmarshalJSON(bz, &balancesResp); err != nil {
-		return sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt(), err
+		return PropTallyResult{
+			Yes:        osmomath.ZeroInt(),
+			No:         osmomath.ZeroInt(),
+			Abstain:    osmomath.ZeroInt(),
+			NoWithVeto: osmomath.ZeroInt(),
+		}, err
 	}
 	noTotal := balancesResp.Tally.No
 	yesTotal := balancesResp.Tally.Yes
 	noWithVetoTotal := balancesResp.Tally.NoWithVeto
 	abstainTotal := balancesResp.Tally.Abstain
 
-	return noTotal, yesTotal, noWithVetoTotal, abstainTotal, nil
+	return PropTallyResult{
+		Yes:        yesTotal,
+		No:         noTotal,
+		Abstain:    abstainTotal,
+		NoWithVeto: noWithVetoTotal,
+	}, nil
 }
 
 func (n *NodeConfig) QueryPropStatus(proposalNumber int) (string, error) {
@@ -453,8 +485,9 @@ func (n *NodeConfig) QueryPropStatus(proposalNumber int) (string, error) {
 	bz, err := n.QueryGRPCGateway(path)
 	require.NoError(n.t, err)
 
-	var propResp govtypes.QueryProposalResponse
-	if err := util.Cdc.UnmarshalJSON(bz, &propResp); err != nil {
+	var propResp govtypesv1.QueryProposalResponse
+	err = util.Cdc.UnmarshalJSON(bz, &propResp)
+	if err != nil && !strings.Contains(err.Error(), "is_expedited") {
 		return "", err
 	}
 	proposalStatus := propResp.Proposal.Status
@@ -507,7 +540,7 @@ func (n *NodeConfig) QueryConcentratedPooIdLinkFromCFMM(cfmmPoolId uint64) uint6
 	return response.ConcentratedPoolId
 }
 
-func (n *NodeConfig) QueryArithmeticTwapToNow(poolId uint64, baseAsset, quoteAsset string, startTime time.Time) (sdk.Dec, error) {
+func (n *NodeConfig) QueryArithmeticTwapToNow(poolId uint64, baseAsset, quoteAsset string, startTime time.Time) (osmomath.Dec, error) {
 	path := "osmosis/twap/v1beta1/ArithmeticTwapToNow"
 
 	bz, err := n.QueryGRPCGateway(
@@ -518,7 +551,7 @@ func (n *NodeConfig) QueryArithmeticTwapToNow(poolId uint64, baseAsset, quoteAss
 		"start_time", startTime.Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.Dec{}, err
 	}
 
 	var response twapqueryproto.ArithmeticTwapToNowResponse
@@ -527,7 +560,7 @@ func (n *NodeConfig) QueryArithmeticTwapToNow(poolId uint64, baseAsset, quoteAss
 	return response.ArithmeticTwap, nil
 }
 
-func (n *NodeConfig) QueryArithmeticTwap(poolId uint64, baseAsset, quoteAsset string, startTime time.Time, endTime time.Time) (sdk.Dec, error) {
+func (n *NodeConfig) QueryArithmeticTwap(poolId uint64, baseAsset, quoteAsset string, startTime time.Time, endTime time.Time) (osmomath.Dec, error) {
 	path := "osmosis/twap/v1beta1/ArithmeticTwap"
 
 	bz, err := n.QueryGRPCGateway(
@@ -539,7 +572,7 @@ func (n *NodeConfig) QueryArithmeticTwap(poolId uint64, baseAsset, quoteAsset st
 		"end_time", endTime.Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.Dec{}, err
 	}
 
 	var response twapqueryproto.ArithmeticTwapResponse
@@ -548,7 +581,7 @@ func (n *NodeConfig) QueryArithmeticTwap(poolId uint64, baseAsset, quoteAsset st
 	return response.ArithmeticTwap, nil
 }
 
-func (n *NodeConfig) QueryGeometricTwapToNow(poolId uint64, baseAsset, quoteAsset string, startTime time.Time) (sdk.Dec, error) {
+func (n *NodeConfig) QueryGeometricTwapToNow(poolId uint64, baseAsset, quoteAsset string, startTime time.Time) (osmomath.Dec, error) {
 	path := "osmosis/twap/v1beta1/GeometricTwapToNow"
 
 	bz, err := n.QueryGRPCGateway(
@@ -559,7 +592,7 @@ func (n *NodeConfig) QueryGeometricTwapToNow(poolId uint64, baseAsset, quoteAsse
 		"start_time", startTime.Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.Dec{}, err
 	}
 
 	var response twapqueryproto.GeometricTwapToNowResponse
@@ -568,7 +601,7 @@ func (n *NodeConfig) QueryGeometricTwapToNow(poolId uint64, baseAsset, quoteAsse
 	return response.GeometricTwap, nil
 }
 
-func (n *NodeConfig) QueryGeometricTwap(poolId uint64, baseAsset, quoteAsset string, startTime time.Time, endTime time.Time) (sdk.Dec, error) {
+func (n *NodeConfig) QueryGeometricTwap(poolId uint64, baseAsset, quoteAsset string, startTime time.Time, endTime time.Time) (osmomath.Dec, error) {
 	path := "osmosis/twap/v1beta1/GeometricTwap"
 
 	bz, err := n.QueryGRPCGateway(
@@ -580,7 +613,7 @@ func (n *NodeConfig) QueryGeometricTwap(poolId uint64, baseAsset, quoteAsset str
 		"end_time", endTime.Format(time.RFC3339Nano),
 	)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.Dec{}, err
 	}
 
 	var response twapqueryproto.GeometricTwapResponse
@@ -646,7 +679,7 @@ func (n *NodeConfig) QueryAllSuperfluidAssets() []superfluidtypes.SuperfluidAsse
 func (n *NodeConfig) QueryCommunityPoolModuleAccount() string {
 	cmd := []string{"osmosisd", "query", "auth", "module-accounts", "--output=json"}
 
-	out, _, err := n.containerManager.ExecCmd(n.t, n.Name, cmd, "")
+	out, _, err := n.containerManager.ExecCmd(n.t, n.Name, cmd, "", false, false)
 	require.NoError(n.t, err)
 	var result map[string][]interface{}
 	err = json.Unmarshal(out.Bytes(), &result)

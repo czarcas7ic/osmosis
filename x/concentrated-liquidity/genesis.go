@@ -7,10 +7,11 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils"
 	"github.com/osmosis-labs/osmosis/osmoutils/accum"
-	types "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types/genesis"
+	types "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types/genesis"
 )
 
 // InitGenesis initializes the concentrated-liquidity module with the provided genesis state.
@@ -19,6 +20,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState genesis.GenesisState) {
 	k.SetNextPositionId(ctx, genState.NextPositionId)
 	k.SetNextIncentiveRecordId(ctx, genState.NextIncentiveRecordId)
 	// Initialize pools
+	totalLiquidity := sdk.Coins{}
 	var unpacker codectypes.AnyUnpacker = k.cdc
 	seenPoolIds := map[uint64]struct{}{}
 	for _, poolData := range genState.PoolData {
@@ -38,6 +40,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState genesis.GenesisState) {
 			k.SetTickInfo(ctx, poolId, tick.TickIndex, &tick.Info)
 		}
 		seenPoolIds[poolId] = struct{}{}
+
+		// add pools liquidity to total liquidity
+		poolLiquidity, err := k.GetTotalPoolLiquidity(ctx, poolId)
+		if err != nil {
+			panic(err)
+		}
+		totalLiquidity = totalLiquidity.Add(poolLiquidity...)
 
 		// set up spread reward accumulators
 		store := ctx.KVStore(k.storeKey)
@@ -91,6 +100,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState genesis.GenesisState) {
 			k.initOrUpdateAccumPosition(ctx, uptimeAccumulators[uptimeIndex], uptimeRecord.AccumValuePerShare, positionName, uptimeRecord.NumShares, uptimeRecord.UnclaimedRewardsTotal, uptimeRecord.Options)
 		}
 	}
+
+	// set total liquidity
+	k.setTotalLiquidity(ctx, totalLiquidity)
+
+	k.SetIncentivePoolIDMigrationThreshold(ctx, genState.IncentivesAccumulatorPoolIdMigrationThreshold)
+	k.SetSpreadFactorPoolIDMigrationThreshold(ctx, genState.SpreadFactorPoolIdMigrationThreshold)
 }
 
 // ExportGenesis returns the concentrated-liquidity module's exported genesis state.
@@ -119,10 +134,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *genesis.GenesisState {
 			panic(err)
 		}
 
-		totalShares, err := accumObject.GetTotalShares()
-		if err != nil {
-			panic(err)
-		}
+		totalShares := accumObject.GetTotalShares()
 
 		spreadRewardAccumObject := genesis.AccumObject{
 			Name: types.KeySpreadRewardPoolAccumulator(poolI.GetId()),
@@ -145,10 +157,8 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *genesis.GenesisState {
 
 		incentivesAccumObject := make([]genesis.AccumObject, len(incentivesAccum))
 		for i, incentiveAccum := range incentivesAccum {
-			incentiveAccumTotalShares, err := incentiveAccum.GetTotalShares()
-			if err != nil {
-				panic(err)
-			}
+			incentiveAccumTotalShares := incentiveAccum.GetTotalShares()
+
 			genesisAccum := genesis.AccumObject{
 				Name: incentiveAccum.GetName(),
 				AccumContent: &accum.AccumulatorContent{
@@ -223,18 +233,32 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *genesis.GenesisState {
 		})
 	}
 
+	// Get the incentive pool ID migration threshold
+	incentivesAccumulatorPoolIDMigrationThreshold, err := k.GetIncentivePoolIDMigrationThreshold(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// Get the spread factor pool ID migration threshold
+	spreadFactorPoolIdMigrationThreshold, err := k.GetSpreadFactorPoolIDMigrationThreshold(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 	return &genesis.GenesisState{
 		Params:                k.GetParams(ctx),
 		PoolData:              poolData,
 		PositionData:          positionData,
 		NextPositionId:        k.GetNextPositionId(ctx),
 		NextIncentiveRecordId: k.GetNextIncentiveRecordId(ctx),
+		IncentivesAccumulatorPoolIdMigrationThreshold: incentivesAccumulatorPoolIDMigrationThreshold,
+		SpreadFactorPoolIdMigrationThreshold:          spreadFactorPoolIdMigrationThreshold,
 	}
 }
 
 // initOrUpdateAccumPosition creates a new position or override an existing position
 // at accumulator's current value with a specific number of shares and unclaimed rewards
-func (k Keeper) initOrUpdateAccumPosition(ctx sdk.Context, accumumulator accum.AccumulatorObject, accumulatorValuePerShare sdk.DecCoins, index string, numShareUnits sdk.Dec, unclaimedRewardsTotal sdk.DecCoins, options *accum.Options) {
+func (k Keeper) initOrUpdateAccumPosition(ctx sdk.Context, accumumulator *accum.AccumulatorObject, accumulatorValuePerShare sdk.DecCoins, index string, numShareUnits osmomath.Dec, unclaimedRewardsTotal sdk.DecCoins, options *accum.Options) {
 	position := accum.Record{
 		NumShares:             numShareUnits,
 		AccumValuePerShare:    accumulatorValuePerShare,

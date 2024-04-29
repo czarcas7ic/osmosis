@@ -8,8 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/osmosis-labs/osmosis/v16/x/mint/simulation"
-	"github.com/osmosis-labs/osmosis/v16/x/mint/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/mint/simulation"
+	"github.com/osmosis-labs/osmosis/v24/x/mint/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -33,7 +34,7 @@ func TestRandomizedGenState(t *testing.T) {
 		Rand:         r,
 		NumBonded:    3,
 		Accounts:     simtypes.RandomAccounts(r, 3),
-		InitialStake: 1000,
+		InitialStake: sdk.NewInt(1000),
 		GenState:     make(map[string]json.RawMessage),
 	}
 
@@ -52,11 +53,12 @@ func TestRandomizedGenState(t *testing.T) {
 		expectedReductionStartedEpoch = int64(6009281777831789783)
 
 		expectedNextEpochProvisionsStr = "3956524194470336578"
-		expectedDenom                  = sdk.DefaultBondDenom
 	)
 
+	var expectedDenom = sdk.DefaultBondDenom
+
 	// Epoch provisions from Minter.
-	epochProvisionsDec, err := sdk.NewDecFromStr(expectedEpochProvisionsStr)
+	epochProvisionsDec, err := osmomath.NewDecFromStr(expectedEpochProvisionsStr)
 	require.NoError(t, err)
 	require.Equal(t, epochProvisionsDec, mintGenesis.Minter.EpochProvisions)
 
@@ -64,7 +66,7 @@ func TestRandomizedGenState(t *testing.T) {
 	require.Equal(t, simulation.ExpectedEpochIdentifier, mintGenesis.Params.EpochIdentifier)
 
 	// Reduction factor.
-	reductionFactorDec, err := sdk.NewDecFromStr(expectedReductionFactorStr)
+	reductionFactorDec, err := osmomath.NewDecFromStr(expectedReductionFactorStr)
 	require.NoError(t, err)
 	require.Equal(t, reductionFactorDec, mintGenesis.Params.ReductionFactor)
 

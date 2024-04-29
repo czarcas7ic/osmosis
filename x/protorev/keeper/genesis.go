@@ -3,7 +3,7 @@ package keeper
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 )
 
 // InitGenesis initializes the module's state from a provided genesis state.
@@ -77,15 +77,28 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState types.GenesisState) {
 	// Set the number of pool points that have been consumed in the current block.
 	k.SetPointCountForBlock(ctx, genState.PointCountForBlock)
 
-	// Configure the pool weights for genesis. This roughly correlates to the ms of execution time
-	// by pool type.
-	k.SetPoolWeights(ctx, genState.PoolWeights)
+	// Configure the pool info for genesis.
+	k.SetInfoByPoolType(ctx, genState.InfoByPoolType)
 
 	// Set the profits that have been collected by Protorev.
 	for _, coin := range genState.Profits {
 		if err := k.UpdateProfitsByDenom(ctx, coin.Denom, coin.Amount); err != nil {
 			panic(err)
 		}
+	}
+
+	// Since we now track all aspects of protocol revenue, we need to take a snapshot of cyclic arb profits from this module at a certain block height.
+	// This allows us to display how much protocol revenue has been generated since block "X" instead of just since the module was initialized.
+	if len(genState.CyclicArbTracker.CyclicArb) > 0 {
+		k.SetCyclicArbProfitTrackerValue(ctx, genState.CyclicArbTracker.CyclicArb)
+	} else {
+		k.SetCyclicArbProfitTrackerValue(ctx, genState.Profits)
+	}
+
+	if genState.CyclicArbTracker.HeightAccountingStartsFrom != 0 {
+		k.SetCyclicArbProfitTrackerStartHeight(ctx, genState.CyclicArbTracker.HeightAccountingStartsFrom)
+	} else {
+		k.SetCyclicArbProfitTrackerStartHeight(ctx, ctx.BlockHeight())
 	}
 }
 
@@ -99,7 +112,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	genesis.Params = k.GetParams(ctx)
 
 	// Export the pool weights.
-	genesis.PoolWeights = k.GetPoolWeights(ctx)
+	genesis.InfoByPoolType = k.GetInfoByPoolType(ctx)
 
 	// Export the token pair arb routes (hot routes).
 	routes, err := k.GetAllTokenPairArbRoutes(ctx)
@@ -155,6 +168,13 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 
 	// Export the profits that have been collected by Protorev.
 	genesis.Profits = k.GetAllProfits(ctx)
+
+	// Export the profits that have been collected by Protorev since a certain block height.
+	cyclicArbTracker := types.CyclicArbTracker{
+		CyclicArb:                  k.GetCyclicArbProfitTrackerValue(ctx),
+		HeightAccountingStartsFrom: k.GetCyclicArbProfitTrackerStartHeight(ctx),
+	}
+	genesis.CyclicArbTracker = &cyclicArbTracker
 
 	return genesis
 }

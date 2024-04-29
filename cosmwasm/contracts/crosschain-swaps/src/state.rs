@@ -10,6 +10,7 @@ use crate::msg::FailedDeliveryAction;
 pub struct Config {
     pub governor: Addr,
     pub swap_contract: Addr,
+    pub registry_contract: Addr,
 }
 
 #[cw_serde]
@@ -35,6 +36,7 @@ pub struct ForwardMsgReplyState {
     pub amount: u128,
     pub denom: String,
     pub on_failed_delivery: FailedDeliveryAction,
+    pub is_swap: bool,
 }
 
 pub mod ibc {

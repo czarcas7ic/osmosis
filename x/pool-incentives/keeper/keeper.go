@@ -2,24 +2,29 @@ package keeper
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
-	"github.com/tendermint/tendermint/libs/log"
+	"github.com/armon/go-metrics"
+	"github.com/cometbft/cometbft/libs/log"
 
 	"github.com/osmosis-labs/osmosis/osmoutils"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	incentivestypes "github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	"github.com/osmosis-labs/osmosis/v16/x/pool-incentives/types"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	incentivestypes "github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/v24/x/pool-incentives/types"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 type Keeper struct {
-	storeKey sdk.StoreKey
+	storeKey storetypes.StoreKey
 
 	paramSpace paramtypes.Subspace
 
@@ -32,7 +37,7 @@ type Keeper struct {
 	gammKeeper        types.GAMMKeeper
 }
 
-func NewKeeper(storeKey sdk.StoreKey, paramSpace paramtypes.Subspace, accountKeeper types.AccountKeeper, bankKeeper types.BankKeeper, incentivesKeeper types.IncentivesKeeper, distrKeeper types.DistrKeeper, poolmanagerKeeper types.PoolManagerKeeper, epochKeeper types.EpochKeeper, gammKeeper types.GAMMKeeper) Keeper {
+func NewKeeper(storeKey storetypes.StoreKey, paramSpace paramtypes.Subspace, accountKeeper types.AccountKeeper, bankKeeper types.BankKeeper, incentivesKeeper types.IncentivesKeeper, distrKeeper types.DistrKeeper, poolmanagerKeeper types.PoolManagerKeeper, epochKeeper types.EpochKeeper, gammKeeper types.GAMMKeeper) Keeper {
 	// ensure pool-incentives module account is set
 	if addr := accountKeeper.GetModuleAddress(types.ModuleName); addr == nil {
 		panic(fmt.Sprintf("%s module account has not been set", types.ModuleName))
@@ -158,7 +163,7 @@ func (k Keeper) SetPoolGaugeIdInternalIncentive(ctx sdk.Context, poolId uint64, 
 
 // SetPoolGaugeIdNoLock sets the link between pool id and gauge id for "NoLock" gauges.
 // CONTRACT: the gauge of the given id must be "NoLock" gauge.
-func (k Keeper) SetPoolGaugeIdNoLock(ctx sdk.Context, poolId uint64, gaugeId uint64) {
+func (k Keeper) SetPoolGaugeIdNoLock(ctx sdk.Context, poolId uint64, gaugeId uint64, incentivizedUptime time.Duration) {
 	store := ctx.KVStore(k.storeKey)
 	// maps pool id and gauge id to gauge id.
 	// Note: this could be pool id and gauge id to empty byte array,
@@ -168,11 +173,44 @@ func (k Keeper) SetPoolGaugeIdNoLock(ctx sdk.Context, poolId uint64, gaugeId uin
 	store.Set(key, sdk.Uint64ToBigEndian(gaugeId))
 
 	// Note: this index is used for general linking.
-	// We supply zero for incentivized duration as "NoLock" gauges are not
-	// associated with any lockable duration. Instead, they incentivize
-	// pools directly.
-	key = types.GetPoolIdFromGaugeIdStoreKey(gaugeId, 0)
+	key = types.GetPoolIdFromGaugeIdStoreKey(gaugeId, incentivizedUptime)
 	store.Set(key, sdk.Uint64ToBigEndian(poolId))
+}
+
+// GetInternalGaugeIdForPool returns the internally incentivized gauge ID associated with the pool ID.
+// Contrary to GetPoolGaugeId, it determines the appropriate lockable duration based on the pool type.
+// For balancer or stableswap pools that have 3 gauges, it assumes the longest lockable duration gauge.
+// For CL pools, it assumes the gauge with the incentive module epoch duration.
+// Returns gauge ID on success, returns error if:
+// - fails to get pool
+// - given pool type does not support incentives (e.g. CW pools at the time of writing)
+// - fails to get the gauge ID for the given poolID and inferred lockable duration
+func (k Keeper) GetInternalGaugeIDForPool(ctx sdk.Context, poolID uint64) (uint64, error) {
+	pool, err := k.poolmanagerKeeper.GetPool(ctx, poolID)
+	if err != nil {
+		return 0, err
+	}
+
+	poolType := pool.GetType()
+	var gaugeDuration time.Duration
+	switch poolType {
+	case poolmanagertypes.Concentrated:
+		gaugeDuration = k.incentivesKeeper.GetEpochInfo(ctx).Duration
+	case poolmanagertypes.Balancer, poolmanagertypes.Stableswap:
+		gaugeDuration, err = k.GetLongestLockableDuration(ctx)
+		if err != nil {
+			return 0, err
+		}
+	default:
+		return 0, types.UnsupportedPoolTypeError{PoolID: poolID, PoolType: poolType}
+	}
+
+	gaugeId, err := k.GetPoolGaugeId(ctx, poolID, gaugeDuration)
+	if err != nil {
+		return 0, err
+	}
+
+	return gaugeId, nil
 }
 
 // GetPoolGaugeId returns the gauge id associated with the pool id and lockable duration.
@@ -185,13 +223,14 @@ func (k Keeper) GetPoolGaugeId(ctx sdk.Context, poolId uint64, lockableDuration 
 
 	key := types.GetPoolGaugeIdInternalStoreKey(poolId, lockableDuration)
 	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(key)
 
-	if len(bz) == 0 {
+	if !store.Has(key) {
 		return 0, types.NoGaugeAssociatedWithPoolError{PoolId: poolId, Duration: lockableDuration}
 	}
 
-	return sdk.BigEndianToUint64(bz), nil
+	bz := store.Get(key)
+	gaugeId := sdk.BigEndianToUint64(bz)
+	return gaugeId, nil
 }
 
 // GetNoLockGaugeIdsFromPool returns all the NoLock gauge ids associated with the pool id.
@@ -219,6 +258,16 @@ func (k Keeper) GetPoolIdFromGaugeId(ctx sdk.Context, gaugeId uint64, lockableDu
 	bz := store.Get(key)
 
 	if len(bz) == 0 {
+		telemetry.IncrCounterWithLabels([]string{types.NoPoolIdForGaugeTelemetryName}, 1, []metrics.Label{
+			{
+				Name:  "gauge_id",
+				Value: strconv.FormatUint(gaugeId, 10),
+			},
+			{
+				Name:  "duration",
+				Value: lockableDuration.String(),
+			},
+		})
 		return 0, types.NoPoolAssociatedWithGaugeError{GaugeId: gaugeId, Duration: lockableDuration}
 	}
 
@@ -229,7 +278,7 @@ func (k Keeper) GetPoolIdFromGaugeId(ctx sdk.Context, gaugeId uint64, lockableDu
 // the lockable durations for the pool, then using them to query the pool incentives keeper for the
 // gauge IDs associated with each duration, and finally using the incentives keeper to retrieve the
 // actual gauges from the retrieved gauge IDs.
-// CONTRACT: pool id must be assocated with a CFMM pool.
+// CONTRACT: pool id must be associated with a CFMM pool.
 func (k Keeper) GetGaugesForCFMMPool(ctx sdk.Context, poolId uint64) ([]incentivestypes.Gauge, error) {
 	lockableDurations := k.GetLockableDurations(ctx)
 	cfmmGauges := make([]incentivestypes.Gauge, 0, len(lockableDurations))
@@ -265,7 +314,7 @@ func (k Keeper) GetLockableDurations(ctx sdk.Context) []time.Duration {
 func (k Keeper) GetLongestLockableDuration(ctx sdk.Context) (time.Duration, error) {
 	lockableDurations := k.GetLockableDurations(ctx)
 	if len(lockableDurations) == 0 {
-		return 0, fmt.Errorf("Lockable Durations doesnot exist")
+		return 0, fmt.Errorf("Lockable Durations does not exist")
 	}
 	longestDuration := time.Duration(0)
 
@@ -283,41 +332,85 @@ func (k Keeper) GetAllGauges(ctx sdk.Context) []incentivestypes.Gauge {
 	return gauges
 }
 
-// IsPoolIncentivized returns a boolean representing whether the given pool ID
-// corresponds to an incentivized pool. It fails quietly by returning false if
-// the pool does not exist or does not have any records, as this is technically
-// equivalent to the pool not being incentivized.
-func (k Keeper) IsPoolIncentivized(ctx sdk.Context, poolId uint64) bool {
-	pool, err := k.poolmanagerKeeper.GetPool(ctx, poolId)
-	if err != nil {
-		return false
-	}
-	isCLPool := pool.GetType() == poolmanagertypes.Concentrated
-
-	var lockableDurations []time.Duration
-	if isCLPool {
-		incParams := k.incentivesKeeper.GetEpochInfo(ctx)
-		lockableDurations = []time.Duration{incParams.Duration}
-	} else {
-		lockableDurations = k.GetLockableDurations(ctx)
-	}
+// IsPoolIncentivized checks if a given pool is internally incentivized or not.
+// It first retrieves the epoch duration and lockable durations from the keeper.
+// Then it iterates over the distribution records, retrieving the gauge for each record.
+// If the gauge's DistributeTo.LockQueryType is ByGroup, it retrieves the group and checks if it's perpetual.
+// If it is, it retrieves the pool IDs from the group and checks if the provided pool ID is in the list.
+// If the gauge's DistributeTo.LockQueryType is NoLock, it retrieves the pool ID from the gauge and checks if it matches the provided pool ID.
+// If the gauge's DistributeTo.LockQueryType is ByDuration, it iterates over the lockableDurations, retrieves the pool ID for each duration, and checks if it matches the provided pool ID.
+// If none of the checks pass, it returns false, indicating that the pool is not incentivized.
+func (k Keeper) IsPoolIncentivized(ctx sdk.Context, providedPoolId uint64) (bool, error) {
+	epochDuration := k.incentivesKeeper.GetEpochInfo(ctx).Duration
+	lockableDurations := k.GetLockableDurations(ctx)
 
 	distrInfo := k.GetDistrInfo(ctx)
 
-	candidateGaugeIds := []uint64{}
-	for _, gaugeDuration := range lockableDurations {
-		gaugeId, err := k.GetPoolGaugeId(ctx, poolId, gaugeDuration)
-		if err == nil {
-			candidateGaugeIds = append(candidateGaugeIds, gaugeId)
-		}
-	}
-
 	for _, record := range distrInfo.Records {
-		for _, gaugeId := range candidateGaugeIds {
-			if record.GaugeId == gaugeId {
-				return true
+		// Skip community pool gauge
+		if record.GaugeId == 0 {
+			continue
+		}
+		gauge, err := k.incentivesKeeper.GetGaugeByID(ctx, record.GaugeId)
+		if err != nil {
+			return false, err
+		}
+		if gauge.DistributeTo.LockQueryType == lockuptypes.ByGroup {
+			group, err := k.incentivesKeeper.GetGroupByGaugeID(ctx, record.GaugeId)
+			if err != nil {
+				return false, err
 			}
+			groupGauge, err := k.incentivesKeeper.GetGaugeByID(ctx, group.GroupGaugeId)
+			if err != nil {
+				return false, err
+			}
+			if !groupGauge.IsPerpetual {
+				// if the group is not perpetual, it is an externally incentivized gauge so we skip it
+				continue
+			}
+			poolIds, _, err := k.incentivesKeeper.GetPoolIdsAndDurationsFromGaugeRecords(ctx, group.InternalGaugeInfo.GaugeRecords)
+			if err != nil {
+				return false, err
+			}
+			for _, poolId := range poolIds {
+				if poolId == providedPoolId {
+					return true, nil
+				}
+			}
+		} else if gauge.DistributeTo.LockQueryType == lockuptypes.NoLock {
+			poolId, err := k.GetPoolIdFromGaugeId(ctx, record.GaugeId, epochDuration)
+			if err != nil {
+				return false, err
+			}
+			if poolId == providedPoolId {
+				return true, nil
+			}
+		} else if gauge.DistributeTo.LockQueryType == lockuptypes.ByDuration {
+			gauge, err := k.incentivesKeeper.GetGaugeByID(ctx, record.GaugeId)
+			if err != nil {
+				return false, err
+			}
+			// Ensure the gauge's duration matches one of the lockable durations.
+			matchFound := false
+			for _, duration := range lockableDurations {
+				if gauge.DistributeTo.Duration == duration {
+					matchFound = true
+					break
+				}
+			}
+			if !matchFound {
+				return false, types.IncentiveRecordContainsNonLockableDurationError{GaugeId: gauge.Id, Duration: gauge.DistributeTo.Duration, LockableDurations: lockableDurations}
+			}
+			poolId, err := k.GetPoolIdFromGaugeId(ctx, record.GaugeId, gauge.DistributeTo.Duration)
+			if err != nil {
+				return false, err
+			}
+			if poolId == providedPoolId {
+				return true, nil
+			}
+		} else {
+			return false, fmt.Errorf("unknown lock query type: %s", gauge.DistributeTo.LockQueryType)
 		}
 	}
-	return false
+	return false, nil
 }

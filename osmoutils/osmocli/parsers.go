@@ -9,9 +9,20 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/address"
+	"github.com/cosmos/cosmos-sdk/x/gov/client/cli"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils"
+)
+
+var DefaultGovAuthority = sdk.AccAddress(address.Module("gov"))
+
+const (
+	FlagIsExpedited = "is-expedited"
+	FlagAuthority   = "authority"
 )
 
 // Parses arguments 1-1 from args
@@ -112,7 +123,7 @@ func ParseField(v reflect.Value, t reflect.Type, fieldIndex int, arg string, fla
 func ParseFieldFromFlag(fVal reflect.Value, fType reflect.StructField, flagAdvice FlagAdvice, flags *pflag.FlagSet) (bool, error) {
 	lowercaseFieldNameStr := strings.ToLower(fType.Name)
 	if flagName, ok := flagAdvice.CustomFlagOverrides[lowercaseFieldNameStr]; ok {
-		return true, parseFieldFromDirectlySetFlag(fVal, fType, flagAdvice, flagName, flags)
+		return true, parseFieldFromDirectlySetFlag(fVal, fType, flagName, flags)
 	}
 
 	kind := fType.Type.Kind()
@@ -144,7 +155,7 @@ func ParseFieldFromFlag(fVal reflect.Value, fType reflect.StructField, flagAdvic
 	return false, nil
 }
 
-func parseFieldFromDirectlySetFlag(fVal reflect.Value, fType reflect.StructField, flagAdvice FlagAdvice, flagName string, flags *pflag.FlagSet) error {
+func parseFieldFromDirectlySetFlag(fVal reflect.Value, fType reflect.StructField, flagName string, flags *pflag.FlagSet) error {
 	// get string. If its a string great, run through arg parser. Otherwise try setting directly
 	s, err := flags.GetString(flagName)
 	if err != nil {
@@ -166,7 +177,7 @@ func parseFieldFromDirectlySetFlag(fVal reflect.Value, fType reflect.StructField
 }
 
 func ParseFieldFromArg(fVal reflect.Value, fType reflect.StructField, arg string) error {
-	// We cant pass in a negative number due to the way pflags works...
+	// We can't pass in a negative number due to the way pflags works...
 	// This is an (extraordinarily ridiculous) workaround that checks if a negative int is encapsulated in square brackets,
 	// and if so, trims the square brackets
 	if strings.HasPrefix(arg, "[") && strings.HasSuffix(arg, "]") && arg[1] == '-' {
@@ -175,6 +186,13 @@ func ParseFieldFromArg(fVal reflect.Value, fType reflect.StructField, arg string
 	}
 
 	switch fType.Type.Kind() {
+	case reflect.Bool:
+		b, err := strconv.ParseBool(arg)
+		if err != nil {
+			return fmt.Errorf("could not parse %s as bool for field %s: %w", arg, fType.Name, err)
+		}
+		fVal.SetBool(b)
+		return nil
 	// SetUint allows anyof type u8, u16, u32, u64, and uint
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint:
 		u, err := ParseUint(arg, fType.Name)
@@ -245,11 +263,11 @@ func ParseFieldFromArg(fVal reflect.Value, fType reflect.StructField, arg string
 		var err error
 		if typeStr == "types.Coin" {
 			v, err = ParseCoin(arg, fType.Name)
-		} else if typeStr == "types.Int" {
+		} else if typeStr == "math.Int" {
 			v, err = ParseSdkInt(arg, fType.Name)
 		} else if typeStr == "time.Time" {
 			v, err = ParseUnixTime(arg, fType.Name)
-		} else if typeStr == "types.Dec" {
+		} else if typeStr == "math.LegacyDec" {
 			v, err = ParseSdkDec(arg, fType.Name)
 		} else {
 			return fmt.Errorf("struct field type not recognized. Got type %v", fType)
@@ -326,18 +344,112 @@ func ParseCoins(arg string, fieldName string) (sdk.Coins, error) {
 }
 
 // TODO: This really shouldn't be getting used in the CLI, its misdesign on the CLI ux
-func ParseSdkInt(arg string, fieldName string) (sdk.Int, error) {
-	i, ok := sdk.NewIntFromString(arg)
+func ParseSdkInt(arg string, fieldName string) (osmomath.Int, error) {
+	i, ok := osmomath.NewIntFromString(arg)
 	if !ok {
-		return sdk.Int{}, fmt.Errorf("could not parse %s as sdk.Int for field %s", arg, fieldName)
+		return osmomath.Int{}, fmt.Errorf("could not parse %s as osmomath.Int for field %s", arg, fieldName)
 	}
 	return i, nil
 }
 
-func ParseSdkDec(arg, fieldName string) (sdk.Dec, error) {
-	i, err := sdk.NewDecFromStr(arg)
+func ParseSdkDec(arg, fieldName string) (osmomath.Dec, error) {
+	i, err := osmomath.NewDecFromStr(arg)
 	if err != nil {
-		return sdk.Dec{}, fmt.Errorf("could not parse %s as sdk.Dec for field %s: %w", arg, fieldName, err)
+		return osmomath.Dec{}, fmt.Errorf("could not parse %s as osmomath.Dec for field %s: %w", arg, fieldName, err)
 	}
 	return i, nil
+}
+
+func ParseStringTo2DArray(input string) ([][]uint64, error) {
+	// Split the input string into sub-arrays
+	subArrays := strings.Split(input, ";")
+
+	// Initialize the 2D array
+	result := make([][]uint64, len(subArrays))
+
+	// Iterate over each sub-array
+	for i, subArray := range subArrays {
+		// Split the sub-array into elements
+		elements := strings.Split(subArray, ",")
+
+		// Initialize the sub-array in the 2D array
+		result[i] = make([]uint64, len(elements))
+
+		// Iterate over each element
+		for j, element := range elements {
+			// Parse the element into a uint64
+			value, err := strconv.ParseUint(element, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			// Store the value in the 2D array
+			result[i][j] = value
+		}
+	}
+
+	return result, nil
+}
+
+// ParseUint64SliceToString converts a slice of uint64 values into a string.
+// Each uint64 value in the slice is converted to a string using base 10.
+// The resulting strings are then joined together with a comma separator.
+// The resulting string is returned.
+func ParseUint64SliceToString(values []uint64) string {
+	strs := make([]string, len(values))
+	for i, v := range values {
+		strs[i] = strconv.FormatUint(v, 10)
+	}
+	return strings.Join(strs, ", ")
+}
+
+func GetProposalInfo(cmd *cobra.Command) (client.Context, string, string, sdk.Coins, bool, sdk.AccAddress, error) {
+	clientCtx, err := client.GetClientTxContext(cmd)
+	if err != nil {
+		return client.Context{}, "", "", nil, false, nil, err
+	}
+
+	proposalTitle, err := cmd.Flags().GetString(cli.FlagTitle)
+	if err != nil {
+		return clientCtx, proposalTitle, "", nil, false, nil, err
+	}
+
+	summary, err := cmd.Flags().GetString(cli.FlagSummary)
+	if err != nil {
+		return client.Context{}, proposalTitle, summary, nil, false, nil, err
+	}
+
+	depositArg, err := cmd.Flags().GetString(cli.FlagDeposit)
+	if err != nil {
+		return client.Context{}, proposalTitle, summary, nil, false, nil, err
+	}
+
+	deposit, err := sdk.ParseCoinsNormalized(depositArg)
+	if err != nil {
+		return client.Context{}, proposalTitle, summary, deposit, false, nil, err
+	}
+
+	isExpedited, err := cmd.Flags().GetBool(FlagIsExpedited)
+	if err != nil {
+		return client.Context{}, proposalTitle, summary, deposit, false, nil, err
+	}
+
+	authorityString, err := cmd.Flags().GetString(FlagAuthority)
+	if err != nil {
+		return client.Context{}, proposalTitle, summary, deposit, false, nil, err
+	}
+	authority, err := sdk.AccAddressFromBech32(authorityString)
+	if err != nil {
+		return client.Context{}, proposalTitle, summary, deposit, false, nil, err
+	}
+
+	return clientCtx, proposalTitle, summary, deposit, isExpedited, authority, nil
+}
+
+func AddCommonProposalFlags(cmd *cobra.Command) {
+	cmd.Flags().String(cli.FlagTitle, "", "Title of proposal")
+	cmd.Flags().String(cli.FlagSummary, "", "Summary of proposal")
+	cmd.Flags().String(cli.FlagDeposit, "", "Deposit of proposal")
+	cmd.Flags().Bool(FlagIsExpedited, false, "Whether the proposal is expedited")
+	cmd.Flags().String(FlagAuthority, DefaultGovAuthority.String(), "The address of the governance account. Default is the sdk gov module account")
 }

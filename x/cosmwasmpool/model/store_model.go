@@ -5,11 +5,25 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/cosmwasmpool/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/cosmwasmpool/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 var (
+	// NOTE:
+	// CosmWasmPool represents the data serialized into state for each CW pool.
+	//
+	// CW Pool has 2 pool models:
+	// - CosmWasmPool which is a proto-generated store model used for serialization into state.
+	// - Pool struct that encapsulates the CosmWasmPool and wasmKeeper for calling the contract.
+	//
+	// CosmWasmPool implements the poolmanager.PoolI interface but it panics on all methods.
+	// The reason is that access to wasmKeeper is required to call the contract.
+	//
+	// Instead, all interactions and poolmanager.PoolI methods are to be performed
+	// on the Pool struct. The reason why we cannot have a Pool struct only is
+	// because it cannot be serialized into state due to having a non-serializable wasmKeeper field.
 	_ poolmanagertypes.PoolI  = &CosmWasmPool{}
 	_ types.CosmWasmExtension = &CosmWasmPool{}
 )
@@ -30,14 +44,14 @@ func (p CosmWasmPool) GetAddress() sdk.AccAddress {
 }
 
 func (p CosmWasmPool) GetId() uint64 {
-	panic("CosmWasmPool.GetId not implemented")
+	return p.PoolId
 }
 
-func (p CosmWasmPool) GetSpreadFactor(ctx sdk.Context) sdk.Dec {
+func (p CosmWasmPool) GetSpreadFactor(ctx sdk.Context) osmomath.Dec {
 	panic("CosmWasmPool.GetSpreadFactor not implemented")
 }
 
-func (p CosmWasmPool) GetExitFee(ctx sdk.Context) sdk.Dec {
+func (p CosmWasmPool) GetExitFee(ctx sdk.Context) osmomath.Dec {
 	panic("CosmWasmPool.GetExitFee not implemented")
 }
 
@@ -45,7 +59,7 @@ func (p CosmWasmPool) IsActive(ctx sdk.Context) bool {
 	panic("CosmWasmPool.IsActive not implemented")
 }
 
-func (p CosmWasmPool) SpotPrice(ctx sdk.Context, baseAssetDenom string, quoteAssetDenom string) (sdk.Dec, error) {
+func (p CosmWasmPool) SpotPrice(ctx sdk.Context, baseAssetDenom string, quoteAssetDenom string) (osmomath.BigDec, error) {
 	panic("CosmWasmPool.SpotPrice not implemented")
 }
 
@@ -81,4 +95,14 @@ func (p CosmWasmPool) GetStoreModel() poolmanagertypes.PoolI {
 
 func (p CosmWasmPool) SetWasmKeeper(wasmKeeper types.WasmKeeper) {
 	panic("CosmWasmPool.SetWasmKeeeper not implemented")
+}
+
+// GetPoolDenoms implements types.PoolI.
+func (p *CosmWasmPool) GetPoolDenoms(ctx sdk.Context) []string {
+	panic("CosmWasmPool.GetPoolDenoms not implemented")
+}
+
+// SetCodeId implements types.CosmWasmExtension.
+func (p *CosmWasmPool) SetCodeId(codeId uint64) {
+	p.CodeId = codeId
 }

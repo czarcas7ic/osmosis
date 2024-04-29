@@ -208,7 +208,7 @@ func (k Keeper) RouteExactAmountIn(
 	sender sdk.AccAddress,
 	routes []types.SwapAmountInRoute,
 	tokenIn sdk.Coin,
-	tokenOutMinAmount sdk.Int) (tokenOutAmount sdk.Int, err error) {
+	tokenOutMinAmount osmomath.Int) (tokenOutAmount osmomath.Int, err error) {
 }
 ```
 
@@ -246,9 +246,9 @@ type SwapI interface {
 		poolId gammtypes.PoolI,
 		tokenIn sdk.Coin,
 		tokenOutDenom string,
-		tokenOutMinAmount sdk.Int,
-		spreadFactor sdk.Dec,
-	) (sdk.Int, error)
+		tokenOutMinAmount osmomath.Int,
+		spreadFactor osmomath.Dec,
+	) (osmomath.Int, error)
 }
 ```
 
@@ -268,6 +268,12 @@ provides `tokenOut`. The calculation for the amount of tokens that the
 user should be putting in is done through the following formula:
 
 `tokenBalanceIn * [{tokenBalanceOut / (tokenBalanceOut - tokenAmountOut)} ^ (tokenWeightOut / tokenWeightIn) -1] / tokenAmountIn`
+
+With the introduction of a `takerFee`, the actual amount of `tokenIn` that is used to calculate the amount of `tokenOut` is reduced by the `takerFee` amount. If governance or a governance approved DAO adds a specified trading pair to the `takerFee` module store, the fee associated with that pair is used. Otherwise, the `defaultTakerFee` defined in the poolmanger's parameters is used.
+
+The poolmanager only concerns itself with proportionally distributing the takerFee to the respective staking rewards and community pool txfees module accounts. For swaps originating in OSMO, the poolmanger distributes these fees based on the `OsmoTakerFeeDistribution` parameter. For swaps originating in non-OSMO assets, the poolmanager distributes these fees based on the `NonOsmoTakerFeeDistribution` parameter. For taker fees generated in non whitelisted quote denoms assets, the amount that goes to the community pool (defined by the `NonOsmoTakerFeeDistribution` above) is swapped to the `community_pool_denom_to_swap_non_whitelisted_assets_to` parameter defined in poolmanager. For instance, if a taker fee is generated in BTC, the respective community pool percent is sent directly to the community pool since it is a whitelisted quote denom. If it is generated in FOO, which is not a whitelisted quote denom, the respective community pool percent is swapped to the `community_pool_denom_to_swap_non_whitelisted_assets_to` parameter defined in poolmanager and send to the community pool as that denom at epoch.
+
+For more information on how the final distribution of these fees and how they are swapped, see the txfees module README.
 
 Existing Swap types:
 - SwapExactAmountIn
@@ -291,6 +297,10 @@ Existing Swap types:
 
 [MsgSplitRouteSwapExactAmountOut](https://github.com/osmosis-labs/osmosis/blob/46e6a0c2051a3a5ef8cdd4ecebfff7305b13ab98/proto/osmosis/poolmanager/v1beta1/tx.proto#L85)
 
+## MsgSetDenomPairTakerFee
+
+[MsgSplitRouteSwapExactAmountOut](https://github.com/osmosis-labs/osmosis/blob/d129ea37f5490d8a212932a78cd35cb864c799c7/proto/osmosis/poolmanager/v1beta1/tx.proto#L121)
+
 ## Multi-Hop
 
 All tokens are swapped using a multi-hop mechanism. That is, all swaps
@@ -298,11 +308,6 @@ are routed via the most cost-efficient way, swapping in and out from
 multiple pools in the process.
 The most cost-efficient route is determined offline and the list of the pools is provided externally, by user, during the broadcasting of the swapping transaction.
 At the moment of execution, the provided route may not be the most cost-efficient one anymore.
-
-When a trade consists of just two OSMO-included routes during a single transaction,
-the spread factors on each hop would be automatically halved.
-Example: for converting `ATOM -> OSMO -> LUNA` using two pools with spread factors `0.3% + 0.2%`,
-instead `0.15% + 0.1%` spread factors will be applied.
 
 [Multi-Hop](https://github.com/osmosis-labs/osmosis/blob/f26ceb958adaaf31510e17ed88f5eab47e2bac03/x/poolmanager/router.go#L16)
 
@@ -330,3 +335,200 @@ higher slippage.
 
 Note, that the actual split happens off-chain. The router is only responsible for executing the swaps in the order and quantities of token in provided
 by the routes.
+
+## EstimateTradeBasedOnPriceImpact Query
+
+The `EstimateTradeBasedOnPriceImpact` query allows users to estimate a trade for all pool types given the following parameters are provided for this request `EstimateTradeBasedOnPriceImpactRequest`:
+
+- **FromCoin**: (`sdk.Coin`): is the total amount of tokens one wants to sell.
+- **ToCoinDenom**: (`string`): is the denom they want to buy with the tokens being sold.
+- **PoolId**: (`uint64`): is the identifier of the pool that the trade will happen on.
+- **MaxPriceImpact**: (`sdk.Dec`): is the maximum percentage that the user is willing to affect the price of the pool.
+- **ExternalPrice**: (`sdk.Dec`) is an external price that the user can optionally enter to have the `MaxPriceImpact` adjusted as the `SpotPrice` of a pool could be changed at any time.
+
+The response would be `EstimateTradeBasedOnPriceImpactResponse` which contains the following data:
+
+- **InputCoin**: (`sdk.Coin`): the actual input amount that would be tradeable under that price impact (might be the full amount).
+- **OutputCoin**: (`sdk.Coin`): the amount of the `ToCoinDenom` tokens being received for the actual `InputCoin` trade.
+
+With that data it is easier for any entity to fill in the `MsgSwapExactAmountIn` details. The response could be filled with a valid trade or an empty one(InputCoin = 0, OutputCoin = 0), an empty one indicates that no trade could be estimated.
+It will not error if a trade cannot be estimated.
+
+### Process
+
+The following is the process in which the query finds a trade that will stay below the `MaxPriceImpact` value.
+
+1. Verify `PoolId`, `FromCoin`, `ToCoinDenom` are not empty.
+2. Return the specific `swapModule` based on the `PoolId`.
+3. Return the specific `PoolI` interface from the `swapModule` based on the `PoolId`.
+4. Calculate the `SpotPrice` in terms of the token being bought, therefore if it's an `OSMO/ATOM` pool and `OSMO` is being sold we need to calculate the `SpotPrice` in terms of `ATOM` being the base asset and `OSMO` being the quote asset.
+5. If we have a `ExternalPrice` specified in the request we need to adjust the `MaxPriceImpact` into a new variable `adjustedMaxPriceImpact` which would either increase if the `SpotPrice` is cheaper than the `ExternalPrice` or decrease if the `SpotPrice` is more expensive leaving less room to estimate a trade.
+   1. If the `adjustedMaxPriceImpact` was calculated to be `0` or negative it means that the `SpotPrice` is more expensive than the `ExternalPrice` and has already exceeded the possible `MaxPriceImpact`. We return a `sdk.ZeroInt()` input and output for the input and output coins indicating that no trade is viable.
+6. Then according to the pool type we attempt to find a viable trade, we must process each pool type differently as they return different results for different scenarios. The sections below explain the different pool types and how they each handle input.
+
+#### Balancer Pool Type Process
+
+The following is the example input/output when executing `CalcOutAmtGivenIn` on balancer pools:
+
+- If the input is greater than the total liquidity of the pool, the output will be the total liquidity of the target token.
+- If the input is an amount that is reasonably within the range of liquidity of the pool, the output will be a tolerable slippage amount based on pool data.
+- If the input is a small amount for which the pool cannot calculate a viable swap output e.g `1`, the output will be a small value which can be either positive (greater or equal to 1) or zero, depending on the pool's weights. In the latter case an `ErrInvalidMathApprox` is returned.
+
+Here is the following process for the `EstimateTradeBasedOnPriceImpactBalancerPool` function:
+
+1. The function initially calculates the output amount (`tokenOut`) using the input amount (`FromCoin`) without including a swap fee using the `CalcOutAmtGivenIn` function.
+
+   1. If `tokenOut` is zero or an `ErrInvalidMathApprox` is returned, the function returns zero for both the input and output coin, signifying that trading a negligible amount yields no output.
+
+2. The function calculates the current trade price (`currTradePrice`) using the initially estimated `tokenOut`. Following that, it calculates the deviation of this price from the spot price (`priceDeviation`).
+
+   1. If the `priceDeviation` is within the acceptable range (`adjustedMaxPriceImpact`), the function recalculates `tokenOut` but this time includes the swap fee. The estimated trade is then returned.
+
+3. In case the initial `priceDeviation` was not within the acceptable range, the function starts a binary search loop. It initializes `lowAmount`, `highAmount`, and `currFromCoin` to perform this search.
+
+4. Within the binary search loop, the function recalculates the middle amount (`midAmount`) to try estimate `CalcOutAmtGivenIn` again. It performs new trade estimations until it either finds an acceptable `priceDeviation` or exhausts the search range.
+
+5. If the loop exhausts the search range without finding a viable trade, it returns zero for both the input and output coin.
+
+6. If a viable trade is found that respects the `adjustedMaxPriceImpact`, the function performs a final recalculation, this time including the swap fee, and returns the estimated trade.
+
+#### StableSwap Pool Type Process
+
+The following is the example input/output when executing `CalcOutAmtGivenIn` on stableswap pools:
+
+- If the input is greater than the total liquidity of the pool, the function will `panic`.
+- If the input is an amount that is reasonably within the range of liquidity of the pool, the output will be a tolerable slippage amount based on pool data.
+- If the input is a small amount for which the pool cannot calculate a viable swap output e.g `1`, the function will throw an error.
+
+Here is the following process for the `EstimateTradeBasedOnPriceImpactStableSwapPool` function:
+
+1. The function begins by attempting to estimate the output amount (`tokenOut`) for a given input amount (`req.FromCoin`). This calculation is done without accounting for the swap fee.
+
+   1. If an error occurs, and it's not a panic, the function returns zero coins for both the input and output, signifying an error due to an amount that's too small for the trade to proceed.
+
+   2. If a panic occurs during the calculation, the function sets the output coin (`tokenOut`) to zero and proceeds to find a smaller acceptable trade amount.
+
+2. When there is no error or panic, the function calculates the current trade price (`currTradePrice`) and checks if the price deviation (`priceDeviation`) from the spot price is within acceptable limits (`adjustedMaxPriceImpact`).
+
+   1. If the `priceDeviation` is acceptable, the function re-estimates the output amount (`tokenOut`) considering the swap fee. If successful, this trade estimate is returned.
+
+3. The function initializes variables `lowAmount` and `highAmount` to search for an acceptable trade amount if the initial amount is too large or too small.
+
+4. Within a loop, the function performs a binary search to find an acceptable trade amount. It attempts a new trade with the middle amount (`midAmount`) between `lowAmount` and `highAmount`.
+
+5. If the new trade amount leads to an error without a panic, the function returns zero coins, indicating the amount has become too small.
+
+6. If the new trade amount leads to a panic, the function adjusts the `highAmount` downwards to continue the search.
+
+7. If the new trade amount does not cause an error or panic, and its `priceDeviation` is within limits, the function adjusts the `lowAmount` upwards to continue the search.
+
+8. If the loop completes without finding an acceptable trade amount, the function returns zero coins for both the input and the output.
+
+9. If a viable trade is found, the function performs a final recalculation considering the swap fee and returns the estimated trade.
+
+#### Concentrated Liquidity Pool Type Process
+
+The following is the example input/output when executing `CalcOutAmtGivenIn` on concentrated liquidity pools:
+
+- If the input is greater than the total liquidity of the pool, the function will error.
+- If the input is an amount that is reasonably within the range of liquidity of the pool, the output will be a tolerable slippage amount based on pool data.
+- f the input is a small amount for which the pool cannot calculate a viable swap output e.g `1`, the function will return a zero.
+
+Here is the following process for the `EstimateTradeBasedOnPriceImpactConcentratedLiquidity` function:
+
+1. The function starts by attempting to estimate the output amount (`tokenOut`) for a given input amount (`req.FromCoin`), using the `CalcOutAmtGivenIn` method of the `swapModule`.
+
+   1. If `tokenOut` is zero, it means the amount being traded is too small. The function returns zero coins for both input and output.
+
+   2. If an error occurs but `tokenOut` is not zero, the function ignores the error. The function assumes the error could mean the input is too large and proceeds to the next steps to find a suitable trade amount.
+
+2. If there is no error in estimating `tokenOut`, the function calculates the current trade price (`currTradePrice`). It then checks if the price deviation (`priceDeviation`) from the spot price is within acceptable limits (`adjustedMaxPriceImpact`).
+
+   1. If the `priceDeviation` is acceptable, the function re-estimates the `tokenOut` considering the swap fee. If successful, this trade estimate is returned.
+
+3. The function initializes `lowAmount` and `highAmount` variables to search for an acceptable trade amount if the initial amount is unsuitable.
+
+4. Within a loop, the function performs a binary search for an acceptable trade amount. It calculates a middle amount (`midAmount`) between `lowAmount` and `highAmount` to attempt a new trade.
+
+5. If the new `tokenOut` is zero, the function returns zero coins for both input and output, indicating the trade amount is too small.
+
+6. If no error occurs with the new trade amount and the `priceDeviation` is within limits, the function adjusts `lowAmount` upwards.
+
+7. If an error occurs with the new trade amount, the function adjusts `highAmount` downwards to continue the search.
+
+8. If the loop completes without finding an acceptable trade amount, the function returns zero coins for both input and output.
+
+9. If a viable trade amount is found, the function performs a final estimation of `tokenOut` considering the swap fee and returns the estimated trade.
+
+## Taker Fees
+
+Taker fee distribution is defined in the poolmanager module’s param store:
+
+```proto
+type TakerFeeParams struct {
+    DefaultTakerFee cosmossdk_io_math.LegacyDec `protobuf:"bytes,1,opt,name=default_taker_fee,json=defaultTakerFee,proto3,customtype=cosmossdk.io/math.LegacyDec" json:"default_taker_fee"`
+
+    OsmoTakerFeeDistribution TakerFeeDistributionPercentage `protobuf:"bytes,2,opt,name=osmo_taker_fee_distribution,json=osmoTakerFeeDistribution,proto3" json:"osmo_taker_fee_distribution"`
+
+    NonOsmoTakerFeeDistribution TakerFeeDistributionPercentage `protobuf:"bytes,3,opt,name=non_osmo_taker_fee_distribution,json=nonOsmoTakerFeeDistribution,proto3" json:"non_osmo_taker_fee_distribution"`
+
+    CommunityPoolDenomToSwapNonWhitelistedAssetsTo string `protobuf:"bytes,5,opt,name=community_pool_denom_to_swap_non_whitelisted_assets_to,json=communityPoolDenomToSwapNonWhitelistedAssetsTo,proto3" json:"community_pool_denom_to_swap_non_whitelisted_assets_to,omitempty" yaml:"community_pool_denom_to_swap_non_whitelisted_assets_to"`
+}
+```
+
+Not shown here is a separate KVStore, which holds overrides for the defaultTakerFee.
+
+At time of swap, all taker fees are sent to the `taker_fee_collector` module account. At epoch:
+
+- Non native taker fees
+    - For Community Pool: Sent to `non_native_fee_collector_community_pool` module account, swapped to `CommunityPoolDenomToSwapNonWhitelistedAssetsTo`, then sent to community pool
+    - For Stakers: Sent to `non_native_fee_collector_stakers` module account, swapped to OSMO, then sent to auth module account, which distributes it to stakers
+    - The sub-module accounts here are used so that, if a swap fails, the tokens that fail to swap are not grouped back into the wrong taker fee category in the next epoch
+- OSMO taker fees
+    - For Community Pool: Sent directly to community pool
+    - For Stakers: Sent directly to auth module account, which distributes it to stakers
+
+Lets go through the lifecycle to better understand how taker fee works in a variety of situations, and how the module account and distribution parameters are used depending on the input token.
+
+### Example 1: Non OSMO taker fee
+
+A user makes a swap of USDC to OSMO. First, the protocol checks the KVStore to determine if the the denom pair has a taker fee override. If the pair exists in the KVStore, the taker fee override is used. If the pair does not exist, the defaultTakerFee is used.
+
+In this example, defaultTakerFee is 0.02%. A USDC<>OSMO KVStore exists with an override of 0.01%. Therefore, 0.01% is used.
+
+Now, imagine the amount in is 10000 USDC. This means that the amount of takerFee utilized is 0.01% of 10000, which is 1 USDC.
+
+In the takerFee params, there are two distribution categories:
+1. Taker fees generated in OSMO
+2. Taker fees generated in non-OSMO
+
+Since USDC is non-OSMO, we look at category 2. In both categories, the fees are distributed to a combo of staking rewards and community pool:
+
+```proto
+type TakerFeeDistributionPercentage struct {
+    StakingRewards cosmossdk_io_math.LegacyDec `protobuf:"bytes,1,opt,name=staking_rewards,json=stakingRewards,proto3,customtype=cosmossdk.io/math.LegacyDec" json:"staking_rewards" yaml:"staking_rewards"`
+    CommunityPool  cosmossdk_io_math.LegacyDec `protobuf:"bytes,2,opt,name=community_pool,json=communityPool,proto3,customtype=cosmossdk.io/math.LegacyDec" json:"community_pool" yaml:"community_pool"`
+}
+```
+
+For simplicity sake, let’s say staking rewards are 40% and community pool is 60%. This means that out of the 1 USDC taken, 0.4 USDC is meant for staking rewards and 0.6 USDC is meant for community pool.
+
+At time of swap, all 1 USDC is sent to the `taker_fee_collector` module account. Nothing is done with any taker fee funds until epoch.
+
+Starting with the community pool funds, at epoch, the protocol checks if the token is a whitelisted fee token. If it is, it is sent directly to the community pool. If it is not, the funds are sent to the `non_native_fee_collector_community_pool`, swapped to the `CommunityPoolDenomToSwapNonWhitelistedAssetsTo` defined in the `poolmanager` params above, and then sent all at once to the community pool after all swaps at epoch have taken place.
+
+Next, for staking rewards, since this is a non-OSMO token, it is swapped to OSMO and sent to the auth module account, which distributes it to stakers.
+
+### Example 2: OSMO taker fee
+
+This example does not differ much from the previous example. In this example, a user is swapping 1000 OSMO for USDC.
+
+We search for a KVStore taker fee override before utilizing the default taker fee. Just as before (order does not matter), a KVStore entry for OSMO<>USDC exists, so we utilize a 0.01% taker fee instead of the 0.02% default taker fee. 0.01% of 10000 OSMO is 1 OSMO.
+
+At time of swap, all 1 OSMO is sent to the `taker_fee_collector` module account. Again, nothing is done with any taker fee funds until epoch.
+
+At epoch, we check the `OsmoTakerFeeDistribution`. In this example, let’s say its 20% to community pool and 80% to stakers. This means that 0.2 OSMO is set for community pool and 0.8 is set for stakers.
+
+For community pool, this is just a direct send of the OSMO to the community pool.
+
+For staking, the OSMO is directly sent to the auth "fee collector" module account, which distributes it to stakers.

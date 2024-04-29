@@ -12,7 +12,7 @@ import (
 	// sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
-	"github.com/osmosis-labs/osmosis/v16/x/tokenfactory/types"
+	"github.com/osmosis-labs/osmosis/v24/x/tokenfactory/types"
 )
 
 // GetQueryCmd returns the cli query commands for this module
@@ -21,6 +21,7 @@ func GetQueryCmd() *cobra.Command {
 
 	osmocli.AddQueryCmd(cmd, types.NewQueryClient, GetCmdDenomAuthorityMetadata)
 	osmocli.AddQueryCmd(cmd, types.NewQueryClient, GetCmdDenomsFromCreator)
+	osmocli.AddQueryCmd(cmd, types.NewQueryClient, GetCmdAllBeforeSendHooks)
 
 	cmd.AddCommand(
 		osmocli.GetParams[*types.QueryParamsRequest](
@@ -32,7 +33,7 @@ func GetQueryCmd() *cobra.Command {
 
 func GetCmdDenomAuthorityMetadata() (*osmocli.QueryDescriptor, *types.QueryDenomAuthorityMetadataRequest) {
 	return &osmocli.QueryDescriptor{
-		Use:   "denom-authority-metadata [denom] [flags]",
+		Use:   "denom-authority-metadata",
 		Short: "Get the authority metadata for a specific denom",
 		Long: `{{.Short}}{{.ExampleHeader}}
 		{{.CommandPrefix}} uatom`,
@@ -41,11 +42,17 @@ func GetCmdDenomAuthorityMetadata() (*osmocli.QueryDescriptor, *types.QueryDenom
 
 func GetCmdDenomsFromCreator() (*osmocli.QueryDescriptor, *types.QueryDenomsFromCreatorRequest) {
 	return &osmocli.QueryDescriptor{
-		Use:   "denoms-from-creator [creator address] [flags]",
+		Use:   "denoms-from-creator",
 		Short: "Returns a list of all tokens created by a specific creator address",
 		Long: `{{.Short}}{{.ExampleHeader}}
 		{{.CommandPrefix}} <address>`,
 	}, &types.QueryDenomsFromCreatorRequest{}
+}
+func GetCmdAllBeforeSendHooks() (*osmocli.QueryDescriptor, *types.QueryAllBeforeSendHooksAddressesRequest) {
+	return &osmocli.QueryDescriptor{
+		Use:   "all-before-send-hooks",
+		Short: "Returns a list of all before send hooks registered",
+	}, &types.QueryAllBeforeSendHooksAddressesRequest{}
 }
 
 // GetCmdDenomAuthorityMetadata returns the authority metadata for a queried denom

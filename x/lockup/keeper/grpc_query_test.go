@@ -5,7 +5,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/lockup/types"
 )
 
 func (s *KeeperTestSuite) LockTokens(addr sdk.AccAddress, coins sdk.Coins, duration time.Duration) {
@@ -49,7 +50,7 @@ func (s *KeeperTestSuite) TestModuleLockedAmount() {
 	// initial check
 	res, err := s.querier.ModuleLockedAmount(sdk.WrapSDKContext(s.Ctx), &types.ModuleLockedAmountRequest{})
 	s.Require().NoError(err)
-	s.Require().Equal(res.Coins, sdk.Coins(nil))
+	s.Require().Equal(res.Coins, sdk.Coins{})
 
 	// lock coins
 	addr1 := sdk.AccAddress([]byte("addr1---------------"))
@@ -66,12 +67,12 @@ func (s *KeeperTestSuite) TestModuleLockedAmount() {
 	now := s.Ctx.BlockTime()
 	res, err = s.querier.ModuleLockedAmount(sdk.WrapSDKContext(s.Ctx.WithBlockTime(now.Add(time.Second))), &types.ModuleLockedAmountRequest{})
 	s.Require().NoError(err)
-	s.Require().Equal(res.Coins, sdk.Coins(nil))
+	s.Require().Equal(res.Coins, sdk.Coins{})
 
 	// module locked balance after 2 second = unlockTime + 1s
 	res, err = s.querier.ModuleLockedAmount(sdk.WrapSDKContext(s.Ctx.WithBlockTime(now.Add(2*time.Second))), &types.ModuleLockedAmountRequest{})
 	s.Require().NoError(err)
-	s.Require().Equal(res.Coins, sdk.Coins(nil))
+	s.Require().Equal(res.Coins, sdk.Coins{})
 }
 
 func (s *KeeperTestSuite) TestAccountUnlockableCoins() {
@@ -167,7 +168,7 @@ func (s *KeeperTestSuite) TestAccountLockedCoins() {
 	// initial check
 	res, err := s.querier.AccountLockedCoins(sdk.WrapSDKContext(s.Ctx), &types.AccountLockedCoinsRequest{Owner: addr1.String()})
 	s.Require().NoError(err)
-	s.Require().Equal(res.Coins, sdk.Coins(nil))
+	s.Require().Equal(res.Coins, sdk.Coins{})
 
 	// lock coins
 	coins := sdk.Coins{sdk.NewInt64Coin("stake", 10)}
@@ -183,12 +184,12 @@ func (s *KeeperTestSuite) TestAccountLockedCoins() {
 	now := s.Ctx.BlockTime()
 	res, err = s.querier.AccountLockedCoins(sdk.WrapSDKContext(s.Ctx.WithBlockTime(now.Add(time.Second))), &types.AccountLockedCoinsRequest{Owner: addr1.String()})
 	s.Require().NoError(err)
-	s.Require().Equal(res.Coins, sdk.Coins(nil))
+	s.Require().Equal(res.Coins, sdk.Coins{})
 
 	// check after 2 second = unlockTime + 1s
 	res, err = s.querier.AccountLockedCoins(sdk.WrapSDKContext(s.Ctx.WithBlockTime(now.Add(2*time.Second))), &types.AccountLockedCoinsRequest{Owner: addr1.String()})
 	s.Require().NoError(err)
-	s.Require().Equal(res.Coins, sdk.Coins(nil))
+	s.Require().Equal(res.Coins, sdk.Coins{})
 }
 
 func (s *KeeperTestSuite) TestAccountLockedPastTime() {
@@ -527,7 +528,7 @@ func (s *KeeperTestSuite) TestLockedDenom() {
 			sdk.WrapSDKContext(s.Ctx),
 			&types.LockedDenomRequest{Denom: "stake", Duration: duration})
 		s.Require().NoError(err)
-		s.Require().Equal(res.Amount, sdk.NewInt(expectedAmount))
+		s.Require().Equal(res.Amount, osmomath.NewInt(expectedAmount))
 	}
 
 	// lock coins

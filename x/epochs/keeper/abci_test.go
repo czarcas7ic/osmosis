@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/osmosis-labs/osmosis/x/epochs/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/osmosis-labs/osmosis/x/epochs/types"
 
 	"golang.org/x/exp/maps"
 
@@ -14,7 +15,7 @@ import (
 
 // This test is responsible for testing how epochs increment based off
 // of their initial conditions, and subsequent block height / times.
-func (suite KeeperTestSuite) TestEpochInfoBeginBlockChanges() {
+func (suite *KeeperTestSuite) TestEpochInfoBeginBlockChanges() {
 	block1Time := time.Unix(1656907200, 0).UTC()
 	const defaultIdentifier = "hourly"
 	const defaultDuration = time.Hour
@@ -70,7 +71,7 @@ func (suite KeeperTestSuite) TestEpochInfoBeginBlockChanges() {
 		},
 		"StartTime in future won't get ticked on first block": {
 			initialEpochInfo: types.EpochInfo{StartTime: block1Time.Add(time.Second), CurrentEpoch: 0, CurrentEpochStartTime: time.Time{}},
-			// currentEpochStartHeight is 1 because thats when the timer was created on-chain
+			// currentEpochStartHeight is 1 because that's when the timer was created on-chain
 			expEpochInfo: types.EpochInfo{StartTime: block1Time.Add(time.Second), CurrentEpoch: 0, CurrentEpochStartTime: time.Time{}, CurrentEpochStartHeight: 1},
 		},
 		"StartTime in past will get ticked on first block": {

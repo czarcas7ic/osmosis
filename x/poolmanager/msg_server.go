@@ -5,7 +5,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 type msgServer struct {
@@ -33,13 +33,6 @@ func (server msgServer) SwapExactAmountIn(goCtx context.Context, msg *types.MsgS
 	}
 
 	// Swap event is handled elsewhere
-	ctx.EventManager().EmitEvents(sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-	})
 
 	return &types.MsgSwapExactAmountInResponse{TokenOutAmount: tokenOutAmount}, nil
 }
@@ -59,13 +52,6 @@ func (server msgServer) SwapExactAmountOut(goCtx context.Context, msg *types.Msg
 	}
 
 	// Swap event is handled elsewhere
-	ctx.EventManager().EmitEvents(sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-	})
 
 	return &types.MsgSwapExactAmountOutResponse{TokenInAmount: tokenInAmount}, nil
 }
@@ -84,13 +70,6 @@ func (server msgServer) SplitRouteSwapExactAmountIn(goCtx context.Context, msg *
 	}
 
 	// Swap event is handled in each pool module's SwapExactAmountIn
-	ctx.EventManager().EmitEvents(sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-	})
 
 	return &types.MsgSplitRouteSwapExactAmountInResponse{TokenOutAmount: tokenOutAmount}, nil
 }
@@ -109,13 +88,21 @@ func (server msgServer) SplitRouteSwapExactAmountOut(goCtx context.Context, msg 
 	}
 
 	// Swap event is handled in each pool module's SwapExactAmountOut
-	ctx.EventManager().EmitEvents(sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.Sender),
-		),
-	})
 
 	return &types.MsgSplitRouteSwapExactAmountOutResponse{TokenInAmount: tokenInAmount}, nil
+}
+
+func (server msgServer) SetDenomPairTakerFee(goCtx context.Context, msg *types.MsgSetDenomPairTakerFee) (*types.MsgSetDenomPairTakerFeeResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	for _, denomPair := range msg.DenomPairTakerFee {
+		err := server.keeper.SenderValidationSetDenomPairTakerFee(ctx, msg.Sender, denomPair.Denom0, denomPair.Denom1, denomPair.TakerFee)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Set denom pair taker fee event is handled in each iteration of the loop above
+
+	return &types.MsgSetDenomPairTakerFeeResponse{Success: true}, nil
 }

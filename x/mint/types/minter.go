@@ -4,6 +4,8 @@ import (
 	"errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 )
 
 var (
@@ -13,7 +15,7 @@ var (
 
 // NewMinter returns a new Minter object with the given epoch
 // provisions values.
-func NewMinter(epochProvisions sdk.Dec) Minter {
+func NewMinter(epochProvisions osmomath.Dec) Minter {
 	return Minter{
 		EpochProvisions: epochProvisions,
 	}
@@ -21,7 +23,7 @@ func NewMinter(epochProvisions sdk.Dec) Minter {
 
 // InitialMinter returns an initial Minter object.
 func InitialMinter() Minter {
-	return NewMinter(sdk.NewDec(0))
+	return NewMinter(osmomath.NewDec(0))
 }
 
 // DefaultInitialMinter returns a default initial Minter object for a new chain.
@@ -29,7 +31,7 @@ func DefaultInitialMinter() Minter {
 	return InitialMinter()
 }
 
-// Validate validates minter. Returns nil on success, error otherewise.
+// Validate validates minter. Returns nil on success, error otherwise.
 func (m Minter) Validate() error {
 	if m.EpochProvisions.IsNil() {
 		return errNilEpochProvisions
@@ -42,7 +44,7 @@ func (m Minter) Validate() error {
 }
 
 // NextEpochProvisions returns the epoch provisions.
-func (m Minter) NextEpochProvisions(params Params) sdk.Dec {
+func (m Minter) NextEpochProvisions(params Params) osmomath.Dec {
 	return m.EpochProvisions.Mul(params.ReductionFactor)
 }
 
@@ -54,7 +56,7 @@ func (m Minter) EpochProvision(params Params) sdk.Coin {
 }
 
 // GetInflationProvisions returns the inflation provisions.
-// These are calculated as the current epoch provisons * (1 - developer rewards proportion)
+// These are calculated as the current epoch provisions * (1 - developer rewards proportion)
 // The returned denom is taken from input parameters.
 func (m Minter) GetInflationProvisions(params Params) sdk.DecCoin {
 	provisionAmt := m.EpochProvisions.Mul(params.GetInflationProportion())
@@ -62,7 +64,7 @@ func (m Minter) GetInflationProvisions(params Params) sdk.DecCoin {
 }
 
 // GetDeveloperVestingEpochProvisions returns the developer vesting provisions.
-// These are calculated as the current epoch provisons * developer rewards proportion
+// These are calculated as the current epoch provisions * developer rewards proportion
 // The returned denom is taken from input parameters.
 func (m Minter) GetDeveloperVestingEpochProvisions(params Params) sdk.DecCoin {
 	provisionAmt := m.EpochProvisions.Mul(params.GetDeveloperVestingProportion())

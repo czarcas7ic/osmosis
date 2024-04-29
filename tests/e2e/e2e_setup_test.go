@@ -3,11 +3,12 @@ package e2e
 import (
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 
-	configurer "github.com/osmosis-labs/osmosis/v16/tests/e2e/configurer"
+	configurer "github.com/osmosis-labs/osmosis/v24/tests/e2e/configurer"
 )
 
 const (
@@ -17,23 +18,25 @@ const (
 	skipUpgradeEnv = "OSMOSIS_E2E_SKIP_UPGRADE"
 	// Environment variable name to skip the IBC tests
 	skipIBCEnv = "OSMOSIS_E2E_SKIP_IBC"
-	// Environment variable name to skip state sync testing
-	skipStateSyncEnv = "OSMOSIS_E2E_SKIP_STATE_SYNC" //nolint:unused // this is used in the code
 	// Environment variable name to determine if this upgrade is a fork
 	forkHeightEnv = "OSMOSIS_E2E_FORK_HEIGHT"
 	// Environment variable name to skip cleaning up Docker resources in teardown
 	skipCleanupEnv = "OSMOSIS_E2E_SKIP_CLEANUP"
 	// Environment variable name to determine what version we are upgrading to
 	upgradeVersionEnv = "OSMOSIS_E2E_UPGRADE_VERSION"
+	// Environment variable name to determine if we are running tests marked as scheduled
+	scheduledTestEv = "OSMOSIS_E2E_SCHEDULED"
 )
 
 type IntegrationTestSuite struct {
 	suite.Suite
 
-	configurer    configurer.Configurer
-	skipUpgrade   bool
-	skipIBC       bool
-	skipStateSync bool
+	configurer       configurer.Configurer
+	skipUpgrade      bool
+	skipIBC          bool
+	skipStateSync    bool
+	runScheduledTest bool
+	mutex            sync.Mutex
 }
 
 func TestIntegrationTestSuite(t *testing.T) {
@@ -57,7 +60,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	//   * For each chain, set up several validator nodes
 	//   * Initialize configs and genesis for all them.
 	// 2. Start both networks.
-	// 3. Run IBC relayer betweeen the two chains.
+	// 3. Run IBC relayer between the two chains.
 	// 4. Execute various e2e tests, including IBC, upgrade, superfluid.
 	if str := os.Getenv(skipUpgradeEnv); len(str) > 0 {
 		s.skipUpgrade, err = strconv.ParseBool(str)
@@ -67,6 +70,14 @@ func (s *IntegrationTestSuite) SetupSuite() {
 		}
 	}
 	upgradeSettings.IsEnabled = !s.skipUpgrade
+
+	if str := os.Getenv(scheduledTestEv); len(str) > 0 {
+		s.runScheduledTest, err = strconv.ParseBool(str)
+		s.Require().NoError(err)
+		if s.runScheduledTest {
+			s.T().Logf("%s was true, running all tests", scheduledTestEv)
+		}
+	}
 
 	if str := os.Getenv(forkHeightEnv); len(str) > 0 {
 		upgradeSettings.ForkHeight, err = strconv.ParseInt(str, 0, 64)

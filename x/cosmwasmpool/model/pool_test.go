@@ -6,7 +6,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
 )
 
 type CosmWasmPoolSuite struct {
@@ -29,7 +30,7 @@ func (s *CosmWasmPoolSuite) SetupTest() {
 // TestGetSpreadFactor validates that spread factor is set to zero.
 func (s *CosmWasmPoolSuite) TestGetSpreadFactor() {
 	var (
-		expectedSwapFee = sdk.ZeroDec()
+		expectedSwapFee = osmomath.ZeroDec()
 	)
 
 	pool := s.PrepareCosmWasmPool()
@@ -41,14 +42,34 @@ func (s *CosmWasmPoolSuite) TestGetSpreadFactor() {
 
 // TestSpotPrice validates that spot price is returned as one.
 func (s *CosmWasmPoolSuite) TestSpotPrice() {
-	var (
-		expectedSpotPrice = sdk.OneDec()
-	)
+	var expectedSpotPrice = osmomath.OneBigDec()
 
 	pool := s.PrepareCosmWasmPool()
 
+	s.Ctx = s.Ctx.WithGasMeter(sdk.NewGasMeter(100000000))
+
+	const (
+		// Charge gas before the system under test method and make sure it is not dropped
+		gasChargeBefore = 1000000
+
+		// Charge gas after the system under test method and make sure it is not dropped
+		gasChargeAfter = 5555555
+	)
+
+	s.Ctx.GasMeter().ConsumeGas(gasChargeBefore, "gas charge before")
+
 	actualSpotPrice, err := pool.SpotPrice(s.Ctx, denomA, denomB)
 	s.Require().NoError(err)
+
+	s.Ctx.GasMeter().ConsumeGas(gasChargeAfter, "gas charge after")
+
+	// Validate that the gas was charged on the input context
+	gasConsumed := s.Ctx.GasMeter().GasConsumed()
+	s.Require().NotZero(gasConsumed)
+
+	// Make sure that gas charge before and after is not dropped
+	gasConsumed = gasConsumed - gasChargeBefore - gasChargeAfter
+	s.Require().Greater(gasConsumed, uint64(0))
 
 	s.Require().Equal(expectedSpotPrice, actualSpotPrice)
 
@@ -56,4 +77,11 @@ func (s *CosmWasmPoolSuite) TestSpotPrice() {
 	s.Require().NoError(err)
 
 	s.Require().Equal(expectedSpotPrice, actualSpotPrice)
+}
+
+// TestGetPoolDenoms validates that pool denoms are returned correctly.
+func (s *CosmWasmPoolSuite) TestGetPoolDenoms() {
+	cwPool := s.PrepareCosmWasmPool()
+	poolDenoms := cwPool.GetPoolDenoms(s.Ctx)
+	s.Require().Equal([]string{apptesting.DefaultTransmuterDenomA, apptesting.DefaultTransmuterDenomB}, poolDenoms)
 }

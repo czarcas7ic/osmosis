@@ -4,19 +4,21 @@ import (
 	"math/rand"
 	"time"
 
-	osmosimtypes "github.com/osmosis-labs/osmosis/v16/simulation/simtypes"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	osmosimtypes "github.com/osmosis-labs/osmosis/v24/simulation/simtypes"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 
-	"github.com/osmosis-labs/osmosis/v16/x/incentives/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/v24/x/incentives/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	simappparams "github.com/cosmos/cosmos-sdk/simapp/params"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	"github.com/cosmos/cosmos-sdk/x/simulation"
+	stakingsim "github.com/cosmos/cosmos-sdk/x/staking/simulation"
 	stakingTypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -40,13 +42,13 @@ func WeightedOperations(
 
 	appParams.GetOrGenerate(cdc, OpWeightMsgCreateGauge, &weightMsgCreateGauge, nil,
 		func(_ *rand.Rand) {
-			weightMsgCreateGauge = simappparams.DefaultWeightMsgCreateValidator
+			weightMsgCreateGauge = stakingsim.DefaultWeightMsgCreateValidator
 		},
 	)
 
 	appParams.GetOrGenerate(cdc, OpWeightMsgAddToGauge, &weightMsgAddToGauge, nil,
 		func(_ *rand.Rand) {
-			weightMsgAddToGauge = simappparams.DefaultWeightMsgCreateValidator
+			weightMsgAddToGauge = stakingsim.DefaultWeightMsgCreateValidator
 		},
 	)
 
@@ -63,12 +65,12 @@ func WeightedOperations(
 }
 
 // genRewardCoins generates a random number of coin denoms with a respective random value for each coin.
-func genRewardCoins(r *rand.Rand, coins sdk.Coins, fee sdk.Int) (res sdk.Coins) {
+func genRewardCoins(r *rand.Rand, coins sdk.Coins, fee osmomath.Int) (res sdk.Coins) {
 	numCoins := 1 + r.Intn(Min(coins.Len(), 1))
 	denomIndices := r.Perm(numCoins)
 	for i := 0; i < numCoins; i++ {
 		var (
-			amt sdk.Int
+			amt osmomath.Int
 			err error
 		)
 		denom := coins[denomIndices[i]].Denom
@@ -152,7 +154,7 @@ func SimulateMsgCreateGauge(ak stakingTypes.AccountKeeper, bk osmosimtypes.BankK
 			NumEpochsPaidOver: numEpochsPaidOver,
 		}
 
-		txGen := simappparams.MakeTestEncodingConfig().TxConfig
+		txGen := testutil.MakeTestEncodingConfig().TxConfig
 		return osmosimtypes.GenAndDeliverTxWithRandFees(
 			r, app, txGen, &msg, rewards, ctx, simAccount, ak, bk, types.ModuleName)
 	}
@@ -187,7 +189,7 @@ func SimulateMsgAddToGauge(ak stakingTypes.AccountKeeper, bk osmosimtypes.BankKe
 			Rewards: rewards,
 		}
 
-		txGen := simappparams.MakeTestEncodingConfig().TxConfig
+		txGen := testutil.MakeTestEncodingConfig().TxConfig
 		return osmosimtypes.GenAndDeliverTxWithRandFees(
 			r, app, txGen, &msg, rewards, ctx, simAccount, ak, bk, types.ModuleName,
 		)

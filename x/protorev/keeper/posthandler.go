@@ -3,7 +3,11 @@ package keeper
 import (
 	"fmt"
 
+	"github.com/osmosis-labs/osmosis/osmoutils"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 )
 
 type SwapToBackrun struct {
@@ -24,9 +28,9 @@ func NewProtoRevDecorator(protoRevDecorator Keeper) ProtoRevDecorator {
 
 // This posthandler will first check if there were any swaps in the tx. If so, collect all of the pools, build routes for cyclic arbitrage,
 // and then execute the optimal route if it exists.
-func (protoRevDec ProtoRevDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
+func (protoRevDec ProtoRevDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, simulate, success bool, next sdk.PostHandler) (sdk.Context, error) {
 	if ctx.IsCheckTx() {
-		return next(ctx, tx, simulate)
+		return next(ctx, tx, success, simulate)
 	}
 
 	// Create a cache context to execute the posthandler such that
@@ -44,28 +48,28 @@ func (protoRevDec ProtoRevDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simu
 
 	// Check if the protorev posthandler can be executed
 	if err := protoRevDec.ProtoRevKeeper.AnteHandleCheck(cacheCtx); err != nil {
-		return next(ctx, tx, simulate)
+		return next(ctx, tx, success, simulate)
 	}
 
 	// Extract all of the pools that were swapped in the tx
 	swappedPools := protoRevDec.ProtoRevKeeper.ExtractSwappedPools(cacheCtx)
 	if len(swappedPools) == 0 {
-		return next(ctx, tx, simulate)
+		return next(ctx, tx, success, simulate)
 	}
 
 	// Attempt to execute arbitrage trades
 	if err := protoRevDec.ProtoRevKeeper.ProtoRevTrade(cacheCtx, swappedPools); err == nil {
 		write()
-		ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 	} else {
-		ctx.Logger().Error("ProtoRevTrade failed with error", err)
+		ctx.Logger().Error("ProtoRevTrade failed with error: " + err.Error())
 	}
 
 	// Delete swaps to backrun for next transaction without consuming gas
-	// from the current transaction's gas meter, but instead from a new gas meter
-	protoRevDec.ProtoRevKeeper.DeleteSwapsToBackrun(ctx.WithGasMeter(upperGasLimitMeter))
+	// from the current transaction's gas meter, but instead from a new gas meter with 50mil gas.
+	// 50 mil gas was chosen as an arbitrary large number to ensure deletion does not run out of gas.
+	protoRevDec.ProtoRevKeeper.DeleteSwapsToBackrun(ctx.WithGasMeter(sdk.NewGasMeter(sdk.Gas(50_000_000))))
 
-	return next(ctx, tx, simulate)
+	return next(ctx, tx, success, simulate)
 }
 
 // AnteHandleCheck checks if the module is enabled and if the number of routes to be processed per block has been reached.
@@ -111,7 +115,11 @@ func (k Keeper) ProtoRevTrade(ctx sdk.Context, swappedPools []SwapToBackrun) (er
 	// recover from panic
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("Protorev failed due to internal reason: %v", r)
+			if isErr, d := osmoutils.IsOutOfGasError(r); isErr {
+				err = fmt.Errorf("protorev failed due to lack of gas: %v", d)
+			} else {
+				err = fmt.Errorf("protorev failed due to internal reason: %v", r)
+			}
 		}
 	}()
 
@@ -130,7 +138,7 @@ func (k Keeper) ProtoRevTrade(ctx sdk.Context, swappedPools []SwapToBackrun) (er
 		maxProfitInputCoin, maxProfitAmount, optimalRoute := k.IterateRoutes(ctx, routes, &remainingTxPoolPoints, &remainingBlockPoolPoints)
 
 		// The error that returns here is particularly focused on the minting/burning of coins, and the execution of the MultiHopSwapExactAmountIn.
-		if maxProfitAmount.GT(sdk.ZeroInt()) {
+		if maxProfitAmount.GT(osmomath.ZeroInt()) {
 			if err := k.ExecuteTrade(ctx, optimalRoute, maxProfitInputCoin, pool, remainingTxPoolPoints, remainingBlockPoolPoints); err != nil {
 				return err
 			}

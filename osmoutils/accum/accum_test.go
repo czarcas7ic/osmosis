@@ -4,23 +4,45 @@ import (
 	"math/rand"
 	"testing"
 
+	"cosmossdk.io/log"
+	dbm "github.com/cometbft/cometbft-db"
 	"github.com/cosmos/cosmos-sdk/store"
 	iavlstore "github.com/cosmos/cosmos-sdk/store/iavl"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/cosmos/iavl"
-	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/suite"
-	dbm "github.com/tendermint/tm-db"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils"
 	accumPackage "github.com/osmosis-labs/osmosis/osmoutils/accum"
 	"github.com/osmosis-labs/osmosis/osmoutils/osmoassert"
+	"github.com/osmosis-labs/osmosis/osmoutils/wrapper"
 )
 
 type AccumTestSuite struct {
 	suite.Suite
 
 	store store.KVStore
+}
+
+func (suite *AccumTestSuite) GetAccumulator(name string) *accumPackage.AccumulatorObject {
+	accum, err := accumPackage.GetAccumulator(suite.store, name)
+	suite.Require().NoError(err)
+	return accum
+}
+
+func (suite *AccumTestSuite) MakeAndGetAccumulator(name string) *accumPackage.AccumulatorObject {
+	err := accumPackage.MakeAccumulator(suite.store, name)
+	suite.Require().NoError(err)
+	accum, err := accumPackage.GetAccumulator(suite.store, name)
+	suite.Require().NoError(err)
+	return accum
+}
+
+func (suite *AccumTestSuite) TotalSharesCheck(accum *accumPackage.AccumulatorObject, expected osmomath.Dec) {
+	shareCount := accum.GetTotalShares()
+	suite.Require().Equal(expected.String(), shareCount.String())
 }
 
 var (
@@ -37,41 +59,41 @@ var (
 	denomThree           = "denomthree"
 
 	emptyCoins = sdk.DecCoins(nil)
-	emptyDec   = sdk.NewDec(0)
+	emptyDec   = osmomath.NewDec(0)
 
-	initialValueOne       = sdk.MustNewDecFromStr("100.1")
+	initialValueOne       = osmomath.MustNewDecFromStr("100.1")
 	initialCoinDenomOne   = sdk.NewDecCoinFromDec(denomOne, initialValueOne)
 	initialCoinDenomTwo   = sdk.NewDecCoinFromDec(denomTwo, initialValueOne)
 	initialCoinDenomThree = sdk.NewDecCoinFromDec(denomThree, initialValueOne)
 	initialCoinsDenomOne  = sdk.NewDecCoins(initialCoinDenomOne)
 
 	positionOne = accumPackage.Record{
-		NumShares:             sdk.NewDec(100),
+		NumShares:             osmomath.NewDec(100),
 		AccumValuePerShare:    emptyCoins,
 		UnclaimedRewardsTotal: emptyCoins,
 	}
 
 	positionOneV2 = accumPackage.Record{
-		NumShares:             sdk.NewDec(150),
+		NumShares:             osmomath.NewDec(150),
 		AccumValuePerShare:    emptyCoins,
 		UnclaimedRewardsTotal: emptyCoins,
 	}
 
 	positionTwo = accumPackage.Record{
-		NumShares:             sdk.NewDec(200),
+		NumShares:             osmomath.NewDec(200),
 		AccumValuePerShare:    emptyCoins,
 		UnclaimedRewardsTotal: emptyCoins,
 	}
 
 	positionThree = accumPackage.Record{
-		NumShares:             sdk.NewDec(300),
+		NumShares:             osmomath.NewDec(300),
 		AccumValuePerShare:    emptyCoins,
 		UnclaimedRewardsTotal: emptyCoins,
 	}
 
 	validPositionName   = testAddressThree
 	invalidPositionName = testAddressTwo
-	negativeCoins       = sdk.DecCoins{sdk.DecCoin{Denom: initialCoinsDenomOne[0].Denom, Amount: sdk.OneDec().Neg()}}
+	negativeCoins       = sdk.DecCoins{sdk.DecCoin{Denom: initialCoinsDenomOne[0].Denom, Amount: osmomath.OneDec().Neg()}}
 )
 
 func withInitialAccumValue(record accumPackage.Record, initialAccum sdk.DecCoins) accumPackage.Record {
@@ -86,10 +108,9 @@ func withUnclaimedRewards(record accumPackage.Record, unclaimedRewards sdk.DecCo
 
 // Sets/resets KVStore to use for tests under `suite.store`
 func (suite *AccumTestSuite) SetupTest() {
-	db := dbm.NewMemDB()
-	tree, err := iavl.NewMutableTree(db, 100, false)
-	suite.Require().NoError(err)
-	_, _, err = tree.SaveVersion()
+	db := wrapper.NewIAVLDB(dbm.NewMemDB())
+	tree := iavl.NewMutableTree(db, 100, false, log.NewNopLogger())
+	_, _, err := tree.SaveVersion()
 	suite.Require().Nil(err)
 	kvstore := iavlstore.UnsafeNewStore(tree)
 	suite.store = kvstore
@@ -158,7 +179,7 @@ func (suite *AccumTestSuite) TestMakeAccumulatorWithValueAndShares() {
 		testName    string
 		accumName   string
 		accumValue  sdk.DecCoins
-		totalShares sdk.Dec
+		totalShares osmomath.Dec
 		expAccum    accumPackage.AccumulatorObject
 		expSetPass  bool
 		expGetPass  bool
@@ -168,16 +189,16 @@ func (suite *AccumTestSuite) TestMakeAccumulatorWithValueAndShares() {
 		{
 			testName:    "create valid accumulator",
 			accumName:   "spread-reward-accumulator",
-			accumValue:  sdk.NewDecCoins(sdk.NewDecCoin("foo", sdk.NewInt(10)), sdk.NewDecCoin("bar", sdk.NewInt(20))),
-			totalShares: sdk.NewDec(30),
+			accumValue:  sdk.NewDecCoins(sdk.NewDecCoin("foo", osmomath.NewInt(10)), sdk.NewDecCoin("bar", osmomath.NewInt(20))),
+			totalShares: osmomath.NewDec(30),
 			expSetPass:  true,
 			expGetPass:  true,
 		},
 		{
 			testName:    "create duplicate accumulator",
 			accumName:   "spread-reward-accumulator",
-			accumValue:  sdk.NewDecCoins(sdk.NewDecCoin("foo", sdk.NewInt(10)), sdk.NewDecCoin("bar", sdk.NewInt(20))),
-			totalShares: sdk.NewDec(30),
+			accumValue:  sdk.NewDecCoins(sdk.NewDecCoin("foo", osmomath.NewInt(10)), sdk.NewDecCoin("bar", osmomath.NewInt(20))),
+			totalShares: osmomath.NewDec(30),
 			expSetPass:  false,
 			expGetPass:  true,
 		},
@@ -212,45 +233,40 @@ func (suite *AccumTestSuite) TestNewPosition() {
 	// once at beginning so we can test duplicate positions
 	suite.SetupTest()
 
-	// Setup.
-	defaultAccObject := accumPackage.MakeTestAccumulator(suite.store, testNameOne, emptyCoins, emptyDec)
-
-	nonEmptyAccObject := accumPackage.MakeTestAccumulator(suite.store, testNameTwo, initialCoinsDenomOne, emptyDec)
-
 	tests := map[string]struct {
-		accObject        *accumPackage.AccumulatorObject
+		initialCoins     sdk.DecCoins
 		name             string
-		numShareUnits    sdk.Dec
+		numShareUnits    osmomath.Dec
 		options          *accumPackage.Options
 		expectedPosition accumPackage.Record
 	}{
 		"test address one - position created": {
-			accObject:        &defaultAccObject,
+			initialCoins:     emptyCoins,
 			name:             testAddressOne,
 			numShareUnits:    positionOne.NumShares,
 			expectedPosition: positionOne,
 		},
 		"test address two (non-nil options) - position created": {
-			accObject:        &defaultAccObject,
+			initialCoins:     emptyCoins,
 			name:             testAddressTwo,
 			numShareUnits:    positionTwo.NumShares,
 			expectedPosition: positionTwo,
 			options:          &emptyPositionOptions,
 		},
 		"test address one - position overwritten": {
-			accObject:        &defaultAccObject,
+			initialCoins:     emptyCoins,
 			name:             testAddressOne,
 			numShareUnits:    positionOneV2.NumShares,
 			expectedPosition: positionOneV2,
 		},
 		"test address three - added": {
-			accObject:        &defaultAccObject,
+			initialCoins:     emptyCoins,
 			name:             testAddressThree,
 			numShareUnits:    positionThree.NumShares,
 			expectedPosition: positionThree,
 		},
 		"test address one with non-empty accumulator - position created": {
-			accObject:        &nonEmptyAccObject,
+			initialCoins:     initialCoinsDenomOne,
 			name:             testAddressOne,
 			numShareUnits:    positionOne.NumShares,
 			expectedPosition: withInitialAccumValue(positionOne, initialCoinsDenomOne),
@@ -260,26 +276,25 @@ func (suite *AccumTestSuite) TestNewPosition() {
 	for name, tc := range tests {
 		tc := tc
 		suite.Run(name, func() {
-			originalAccValue := tc.accObject.GetTotalShareField()
+			accObject := accumPackage.MakeTestAccumulator(suite.store, name, tc.initialCoins, emptyDec)
+			originalAccValue := accObject.GetTotalShareField()
 			expectedAccValue := originalAccValue.Add(tc.numShareUnits)
 
 			// System under test.
-			err := tc.accObject.NewPosition(tc.name, tc.numShareUnits, tc.options)
+			err := accObject.NewPosition(tc.name, tc.numShareUnits, tc.options)
 			suite.Require().NoError(err)
 
 			// Assertions.
-			position := tc.accObject.MustGetPosition(tc.name)
+			position := accObject.MustGetPosition(tc.name)
 
 			suite.Require().Equal(tc.expectedPosition.NumShares, position.NumShares)
 			suite.Require().Equal(tc.expectedPosition.AccumValuePerShare, position.AccumValuePerShare)
 			suite.Require().Equal(tc.expectedPosition.UnclaimedRewardsTotal, position.UnclaimedRewardsTotal)
 
 			// ensure receiver was mutated
-			suite.Require().Equal(expectedAccValue, tc.accObject.GetTotalShareField())
+			suite.Require().Equal(expectedAccValue, accObject.GetTotalShareField())
 			// ensure state was mutated
-			globalSharesFromState, err := tc.accObject.GetTotalShares()
-			suite.Require().NoError(err)
-			suite.Require().Equal(expectedAccValue, globalSharesFromState)
+			suite.TotalSharesCheck(accObject, expectedAccValue)
 
 			if tc.options == nil {
 				suite.Require().Nil(position.Options)
@@ -302,14 +317,14 @@ func (suite *AccumTestSuite) TestNewPositionIntervalAccumulation() {
 	tests := map[string]struct {
 		accObject                    *accumPackage.AccumulatorObject
 		name                         string
-		numShareUnits                sdk.Dec
+		numShareUnits                osmomath.Dec
 		intervalAccumulationPerShare sdk.DecCoins
 		options                      *accumPackage.Options
 		expectedPosition             accumPackage.Record
 		expectedError                error
 	}{
 		"interval acc value equals to acc": {
-			accObject:                    &defaultAccObject,
+			accObject:                    defaultAccObject,
 			name:                         testAddressOne,
 			numShareUnits:                positionOne.NumShares,
 			intervalAccumulationPerShare: defaultAccObject.GetValue(),
@@ -320,23 +335,27 @@ func (suite *AccumTestSuite) TestNewPositionIntervalAccumulation() {
 			},
 		},
 		"interval acc value does not equal to acc": {
-			accObject:                    &defaultAccObject,
+			accObject:                    defaultAccObject,
 			name:                         testAddressTwo,
 			numShareUnits:                positionTwo.NumShares,
-			intervalAccumulationPerShare: defaultAccObject.GetValue().MulDec(sdk.NewDec(2)),
+			intervalAccumulationPerShare: defaultAccObject.GetValue().MulDec(osmomath.NewDec(2)),
 			expectedPosition: accumPackage.Record{
 				NumShares:             positionTwo.NumShares,
-				AccumValuePerShare:    defaultAccObject.GetValue().MulDec(sdk.NewDec(2)),
+				AccumValuePerShare:    defaultAccObject.GetValue().MulDec(osmomath.NewDec(2)),
 				UnclaimedRewardsTotal: emptyCoins,
 			},
 			options: &emptyPositionOptions,
 		},
-		"negative acc value - error": {
-			accObject:                    &defaultAccObject,
+		"negative acc value - no error": {
+			accObject:                    defaultAccObject,
 			name:                         testAddressOne,
 			numShareUnits:                positionOne.NumShares,
-			intervalAccumulationPerShare: defaultAccObject.GetValue().MulDec(sdk.NewDec(-1)),
-			expectedError:                accumPackage.NegativeIntervalAccumulationPerShareError{defaultAccObject.GetValue().MulDec(sdk.NewDec(-1))},
+			intervalAccumulationPerShare: defaultAccObject.GetValue().MulDec(osmomath.NewDec(-1)),
+			expectedPosition: accumPackage.Record{
+				NumShares:             positionOne.NumShares,
+				AccumValuePerShare:    defaultAccObject.GetValue().MulDec(osmomath.NewDec(-1)),
+				UnclaimedRewardsTotal: emptyCoins,
+			},
 		},
 	}
 
@@ -366,10 +385,7 @@ func (suite *AccumTestSuite) TestNewPositionIntervalAccumulation() {
 			// ensure receiver was mutated
 			suite.Require().Equal(expectedAccValue, tc.accObject.GetTotalShareField())
 			// ensure state was mutated
-			globalSharesFromState, err := tc.accObject.GetTotalShares()
-			suite.Require().NoError(err)
-			suite.Require().Equal(expectedAccValue, globalSharesFromState)
-
+			suite.TotalSharesCheck(tc.accObject, expectedAccValue)
 			if tc.options == nil {
 				suite.Require().Nil(position.Options)
 				return
@@ -386,7 +402,7 @@ func (suite *AccumTestSuite) TestClaimRewards() {
 
 		tripleDenomOneAndTwo = sdk.NewDecCoins(
 			sdk.NewDecCoinFromDec(denomOne, initialValueOne),
-			sdk.NewDecCoinFromDec(denomTwo, sdk.NewDec(3)))
+			sdk.NewDecCoinFromDec(denomTwo, osmomath.NewDec(3)))
 	)
 
 	// single output convenience wrapper.
@@ -432,7 +448,7 @@ func (suite *AccumTestSuite) TestClaimRewards() {
 
 	tests := []struct {
 		testName              string
-		accObject             accumPackage.AccumulatorObject
+		accObject             *accumPackage.AccumulatorObject
 		accName               string
 		expectedResult        sdk.Coins
 		updateNumSharesToZero bool
@@ -532,9 +548,9 @@ func (suite *AccumTestSuite) TestClaimRewards() {
 
 func (suite *AccumTestSuite) TestAddToPosition() {
 	type testcase struct {
-		startingNumShares        sdk.Dec
+		startingNumShares        osmomath.Dec
 		startingUnclaimedRewards sdk.DecCoins
-		newShares                sdk.Dec
+		newShares                osmomath.Dec
 
 		// accumInit and expAccumDelta specify the initial accum value
 		// and how much it has changed since the position being added
@@ -548,9 +564,9 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 
 	tests := map[string]testcase{
 		"zero shares with no new rewards": {
-			startingNumShares:        sdk.ZeroDec(),
+			startingNumShares:        osmomath.ZeroDec(),
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			// unchanged accum value, so no unclaimed rewards
 			expAccumDelta: sdk.NewDecCoins(),
@@ -559,7 +575,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"non-zero shares with no new rewards": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			newShares:                sdk.NewDec(10),
+			newShares:                osmomath.NewDec(10),
 			accumInit:                sdk.NewDecCoins(),
 			// unchanged accum value, so no unclaimed rewards
 			expAccumDelta: sdk.NewDecCoins(),
@@ -568,7 +584,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"non-zero shares with new rewards in one denom": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			// unclaimed rewards since last update
 			expAccumDelta: sdk.NewDecCoins(initialCoinDenomOne),
@@ -577,15 +593,15 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"non-zero shares with new rewards in two denoms": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
 		},
 		"non-zero shares with both existing and new rewards": {
 			startingNumShares:        initialValueOne,
-			startingUnclaimedRewards: sdk.NewDecCoins(sdk.NewDecCoin(denomOne, sdk.NewInt(11)), sdk.NewDecCoin(denomTwo, sdk.NewInt(11))),
-			newShares:                sdk.OneDec(),
+			startingUnclaimedRewards: sdk.NewDecCoins(sdk.NewDecCoin(denomOne, osmomath.NewInt(11)), sdk.NewDecCoin(denomTwo, osmomath.NewInt(11))),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
@@ -593,7 +609,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"non-zero shares with both existing (one denom) and new rewards (two denoms)": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
@@ -601,7 +617,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"non-zero shares with both existing (one denom) and new rewards (two new denoms)": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomTwo, initialCoinDenomThree),
 			expPass:                  true,
@@ -609,7 +625,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"nonzero accumulator starting value, delta with same denoms": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
@@ -617,7 +633,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"nonzero accumulator starting value, delta with new denoms": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomTwo, initialCoinDenomThree),
 			expPass:                  true,
@@ -625,7 +641,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"decimal shares with new rewards in two denoms": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			newShares:                sdk.NewDecWithPrec(983429874321, 5),
+			newShares:                osmomath.NewDecWithPrec(983429874321, 5),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
@@ -636,16 +652,16 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 			addrDoesNotExist: true,
 			expPass:          false,
 
-			startingNumShares:        sdk.OneDec(),
+			startingNumShares:        osmomath.OneDec(),
 			startingUnclaimedRewards: emptyCoins,
-			newShares:                sdk.OneDec(),
+			newShares:                osmomath.OneDec(),
 			accumInit:                emptyCoins,
 			expAccumDelta:            sdk.NewDecCoins(),
 		},
 		"attempt to add zero shares": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: emptyCoins,
-			newShares:                sdk.ZeroDec(),
+			newShares:                osmomath.ZeroDec(),
 			accumInit:                emptyCoins,
 			expAccumDelta:            sdk.NewDecCoins(),
 			expPass:                  false,
@@ -653,7 +669,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 		"attempt to add negative shares": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: emptyCoins,
-			newShares:                sdk.OneDec().Neg(),
+			newShares:                osmomath.OneDec().Neg(),
 			accumInit:                emptyCoins,
 			expAccumDelta:            sdk.NewDecCoins(),
 			expPass:                  false,
@@ -706,9 +722,7 @@ func (suite *AccumTestSuite) TestAddToPosition() {
 				// ensure receiver was mutated
 				suite.Require().Equal(expectedAccValue, curAccum.GetTotalShareField())
 				// ensure state was mutated
-				globalSharesFromState, err := curAccum.GetTotalShares()
-				suite.Require().NoError(err)
-				suite.Require().Equal(expectedAccValue, globalSharesFromState)
+				suite.TotalSharesCheck(curAccum, expectedAccValue)
 			} else {
 				suite.Require().Error(err)
 
@@ -741,13 +755,13 @@ func (suite *AccumTestSuite) TestAddToPositionIntervalAccumulation() {
 	tests := map[string]struct {
 		accObject                    *accumPackage.AccumulatorObject
 		name                         string
-		numShareUnits                sdk.Dec
+		numShareUnits                osmomath.Dec
 		intervalAccumulationPerShare sdk.DecCoins
 		expectedPosition             accumPackage.Record
 		expectedError                error
 	}{
 		"interval acc value equals to acc": {
-			accObject:                    &accObject,
+			accObject:                    accObject,
 			name:                         testAddressOne,
 			numShareUnits:                positionOne.NumShares,
 			intervalAccumulationPerShare: accObject.GetValue(),
@@ -758,13 +772,13 @@ func (suite *AccumTestSuite) TestAddToPositionIntervalAccumulation() {
 			},
 		},
 		"interval acc value does not equal to acc": {
-			accObject:                    &accObject,
+			accObject:                    accObject,
 			name:                         testAddressTwo,
 			numShareUnits:                positionTwo.NumShares,
-			intervalAccumulationPerShare: accObject.GetValue().MulDec(sdk.NewDec(2)),
+			intervalAccumulationPerShare: accObject.GetValue().MulDec(osmomath.NewDec(2)),
 			expectedPosition: accumPackage.Record{
 				NumShares:             positionTwo.NumShares,
-				AccumValuePerShare:    accObject.GetValue().MulDec(sdk.NewDec(2)),
+				AccumValuePerShare:    accObject.GetValue().MulDec(osmomath.NewDec(2)),
 				UnclaimedRewardsTotal: emptyCoins,
 			},
 		},
@@ -777,7 +791,7 @@ func (suite *AccumTestSuite) TestAddToPositionIntervalAccumulation() {
 			expectedAccValue = expectedAccValue.Add(tc.numShareUnits)
 
 			// Setup
-			err := tc.accObject.NewPositionIntervalAccumulation(tc.name, sdk.ZeroDec(), tc.accObject.GetValue(), nil)
+			err := tc.accObject.NewPositionIntervalAccumulation(tc.name, osmomath.ZeroDec(), tc.accObject.GetValue(), nil)
 			suite.Require().NoError(err)
 
 			// System under test.
@@ -801,18 +815,16 @@ func (suite *AccumTestSuite) TestAddToPositionIntervalAccumulation() {
 			// ensure receiver was mutated
 			suite.Require().Equal(expectedAccValue, tc.accObject.GetTotalShareField())
 			// ensure state was mutated
-			globalSharesFromState, err := tc.accObject.GetTotalShares()
-			suite.Require().NoError(err)
-			suite.Require().Equal(expectedAccValue, globalSharesFromState)
+			suite.TotalSharesCheck(tc.accObject, expectedAccValue)
 		})
 	}
 }
 
 func (suite *AccumTestSuite) TestRemoveFromPosition() {
 	type testcase struct {
-		startingNumShares        sdk.Dec
+		startingNumShares        osmomath.Dec
 		startingUnclaimedRewards sdk.DecCoins
-		removedShares            sdk.Dec
+		removedShares            osmomath.Dec
 
 		// accumInit and expAccumDelta specify the initial accum value
 		// and how much it has changed since the position being added
@@ -828,7 +840,7 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 		"no new rewards": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			// unchanged accum value, so no unclaimed rewards
 			expAccumDelta: sdk.NewDecCoins(),
@@ -837,7 +849,7 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 		"new rewards in one denom": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			// unclaimed rewards since last update
 			expAccumDelta: sdk.NewDecCoins(initialCoinDenomOne),
@@ -846,15 +858,15 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 		"new rewards in two denoms": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
 		},
 		"both existing and new rewards": {
 			startingNumShares:        initialValueOne,
-			startingUnclaimedRewards: sdk.NewDecCoins(sdk.NewDecCoin(denomOne, sdk.NewInt(11)), sdk.NewDecCoin(denomTwo, sdk.NewInt(11))),
-			removedShares:            sdk.OneDec(),
+			startingUnclaimedRewards: sdk.NewDecCoins(sdk.NewDecCoin(denomOne, osmomath.NewInt(11)), sdk.NewDecCoin(denomTwo, osmomath.NewInt(11))),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
@@ -862,7 +874,7 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 		"both existing (one denom) and new rewards (two denoms, one overlapping)": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
@@ -870,7 +882,7 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 		"both existing (one denom) and new rewards (two new denoms)": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomTwo, initialCoinDenomThree),
 			expPass:                  true,
@@ -878,7 +890,7 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 		"nonzero accumulator starting value, delta with same denoms": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
@@ -886,23 +898,23 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 		"nonzero accumulator starting value, delta with new denoms": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: sdk.NewDecCoins(initialCoinDenomOne),
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomTwo, initialCoinDenomThree),
 			expPass:                  true,
 		},
 		"remove decimal shares with new rewards in two denoms": {
-			startingNumShares:        sdk.NewDec(1000000),
+			startingNumShares:        osmomath.NewDec(1000000),
 			startingUnclaimedRewards: sdk.NewDecCoins(),
-			removedShares:            sdk.NewDecWithPrec(7489274134, 5),
+			removedShares:            osmomath.NewDecWithPrec(7489274134, 5),
 			accumInit:                sdk.NewDecCoins(),
 			expAccumDelta:            sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
 			expPass:                  true,
 		},
 		"attempt to remove exactly numShares": {
-			startingNumShares:        sdk.OneDec(),
+			startingNumShares:        osmomath.OneDec(),
 			startingUnclaimedRewards: emptyCoins,
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                emptyCoins,
 			expAccumDelta:            sdk.NewDecCoins(),
 			expPass:                  true,
@@ -915,22 +927,22 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: emptyCoins,
-			removedShares:            sdk.OneDec(),
+			removedShares:            osmomath.OneDec(),
 			accumInit:                emptyCoins,
 			expAccumDelta:            sdk.NewDecCoins(),
 		},
 		"attempt to remove zero shares": {
 			startingNumShares:        initialValueOne,
 			startingUnclaimedRewards: emptyCoins,
-			removedShares:            sdk.ZeroDec(),
+			removedShares:            osmomath.ZeroDec(),
 			accumInit:                emptyCoins,
 			expAccumDelta:            sdk.NewDecCoins(),
 			expPass:                  false,
 		},
 		"attempt to remove negative shares": {
-			startingNumShares:        sdk.OneDec(),
+			startingNumShares:        osmomath.OneDec(),
 			startingUnclaimedRewards: emptyCoins,
-			removedShares:            sdk.OneDec().Neg(),
+			removedShares:            osmomath.OneDec().Neg(),
 			accumInit:                emptyCoins,
 			expAccumDelta:            sdk.NewDecCoins(),
 			expPass:                  false,
@@ -986,9 +998,7 @@ func (suite *AccumTestSuite) TestRemoveFromPosition() {
 				// ensure receiver was mutated
 				suite.Require().Equal(expectedGlobalNumShares, curAccum.GetTotalShareField())
 				// ensure state was mutated
-				globalSharesFromState, err := curAccum.GetTotalShares()
-				suite.Require().NoError(err)
-				suite.Require().Equal(expectedGlobalNumShares.String(), globalSharesFromState.String())
+				suite.TotalSharesCheck(curAccum, expectedGlobalNumShares)
 			} else {
 				suite.Require().Error(err)
 
@@ -1021,9 +1031,9 @@ func (suite *AccumTestSuite) TestRemoveFromPositionIntervalAccumulation() {
 	accObject := accumPackage.MakeTestAccumulator(suite.store, testNameOne, baseAccumValue, emptyDec)
 
 	tests := map[string]struct {
-		accObject                    accumPackage.AccumulatorObject
+		accObject                    *accumPackage.AccumulatorObject
 		name                         string
-		numShareUnits                sdk.Dec
+		numShareUnits                osmomath.Dec
 		intervalAccumulationPerShare sdk.DecCoins
 		expectedPosition             accumPackage.Record
 		expectedError                error
@@ -1034,22 +1044,22 @@ func (suite *AccumTestSuite) TestRemoveFromPositionIntervalAccumulation() {
 			numShareUnits:                positionOne.NumShares,
 			intervalAccumulationPerShare: baseAccumValue,
 			expectedPosition: accumPackage.Record{
-				NumShares:          sdk.ZeroDec(),
+				NumShares:          osmomath.ZeroDec(),
 				AccumValuePerShare: baseAccumValue,
 				// base value - 0.5 * base = base value
-				UnclaimedRewardsTotal: baseAccumValue.MulDec(sdk.NewDecWithPrec(5, 1)).MulDec(positionOne.NumShares),
+				UnclaimedRewardsTotal: baseAccumValue.MulDec(osmomath.NewDecWithPrec(5, 1)).MulDec(positionOne.NumShares),
 			},
 		},
 		"interval acc value does not equal to acc": {
 			accObject:                    accObject,
 			name:                         testAddressTwo,
 			numShareUnits:                positionTwo.NumShares,
-			intervalAccumulationPerShare: baseAccumValue.MulDec(sdk.NewDecWithPrec(75, 2)),
+			intervalAccumulationPerShare: baseAccumValue.MulDec(osmomath.NewDecWithPrec(75, 2)),
 			expectedPosition: accumPackage.Record{
-				NumShares:          sdk.ZeroDec(),
-				AccumValuePerShare: baseAccumValue.MulDec(sdk.NewDecWithPrec(75, 2)),
+				NumShares:          osmomath.ZeroDec(),
+				AccumValuePerShare: baseAccumValue.MulDec(osmomath.NewDecWithPrec(75, 2)),
 				// base value - 0.75 * base = 0.25 * base
-				UnclaimedRewardsTotal: baseAccumValue.MulDec(sdk.NewDecWithPrec(25, 2)).MulDec(positionTwo.NumShares),
+				UnclaimedRewardsTotal: baseAccumValue.MulDec(osmomath.NewDecWithPrec(25, 2)).MulDec(positionTwo.NumShares),
 			},
 		},
 	}
@@ -1062,7 +1072,7 @@ func (suite *AccumTestSuite) TestRemoveFromPositionIntervalAccumulation() {
 			expectedGlobalAccValue := tc.accObject.GetTotalShareField()
 
 			// Original position's accum is always set to 0.5 * base value.
-			err := tc.accObject.NewPositionIntervalAccumulation(tc.name, tc.numShareUnits, initialCoinsDenomOne.MulDec(sdk.NewDecWithPrec(5, 1)), nil)
+			err := tc.accObject.NewPositionIntervalAccumulation(tc.name, tc.numShareUnits, initialCoinsDenomOne.MulDec(osmomath.NewDecWithPrec(5, 1)), nil)
 			suite.Require().NoError(err)
 
 			tc.accObject.SetValue(tc.intervalAccumulationPerShare)
@@ -1088,17 +1098,15 @@ func (suite *AccumTestSuite) TestRemoveFromPositionIntervalAccumulation() {
 			// ensure receiver was mutated
 			suite.Require().Equal(expectedGlobalAccValue.String(), tc.accObject.GetTotalShareField().String())
 			// ensure state was mutated
-			globalSharesFromState, err := tc.accObject.GetTotalShares()
-			suite.Require().NoError(err)
-			suite.Require().Equal(expectedGlobalAccValue, globalSharesFromState)
+			suite.TotalSharesCheck(tc.accObject, expectedGlobalAccValue)
 		})
 	}
 }
 
 func (suite *AccumTestSuite) TestGetPositionSize() {
 	type testcase struct {
-		numShares     sdk.Dec
-		changedShares sdk.Dec
+		numShares     osmomath.Dec
+		changedShares osmomath.Dec
 
 		// accumInit and expAccumDelta specify the initial accum value
 		// and how much it has changed since the position being added
@@ -1112,34 +1120,34 @@ func (suite *AccumTestSuite) TestGetPositionSize() {
 
 	tests := map[string]testcase{
 		"unchanged accumulator": {
-			numShares:     sdk.OneDec(),
+			numShares:     osmomath.OneDec(),
 			accumInit:     sdk.NewDecCoins(),
 			expAccumDelta: sdk.NewDecCoins(),
-			changedShares: sdk.ZeroDec(),
+			changedShares: osmomath.ZeroDec(),
 			expPass:       true,
 		},
 		"changed accumulator": {
-			numShares:     sdk.OneDec(),
+			numShares:     osmomath.OneDec(),
 			accumInit:     sdk.NewDecCoins(),
 			expAccumDelta: sdk.NewDecCoins(initialCoinDenomOne, initialCoinDenomTwo),
-			changedShares: sdk.ZeroDec(),
+			changedShares: osmomath.ZeroDec(),
 			expPass:       true,
 		},
 		"changed number of shares": {
-			numShares:     sdk.OneDec(),
+			numShares:     osmomath.OneDec(),
 			accumInit:     sdk.NewDecCoins(),
 			expAccumDelta: sdk.NewDecCoins(),
-			changedShares: sdk.OneDec(),
+			changedShares: osmomath.OneDec(),
 			expPass:       true,
 		},
 		"account does not exist": {
 			addrDoesNotExist: true,
 			expPass:          false,
 
-			numShares:     sdk.OneDec(),
+			numShares:     osmomath.OneDec(),
 			accumInit:     sdk.NewDecCoins(),
 			expAccumDelta: sdk.NewDecCoins(),
-			changedShares: sdk.ZeroDec(),
+			changedShares: osmomath.ZeroDec(),
 		},
 	}
 
@@ -1160,7 +1168,7 @@ func (suite *AccumTestSuite) TestGetPositionSize() {
 			// Update accumulator with expAccumDelta (increasing position's rewards by a proportional amount)
 			curAccum = accumPackage.MakeTestAccumulator(suite.store, testNameOne, tc.accumInit.Add(tc.expAccumDelta...), emptyDec)
 
-			// Get position size from valid address (or from nonexistant if address does not exist)
+			// Get position size from valid address (or from nonexistent if address does not exist)
 			positionSize, err := curAccum.GetPositionSize(positionName)
 
 			if tc.changedShares.IsPositive() {
@@ -1191,12 +1199,12 @@ func (suite *AccumTestSuite) TestMarhsalUnmarshalRecord() {
 	suite.SetupTest()
 
 	recordNoOptions := accumPackage.Record{
-		NumShares: sdk.OneDec(),
+		NumShares: osmomath.OneDec(),
 		AccumValuePerShare: sdk.NewDecCoins(
-			sdk.NewDecCoinFromDec(denomOne, sdk.OneDec()),
+			sdk.NewDecCoinFromDec(denomOne, osmomath.OneDec()),
 		),
 		UnclaimedRewardsTotal: sdk.NewDecCoins(
-			sdk.NewDecCoinFromDec(denomOne, sdk.OneDec()),
+			sdk.NewDecCoinFromDec(denomOne, osmomath.OneDec()),
 		),
 	}
 
@@ -1221,9 +1229,9 @@ func (suite *AccumTestSuite) TestAddToAccumulator() {
 			expectedValue: initialCoinsDenomOne,
 		},
 		"negative": {
-			updateAmount: initialCoinsDenomOne.MulDec(sdk.NewDec(-1)),
+			updateAmount: initialCoinsDenomOne.MulDec(osmomath.NewDec(-1)),
 
-			expectedValue: initialCoinsDenomOne.MulDec(sdk.NewDec(-1)),
+			expectedValue: initialCoinsDenomOne.MulDec(osmomath.NewDec(-1)),
 		},
 		"multiple coins": {
 			updateAmount: initialCoinsDenomOne.Add(initialCoinDenomTwo),
@@ -1237,17 +1245,14 @@ func (suite *AccumTestSuite) TestAddToAccumulator() {
 			// Setup
 			suite.SetupTest()
 
-			err := accumPackage.MakeAccumulator(suite.store, testNameOne)
-			suite.Require().NoError(err)
-			originalAccum, err := accumPackage.GetAccumulator(suite.store, testNameOne)
-			suite.Require().NoError(err)
+			originalAccum := suite.MakeAndGetAccumulator(testNameOne)
 
 			// System under test.
 			originalAccum.AddToAccumulator(tc.updateAmount)
 
 			// Validations.
 
-			// validate that the reciever is mutated.
+			// validate that the receiver is mutated.
 			suite.Require().Equal(tc.expectedValue, originalAccum.GetValue())
 
 			accumFromStore, err := accumPackage.GetAccumulator(suite.store, testNameOne)
@@ -1267,33 +1272,33 @@ func (suite *AccumTestSuite) TestUpdatePosition() {
 
 	tests := map[string]struct {
 		name             string
-		numShares        sdk.Dec
+		numShares        osmomath.Dec
 		expectedPosition accumPackage.Record
 		expectError      error
 	}{
 		"positive - acts as AddToPosition": {
 			name:      testAddressOne,
-			numShares: sdk.OneDec(),
+			numShares: osmomath.OneDec(),
 
 			expectedPosition: accumPackage.Record{
-				NumShares:             sdk.OneDec().MulInt64(2),
+				NumShares:             osmomath.OneDec().MulInt64(2),
 				AccumValuePerShare:    initialCoinsDenomOne,
 				UnclaimedRewardsTotal: emptyCoins,
 			},
 		},
 		"negative - acts as RemoveFromPosition": {
 			name:      testAddressOne,
-			numShares: sdk.OneDec().Neg(),
+			numShares: osmomath.OneDec().Neg(),
 
 			expectedPosition: accumPackage.Record{
-				NumShares:             sdk.ZeroDec(),
+				NumShares:             osmomath.ZeroDec(),
 				AccumValuePerShare:    initialCoinsDenomOne,
 				UnclaimedRewardsTotal: emptyCoins,
 			},
 		},
 		"zero - error": {
 			name:      testAddressOne,
-			numShares: sdk.ZeroDec(),
+			numShares: osmomath.ZeroDec(),
 
 			expectError: accumPackage.ZeroSharesError,
 		},
@@ -1303,9 +1308,9 @@ func (suite *AccumTestSuite) TestUpdatePosition() {
 		suite.Run(name, func() {
 			suite.SetupTest()
 
-			expectedGlobalAccValue := accObject.GetTotalShareField().Add(tc.numShares).Add(sdk.OneDec())
+			expectedGlobalAccValue := accObject.GetTotalShareField().Add(tc.numShares).Add(osmomath.OneDec())
 
-			err := accObject.NewPosition(tc.name, sdk.OneDec(), nil)
+			err := accObject.NewPosition(tc.name, osmomath.OneDec(), nil)
 			suite.Require().NoError(err)
 
 			err = accObject.UpdatePosition(tc.name, tc.numShares)
@@ -1330,9 +1335,7 @@ func (suite *AccumTestSuite) TestUpdatePosition() {
 			// ensure receiver was mutated
 			suite.Require().Equal(expectedGlobalAccValue.String(), accObject.GetTotalShareField().String())
 			// ensure state was mutated
-			globalSharesFromState, err := accObject.GetTotalShares()
-			suite.Require().NoError(err)
-			suite.Require().Equal(expectedGlobalAccValue.String(), globalSharesFromState.String())
+			suite.TotalSharesCheck(accObject, expectedGlobalAccValue)
 		})
 	}
 }
@@ -1342,17 +1345,17 @@ func (suite *AccumTestSuite) TestUpdatePosition() {
 func (suite *AccumTestSuite) TestUpdatePositionIntervalAccumulation() {
 	tests := []struct {
 		testName                     string
-		initialShares                sdk.Dec
+		initialShares                osmomath.Dec
 		initialAccum                 sdk.DecCoins
 		accName                      string
-		numShareUnits                sdk.Dec
+		numShareUnits                osmomath.Dec
 		intervalAccumulationPerShare sdk.DecCoins
 		expectedPosition             accumPackage.Record
 		expectedError                error
 	}{
 		{
 			testName:                     "interval acc value equals to acc; positive shares -> acts as AddToPosition",
-			initialShares:                sdk.ZeroDec(),
+			initialShares:                osmomath.ZeroDec(),
 			initialAccum:                 initialCoinsDenomOne,
 			accName:                      testAddressOne,
 			numShareUnits:                positionOne.NumShares,
@@ -1369,10 +1372,10 @@ func (suite *AccumTestSuite) TestUpdatePositionIntervalAccumulation() {
 			initialAccum:                 initialCoinsDenomOne,
 			accName:                      testAddressTwo,
 			numShareUnits:                positionTwo.NumShares.Neg(), // note: negative shares
-			intervalAccumulationPerShare: initialCoinsDenomOne.MulDec(sdk.NewDec(2)),
+			intervalAccumulationPerShare: initialCoinsDenomOne.MulDec(osmomath.NewDec(2)),
 			expectedPosition: accumPackage.Record{
-				NumShares:             sdk.ZeroDec(), // results in 0 shares (200 - 200)
-				AccumValuePerShare:    initialCoinsDenomOne.MulDec(sdk.NewDec(2)),
+				NumShares:             osmomath.ZeroDec(), // results in 0 shares (200 - 200)
+				AccumValuePerShare:    initialCoinsDenomOne.MulDec(osmomath.NewDec(2)),
 				UnclaimedRewardsTotal: emptyCoins,
 			},
 		},
@@ -1382,10 +1385,10 @@ func (suite *AccumTestSuite) TestUpdatePositionIntervalAccumulation() {
 			initialAccum:                 initialCoinsDenomOne,
 			accName:                      testAddressTwo,
 			numShareUnits:                positionOne.NumShares.Neg(), // note: negative shares
-			intervalAccumulationPerShare: initialCoinsDenomOne.MulDec(sdk.NewDec(2)),
+			intervalAccumulationPerShare: initialCoinsDenomOne.MulDec(osmomath.NewDec(2)),
 			expectedPosition: accumPackage.Record{
 				NumShares:             positionOne.NumShares, // results in 100 shares (200 - 100)
-				AccumValuePerShare:    initialCoinsDenomOne.MulDec(sdk.NewDec(2)),
+				AccumValuePerShare:    initialCoinsDenomOne.MulDec(osmomath.NewDec(2)),
 				UnclaimedRewardsTotal: emptyCoins,
 			},
 		},
@@ -1396,12 +1399,8 @@ func (suite *AccumTestSuite) TestUpdatePositionIntervalAccumulation() {
 		suite.Run(tc.testName, func() {
 			suite.SetupTest()
 
-			// make accumualtor based off of tc.accObject
-			err := accumPackage.MakeAccumulator(suite.store, testNameOne)
-			suite.Require().NoError(err)
-
-			accumObject, err := accumPackage.GetAccumulator(suite.store, testNameOne)
-			suite.Require().NoError(err)
+			// make accumulator based off of tc.accObject
+			accumObject := suite.MakeAndGetAccumulator(testNameOne)
 
 			expectedGlobalAccValue := tc.initialShares.Add(tc.numShareUnits)
 
@@ -1409,7 +1408,7 @@ func (suite *AccumTestSuite) TestUpdatePositionIntervalAccumulation() {
 			accumObject.AddToAccumulator(initialCoinsDenomOne)
 
 			// Setup
-			err = accumObject.NewPositionIntervalAccumulation(tc.accName, tc.initialShares, tc.initialAccum, nil)
+			err := accumObject.NewPositionIntervalAccumulation(tc.accName, tc.initialShares, tc.initialAccum, nil)
 			suite.Require().NoError(err)
 
 			// System under test.
@@ -1422,9 +1421,7 @@ func (suite *AccumTestSuite) TestUpdatePositionIntervalAccumulation() {
 			}
 			suite.Require().NoError(err)
 
-			accumObject, err = accumPackage.GetAccumulator(suite.store, testNameOne)
-			suite.Require().NoError(err)
-
+			accumObject = suite.GetAccumulator(testNameOne)
 			position := accumObject.MustGetPosition(tc.accName)
 			// Assertions.
 
@@ -1436,9 +1433,7 @@ func (suite *AccumTestSuite) TestUpdatePositionIntervalAccumulation() {
 			// ensure receiver was mutated
 			suite.Require().Equal(expectedGlobalAccValue.String(), accumObject.GetTotalShareField().String())
 			// ensure state was mutated
-			globalSharesFromState, err := accumObject.GetTotalShares()
-			suite.Require().NoError(err)
-			suite.Require().Equal(expectedGlobalAccValue.String(), globalSharesFromState.String())
+			suite.TotalSharesCheck(accumObject, expectedGlobalAccValue)
 		})
 	}
 }
@@ -1474,7 +1469,7 @@ func (suite *AccumTestSuite) TestHasPosition() {
 		suite.Run(tc.name, func() {
 			// Setup
 			if tc.preCreatePosition {
-				err := accObject.NewPosition(defaultPositionName, sdk.ZeroDec(), nil)
+				err := accObject.NewPosition(defaultPositionName, osmomath.ZeroDec(), nil)
 				suite.Require().NoError(err)
 			}
 
@@ -1517,7 +1512,7 @@ func (suite *AccumTestSuite) TestSetPositionIntervalAccumulation() {
 		suite.Run(name, func() {
 
 			// Setup
-			err := accObject.NewPositionIntervalAccumulation(validPositionName, sdk.OneDec(), initialCoinsDenomOne, nil)
+			err := accObject.NewPositionIntervalAccumulation(validPositionName, osmomath.OneDec(), initialCoinsDenomOne, nil)
 			suite.Require().NoError(err)
 
 			// System under test.
@@ -1534,7 +1529,7 @@ func (suite *AccumTestSuite) TestSetPositionIntervalAccumulation() {
 			position := accObject.MustGetPosition(tc.positionName)
 			suite.Require().Equal(tc.intervalAccumulationPerShare, position.GetAccumValuePerShare())
 			// unchanged
-			suite.Require().Equal(sdk.OneDec(), position.NumShares)
+			suite.Require().Equal(osmomath.OneDec(), position.NumShares)
 			suite.Require().Equal(emptyCoins, position.GetUnclaimedRewardsTotal())
 		})
 	}
@@ -1548,45 +1543,25 @@ func (suite *AccumTestSuite) TestGetTotalShares() {
 	rand.Seed(1)
 
 	// Set up two accumulators to ensure we can test all relevant behavior
-	err := accumPackage.MakeAccumulator(suite.store, testNameOne)
-	suite.Require().NoError(err)
-	err = accumPackage.MakeAccumulator(suite.store, testNameTwo)
-	suite.Require().NoError(err)
+	accumOne, accumTwo := suite.MakeAndGetAccumulator(testNameOne), suite.MakeAndGetAccumulator(testNameTwo)
 
-	// Fetch both accumulators for initial sanity tests
-	accumOne, err := accumPackage.GetAccumulator(suite.store, testNameOne)
-	suite.Require().NoError(err)
-	accumTwo, err := accumPackage.GetAccumulator(suite.store, testNameTwo)
-	suite.Require().NoError(err)
-
-	// Ensure that both accums start at zero shares
-	accumOneShares, err := accumOne.GetTotalShares()
-	suite.Require().NoError(err)
-	accumTwoShares, err := accumTwo.GetTotalShares()
-	suite.Require().NoError(err)
-	suite.Require().Equal(sdk.ZeroDec(), accumOneShares)
-	suite.Require().Equal(sdk.ZeroDec(), accumTwoShares)
+	// Sanity check initial accumulators (start at zero shares)
+	suite.TotalSharesCheck(accumOne, osmomath.ZeroDec())
+	suite.TotalSharesCheck(accumTwo, osmomath.ZeroDec())
 
 	// Create position on first accum and pull new accum objects from state
-	err = accumOne.NewPosition(testAddressOne, sdk.OneDec(), nil)
+	err := accumOne.NewPosition(testAddressOne, osmomath.OneDec(), nil)
 	suite.Require().NoError(err)
-	accumOne, err = accumPackage.GetAccumulator(suite.store, testNameOne)
-	suite.Require().NoError(err)
-	accumTwo, err = accumPackage.GetAccumulator(suite.store, testNameTwo)
-	suite.Require().NoError(err)
+	accumOne, accumTwo = suite.GetAccumulator(testNameOne), suite.GetAccumulator(testNameTwo)
 
 	// Check that total shares for accum one has updated properly and accum two shares are unchanged
-	accumOneShares, err = accumOne.GetTotalShares()
-	suite.Require().NoError(err)
-	accumTwoShares, err = accumTwo.GetTotalShares()
-	suite.Require().NoError(err)
-	suite.Require().Equal(sdk.OneDec(), accumOneShares)
-	suite.Require().Equal(sdk.ZeroDec(), accumTwoShares)
+	suite.TotalSharesCheck(accumOne, osmomath.OneDec())
+	suite.TotalSharesCheck(accumTwo, osmomath.ZeroDec())
 
 	// Run a number of NewPosition, AddToPosition, and RemoveFromPosition operations on each accum
 	testAddresses := []string{testAddressOne, testAddressTwo, testAddressThree}
-	accums := []accumPackage.AccumulatorObject{accumOne, accumTwo}
-	expectedShares := []sdk.Dec{sdk.OneDec(), sdk.ZeroDec()}
+	accums := []*accumPackage.AccumulatorObject{accumOne, accumTwo}
+	expectedShares := []osmomath.Dec{osmomath.OneDec(), osmomath.ZeroDec()}
 
 	for i := 1; i <= 10; i++ {
 		// Cycle through accounts and accumulators
@@ -1594,7 +1569,7 @@ func (suite *AccumTestSuite) TestGetTotalShares() {
 		curAccum := accums[i%2]
 
 		// We set a baseAmt that varies with the iteration to increase coverage
-		baseAmt := sdk.NewDec(int64(i)).Mul(sdk.NewDec(10))
+		baseAmt := osmomath.NewDec(int64(i)).Mul(osmomath.NewDec(10))
 
 		// If addr doesn't have a position yet, we make one
 		positionExists := curAccum.HasPosition(curAddr)
@@ -1605,8 +1580,8 @@ func (suite *AccumTestSuite) TestGetTotalShares() {
 
 		// We generate a random binary value (0 or 1) to determine
 		// whether we will add and/or remove liquidity this loop
-		addShares := sdk.NewDec(int64(rand.Int()) % 2)
-		removeShares := sdk.NewDec(int64(rand.Int()) % 2)
+		addShares := osmomath.NewDec(int64(rand.Int()) % 2)
+		removeShares := osmomath.NewDec(int64(rand.Int()) % 2)
 
 		// Half the time, we add to the new position
 		addAmt := baseAmt.Mul(addShares)
@@ -1616,7 +1591,7 @@ func (suite *AccumTestSuite) TestGetTotalShares() {
 		}
 
 		// Half the time, we remove one share from the position
-		amtToRemove := sdk.OneDec().Mul(removeShares)
+		amtToRemove := osmomath.OneDec().Mul(removeShares)
 		if amtToRemove.IsPositive() {
 			err = curAccum.RemoveFromPosition(curAddr, amtToRemove)
 			suite.Require().NoError(err)
@@ -1632,18 +1607,11 @@ func (suite *AccumTestSuite) TestGetTotalShares() {
 	}
 
 	// Get updated accums from state to validate results
-	accumOne, err = accumPackage.GetAccumulator(suite.store, testNameOne)
-	suite.Require().NoError(err)
-	accumTwo, err = accumPackage.GetAccumulator(suite.store, testNameTwo)
-	suite.Require().NoError(err)
+	accumOne, accumTwo = suite.GetAccumulator(testNameOne), suite.GetAccumulator(testNameTwo)
 
 	// Ensure that total shares in each accum matches our expected number of shares
-	accumOneShares, err = accumOne.GetTotalShares()
-	suite.Require().NoError(err)
-	accumTwoShares, err = accumTwo.GetTotalShares()
-	suite.Require().NoError(err)
-	suite.Require().Equal(expectedShares[0], accumOneShares)
-	suite.Require().Equal(expectedShares[1], accumTwoShares)
+	suite.TotalSharesCheck(accumOne, expectedShares[0])
+	suite.TotalSharesCheck(accumTwo, expectedShares[1])
 }
 
 func (suite *AccumTestSuite) TestAddToUnclaimedRewards() {
@@ -1682,7 +1650,7 @@ func (suite *AccumTestSuite) TestAddToUnclaimedRewards() {
 
 	for name, tc := range tests {
 		suite.Run(name, func() {
-			err := accObject.NewPositionIntervalAccumulation(validPositionName, sdk.OneDec(), initialCoinsDenomOne, nil)
+			err := accObject.NewPositionIntervalAccumulation(validPositionName, osmomath.OneDec(), initialCoinsDenomOne, nil)
 			suite.Require().NoError(err)
 
 			// Update global accumulator.
@@ -1747,7 +1715,7 @@ func (suite *AccumTestSuite) TestDeletePosition() {
 			// Setup.
 			accObject := accumPackage.MakeTestAccumulator(suite.store, testNameOne, initialCoinsDenomOne, emptyDec)
 
-			err := accObject.NewPosition(validPositionName, sdk.NewDec(tc.numShares), nil)
+			err := accObject.NewPosition(validPositionName, osmomath.NewDec(tc.numShares), nil)
 			suite.Require().NoError(err)
 
 			// Update global accumulator.
@@ -1771,11 +1739,9 @@ func (suite *AccumTestSuite) TestDeletePosition() {
 			suite.Require().Equal(tc.expectedUnclaimedRewards, unclaimedRewards)
 
 			// Check that global accumulator value is updated
-			totalShares, err := accObject.GetTotalShares()
-			suite.Require().NoError(err)
-			suite.Require().Equal(sdk.ZeroDec(), totalShares)
+			suite.TotalSharesCheck(accObject, osmomath.ZeroDec())
 			// Check that accumulator receiver is mutated.
-			suite.Require().Equal(sdk.ZeroDec().String(), accObject.GetTotalShareField().String())
+			suite.Require().Equal(osmomath.ZeroDec().String(), accObject.GetTotalShareField().String())
 		})
 	}
 }

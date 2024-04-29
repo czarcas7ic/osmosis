@@ -1,15 +1,16 @@
 package gov_test
 
 import (
+	"github.com/cometbft/cometbft/crypto/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/tendermint/tendermint/crypto/ed25519"
 
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/balancer"
-	minttypes "github.com/osmosis-labs/osmosis/v16/x/mint/types"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/keeper/gov"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	minttypes "github.com/osmosis-labs/osmosis/v24/x/mint/types"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/keeper/gov"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
 )
 
 func (s *KeeperTestSuite) createGammPool(denoms []string) uint64 {
@@ -18,8 +19,8 @@ func (s *KeeperTestSuite) createGammPool(denoms []string) uint64 {
 	for _, denom := range denoms {
 		coins = coins.Add(sdk.NewInt64Coin(denom, 1000000000000000000))
 		poolAssets = append(poolAssets, balancer.PoolAsset{
-			Weight: sdk.NewInt(100),
-			Token:  sdk.NewCoin(denom, sdk.NewInt(1000000000000000000)),
+			Weight: osmomath.NewInt(100),
+			Token:  sdk.NewCoin(denom, osmomath.NewInt(1000000000000000000)),
 		})
 	}
 
@@ -30,8 +31,8 @@ func (s *KeeperTestSuite) createGammPool(denoms []string) uint64 {
 	s.Require().NoError(err)
 
 	msg := balancer.NewMsgCreateBalancerPool(acc1, balancer.PoolParams{
-		SwapFee: sdk.NewDecWithPrec(1, 2),
-		ExitFee: sdk.ZeroDec(),
+		SwapFee: osmomath.NewDecWithPrec(1, 2),
+		ExitFee: osmomath.ZeroDec(),
 	}, poolAssets, "")
 	poolId, err := s.App.PoolManagerKeeper.CreatePool(s.Ctx, msg)
 	s.Require().NoError(err)

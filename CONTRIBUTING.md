@@ -16,6 +16,8 @@ If you have a feature request, please use the [feature-request repo](https://git
 
 Once you find an existing issue that you want to work on or if you have a new issue to create, continue below.
 
+Important note to contributors: We deeply value your contributions. However, due to a large influx of airdrop hunters, we are currently unable to accept small lint changes from first-time contributors. We encourage you to look for issues that offer more substantial contributions to the project or issues from the **good first issue** label. This helps us maintain the quality and integrity of the codebase, and provides a more meaningful experience for you as a contributor.
+
 ## Proposing changes
 
 To contribute a change proposal, use the following workflow:
@@ -219,13 +221,13 @@ func TestGetPoolAssetsByDenom(t *testing.T) {
             poolAssets: []balancer.PoolAsset {
                 {
                     Token:  sdk.NewInt64Coin("uosmo", 1e12),
-                    Weight: sdk.NewInt(100),
+                    Weight: osmomath.NewInt(100),
                 },
             },
             expectedPoolAssetsByDenom: map[string]balancer.PoolAsset {
                 "uosmo": {
                     Token:  sdk.NewInt64Coin("uosmo", 1e12),
-                    Weight: sdk.NewInt(100),
+                    Weight: osmomath.NewInt(100),
                 },
             },
         },
@@ -234,10 +236,10 @@ func TestGetPoolAssetsByDenom(t *testing.T) {
             poolAssets: []balancer.PoolAsset {
                 {
                     Token:  sdk.NewInt64Coin("uosmo", 1e12),
-                    Weight: sdk.NewInt(100),
+                    Weight: osmomath.NewInt(100),
                 }, {
                     Token:  sdk.NewInt64Coin("uosmo", 123),
-                    Weight: sdk.NewInt(400),
+                    Weight: osmomath.NewInt(400),
                 },
             },
             err: fmt.Errorf(balancer.ErrMsgFormatRepeatingPoolAssetsNotAllowed, "uosmo"),
@@ -333,7 +335,7 @@ For v6.x, and v4.x, most PRs to them should go to main and get a "backport" labe
 
 ### How to build proto files. (rm -rf vendor/ && make build-reproducible once docker is installed)
 
-You can do rm -rf vendor and make build-reproducible to redownload all dependencies - this should pull the latest docker image of Osmosis. You should also make sure to do make proto-all to auto-generate your protobuf files. Makes ure you have docker installed.
+You can do rm -rf vendor and make build-reproducible to redownload all dependencies - this should pull the latest docker image of Osmosis. You should also make sure to do make proto-all to auto-generate your protobuf files. Makes sure you have docker installed.
 
 If you get something like `W0503 22:16:30.068560 158 services.go:38] No HttpRule found for method: Msg.CreateBalancerPool` feel free to ignore that.
 
@@ -343,7 +345,7 @@ You can also feel free to do `make format` if you're getting errors related to `
 
 There are several steps that go into a major release
 
-- The GitHub release is created via this [GitHub workflow](https://github.com/osmosis-labs/osmosis/blob/main/.github/workflows/release.yml). The workflow is manually triggered from the [osmosis-ci repository](https://github.com/osmosis-labs/osmosis-ci). The workflow uses the `make build-reproducible` command to create the `osmosisd` binaries using the default [Makefile](https://github.com/osmosis-labs/osmosis/blob/main/Makefile#L99).
+- The GitHub release is created in our private repo via this [GitHub workflow](https://github.com/osmosis-labs/osmosis-ci/blob/main/.github/workflows/create-release.yaml). The workflow is manually triggered from the [osmosis-ci repository](https://github.com/osmosis-labs/osmosis-ci). The workflow uses the `make build-reproducible` command to create the `osmosisd` binaries using the default [Makefile](https://github.com/osmosis-labs/osmosis/blob/main/Makefile#L99).
 
 - Make a PR to main, with a cosmovisor config, generated in tandem with the binaries from tool.
   - Should be its own PR, as it may get denied for Fork upgrades.
@@ -495,7 +497,7 @@ Additionally, this affects `LastResultsHash` because it contains a `Data` field 
 Version A
 
 ```go
-func (sk Keeper) validateAmount(ctx context.Context, amount sdk.Int) error {
+func (sk Keeper) validateAmount(ctx context.Context, amount osmomath.Int) error {
     if amount.IsNegative() {
         return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "amount must be positive or zero")
     }
@@ -506,7 +508,7 @@ func (sk Keeper) validateAmount(ctx context.Context, amount sdk.Int) error {
 Version B
 
 ```go
-func (sk Keeper) validateAmount(ctx context.Context, amount sdk.Int) error {
+func (sk Keeper) validateAmount(ctx context.Context, amount osmomath.Int) error {
     if amount.IsNegative() || amount.IsZero() {
         return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "amount must be positive")
     }
@@ -613,8 +615,8 @@ We communicate with various integrators if they'd like release-blocking QA testi
     * Chainapsis has communicated wanting a series of osmosis-frontend functionalities to be checked for correctness on a testnet as a release blocking item
 
 [1]:https://github.com/cosmos/cosmos-sdk/blob/d11196aad04e57812dbc5ac6248d35375e6603af/baseapp/abci.go#L293-L303
-[2]:https://github.com/tendermint/tendermint/blob/9f76e8da150414ce73eed2c4f248947b657c7587/proto/tendermint/types/types.proto#L70-L77
-[3]:https://github.com/tendermint/tendermint/blob/main/types/results.go#L47-L54
+[2]:https://github.com/cometbft/cometbft/blob/9f76e8da150414ce73eed2c4f248947b657c7587/proto/tendermint/types/types.proto#L70-L77
+[3]:https://github.com/cometbft/cometbft/blob/main/types/results.go#L47-L54
 [4]:https://github.com/osmosis-labs/cosmos-sdk/blob/5c9a51c277d067e0ec5cf48df30a85fae95bcd14/store/rootmulti/store.go#L430
 [5]:https://github.com/osmosis-labs/cosmos-sdk/blob/5c9a51c277d067e0ec5cf48df30a85fae95bcd14/store/types/commit_info.go#L40
 
@@ -655,3 +657,21 @@ Thus, from the user's perspective, attempting to execute a swap that would cause
 #### Example 2: Bulk Coin Sends in Begin/EndBlock
 
 A much less obvious example of a panic trigger is running `SendCoins` on arbitrary input coins in begin/endblock, especially if the coins that can be included have logic that can trigger panics (e.g. blacklisted accounts for CW20 tokens). The solution in this case would be to transfer coins one by one with `SendCoin` and verifying each coin so that bad ones could be skipped.
+
+## Debug Osmosis Node VS Code & Delve
+
+1. Build the binary without stripping away debug symbols
+- Make sure `ldflags += -w -s` is not present
+- We have a vs code task named `build-debug` that builds the debug binary
+
+2. Start Osmosis node with the binary from step 1.
+
+3. Run "Attach to running osmosisd process" VS Code debug configuration
+
+What it does:
+- Runs a vs code background task that starts a delve server and attaches to the Osmosis node process ID
+- Attaches VS code project to delve and allows you to set breakpoints
+
+FAQ
+- Can this be used with localosmosis or inside Docker?
+  * Not currently but possible. Would need to run the delve server inside the container and expose the debug port

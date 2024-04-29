@@ -1,12 +1,14 @@
 package concentrated_liquidity
 
 import (
+	"fmt"
 	"strconv"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils/accum"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
 )
 
 var emptyCoins = sdk.DecCoins(nil)
@@ -23,7 +25,7 @@ func (k Keeper) createSpreadRewardAccumulator(ctx sdk.Context, poolId uint64) er
 
 // GetSpreadRewardAccumulator gets the spread reward accumulator object using the given poolOd
 // returns error if accumulator for the given poolId does not exist.
-func (k Keeper) GetSpreadRewardAccumulator(ctx sdk.Context, poolId uint64) (accum.AccumulatorObject, error) {
+func (k Keeper) GetSpreadRewardAccumulator(ctx sdk.Context, poolId uint64) (*accum.AccumulatorObject, error) {
 	return accum.GetAccumulator(ctx.KVStore(k.storeKey), types.KeySpreadRewardPoolAccumulator(poolId))
 }
 
@@ -43,7 +45,7 @@ func (k Keeper) GetSpreadRewardAccumulator(ctx sdk.Context, poolId uint64) (accu
 // - fails to create a new position.
 // - fails to prepare the accumulator for update.
 // - fails to update the position's accumulator.
-func (k Keeper) initOrUpdatePositionSpreadRewardAccumulator(ctx sdk.Context, poolId uint64, lowerTick, upperTick int64, positionId uint64, liquidityDelta sdk.Dec) error {
+func (k Keeper) initOrUpdatePositionSpreadRewardAccumulator(ctx sdk.Context, poolId uint64, lowerTick, upperTick int64, positionId uint64, liquidityDelta osmomath.Dec) error {
 	// Get the spread reward accumulator for the position's pool.
 	spreadRewardAccumulator, err := k.GetSpreadRewardAccumulator(ctx, poolId)
 	if err != nil {
@@ -60,7 +62,8 @@ func (k Keeper) initOrUpdatePositionSpreadRewardAccumulator(ctx sdk.Context, poo
 		return err
 	}
 
-	spreadRewardGrowthInside := spreadRewardAccumulator.GetValue().Sub(spreadRewardGrowthOutside)
+	// Note: this is SafeSub because interval accumulation is allowed to be negative.
+	spreadRewardGrowthInside, _ := spreadRewardAccumulator.GetValue().SafeSub(spreadRewardGrowthOutside)
 
 	if !hasPosition {
 		if !liquidityDelta.IsPositive() {
@@ -136,15 +139,10 @@ func (k Keeper) getSpreadRewardGrowthOutside(ctx sdk.Context, poolId uint64, low
 //
 // The value is chosen as if all of the spread rewards earned to date had occurred below the tick.
 // Returns error if the pool with the given id does exist or if fails to get the spread reward accumulator.
-func (k Keeper) getInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTick(ctx sdk.Context, poolId uint64, tick int64) (sdk.DecCoins, error) {
-	pool, err := k.getPoolById(ctx, poolId)
-	if err != nil {
-		return sdk.DecCoins{}, err
-	}
-
+func (k Keeper) getInitialSpreadRewardGrowthOppositeDirectionOfLastTraversalForTick(ctx sdk.Context, pool types.ConcentratedPoolExtension, tick int64) (sdk.DecCoins, error) {
 	currentTick := pool.GetCurrentTick()
 	if currentTick >= tick {
-		spreadRewardAccumulator, err := k.GetSpreadRewardAccumulator(ctx, poolId)
+		spreadRewardAccumulator, err := k.GetSpreadRewardAccumulator(ctx, pool.GetId())
 		if err != nil {
 			return sdk.DecCoins{}, err
 		}
@@ -177,6 +175,11 @@ func (k Keeper) collectSpreadRewards(ctx sdk.Context, sender sdk.AccAddress, pos
 		return sdk.Coins{}, err
 	}
 
+	// Early return, emit no events if there is no spread rewards to claim.
+	if spreadRewardsClaimed.IsZero() {
+		return sdk.Coins{}, nil
+	}
+
 	// Send the claimed spread rewards from the pool's address to the owner's address.
 	pool, err := k.getPoolById(ctx, position.PoolId)
 	if err != nil {
@@ -191,6 +194,7 @@ func (k Keeper) collectSpreadRewards(ctx sdk.Context, sender sdk.AccAddress, pos
 		sdk.NewEvent(
 			types.TypeEvtCollectSpreadRewards,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
+			sdk.NewAttribute(types.AttributeKeyPoolId, strconv.FormatUint(pool.GetId(), 10)),
 			sdk.NewAttribute(types.AttributeKeyPositionId, strconv.FormatUint(positionId, 10)),
 			sdk.NewAttribute(types.AttributeKeyTokensOut, spreadRewardsClaimed.String()),
 		),
@@ -251,12 +255,37 @@ func (k Keeper) prepareClaimableSpreadRewards(ctx sdk.Context, positionId uint64
 	}
 
 	// Claim rewards, set the unclaimed rewards to zero, and update the position's accumulator value to reflect the current accumulator value.
-	spreadRewardsClaimed, forfeitedDust, err := updateAccumAndClaimRewards(spreadRewardAccumulator, positionKey, spreadRewardGrowthOutside)
+	spreadRewardsClaimedScaled, forfeitedDustScaled, err := updateAccumAndClaimRewards(spreadRewardAccumulator, positionKey, spreadRewardGrowthOutside)
 	if err != nil {
 		return nil, err
 	}
 
-	// add foreited dust back to the global accumulator
+	spreadFactorScalingFactor, err := k.getSpreadFactorScalingFactorForPool(ctx, position.PoolId)
+	if err != nil {
+		return nil, err
+	}
+
+	// We scale the spread factor per-unit of liquidity accumulator up to avoid truncation to zero.
+	// However, once we compute the total for the liquidity entitlement, we must scale it back down.
+	// We always truncate down in the pool's favor.
+	spreadRewardsClaimed := sdk.NewCoins()
+	forfeitedDust := sdk.DecCoins{}
+	if spreadFactorScalingFactor.Equal(oneDec) {
+		// If the scaling factor is 1, we don't need to scale down the spread rewards.
+		// We also use the forfeited dust calculated updateAccumAndClaimRewards since it is already scaled down.
+		spreadRewardsClaimed = spreadRewardsClaimedScaled
+		forfeitedDust = forfeitedDustScaled
+	} else {
+		// If the scaling factor is not 1, we scale down the spread rewards and throw away the dust.
+		for _, coin := range spreadRewardsClaimedScaled {
+			scaledCoinAmt := scaleDownSpreadRewardAmount(coin.Amount, spreadFactorScalingFactor)
+			if !scaledCoinAmt.IsZero() {
+				spreadRewardsClaimed = append(spreadRewardsClaimed, sdk.NewCoin(coin.Denom, scaledCoinAmt))
+			}
+		}
+	}
+
+	// add forfeited dust back to the global accumulator
 	if !forfeitedDust.IsZero() {
 		// Refetch the spread reward accumulator as the number of shares has changed after claiming.
 		spreadRewardAccumulator, err := k.GetSpreadRewardAccumulator(ctx, position.PoolId)
@@ -264,17 +293,14 @@ func (k Keeper) prepareClaimableSpreadRewards(ctx sdk.Context, positionId uint64
 			return nil, err
 		}
 
-		totalSharesRemaining, err := spreadRewardAccumulator.GetTotalShares()
-		if err != nil {
-			return nil, err
-		}
+		totalSharesRemaining := spreadRewardAccumulator.GetTotalShares()
 
 		// if there are no shares remaining, the dust is ignored. Otherwise, it is added back to the global accumulator.
 		// Total shares remaining can be zero if we claim in withdrawPosition for the last position in the pool.
 		// The shares are decremented in osmoutils/accum.ClaimRewards.
 		if !totalSharesRemaining.IsZero() {
-			forfeitedDustPerShare := forfeitedDust.QuoDecTruncate(totalSharesRemaining)
-			spreadRewardAccumulator.AddToAccumulator(forfeitedDustPerShare)
+			forfeitedDustPerShareScaled := forfeitedDust.QuoDecTruncate(totalSharesRemaining)
+			spreadRewardAccumulator.AddToAccumulator(forfeitedDustPerShareScaled)
 		}
 	}
 
@@ -297,7 +323,7 @@ func calculateSpreadRewardGrowth(targetTick int64, ticksSpreadRewardGrowthOpposi
 // as we must set the position's accumulator value to the sum of
 // - the spread reward/uptime growth inside at position creation time (position.InitAccumValue)
 // - spread reward/uptime growth outside at the current block time (spreadRewardGrowthOutside/uptimeGrowthOutside)
-func updatePositionToInitValuePlusGrowthOutside(accumulator accum.AccumulatorObject, positionKey string, growthOutside sdk.DecCoins) error {
+func updatePositionToInitValuePlusGrowthOutside(accumulator *accum.AccumulatorObject, positionKey string, growthOutside sdk.DecCoins) error {
 	position, err := accum.GetPosition(accumulator, positionKey)
 	if err != nil {
 		return err
@@ -316,4 +342,53 @@ func updatePositionToInitValuePlusGrowthOutside(accumulator accum.AccumulatorObj
 		return err
 	}
 	return nil
+}
+
+// scaleDownSpreadRewardAmount scales down the spread reward amount by the scaling factor.
+func scaleDownSpreadRewardAmount(incentiveAmount osmomath.Int, scalingFactor osmomath.Dec) (scaledTotalEmittedAmount osmomath.Int) {
+	return incentiveAmount.ToLegacyDec().QuoTruncateMut(scalingFactor).TruncateInt()
+}
+
+// getSpreadFactorScalingFactorForPool returns the spread factor scaling factor for the given pool.
+// It returns perUnitLiqScalingFactor if the pool is migrated or if the pool ID is greater than the migration threshold.
+// It returns oneDecScalingFactor otherwise.
+func (k Keeper) getSpreadFactorScalingFactorForPool(ctx sdk.Context, poolID uint64) (osmomath.Dec, error) {
+	migrationThreshold, err := k.GetSpreadFactorPoolIDMigrationThreshold(ctx)
+	if err != nil {
+		return osmomath.Dec{}, err
+	}
+
+	// If the given pool ID is greater than the migration threshold, we return the perUnitLiqScalingFactor.
+	if poolID > migrationThreshold {
+		return perUnitLiqScalingFactor, nil
+	}
+
+	// If the given pool ID is one of the migrated spread factor accumulator pool IDs, we return the perUnitLiqScalingFactor.
+	_, isMigrated := types.MigratedSpreadFactorAccumulatorPoolIDsV25[poolID]
+	if isMigrated {
+		return perUnitLiqScalingFactor, nil
+	}
+
+	// Otherwise, we return the oneDecScalingFactor.
+	return oneDecScalingFactor, nil
+}
+
+// SetSpreadFactorPoolIDMigrationThreshold sets the pool ID migration threshold to the last pool ID for spread factor accumulators.
+func (k Keeper) SetSpreadFactorPoolIDMigrationThreshold(ctx sdk.Context, poolIDThreshold uint64) {
+	store := ctx.KVStore(k.storeKey)
+	store.Set(types.KeySpreadRewardAccumulatorMigrationThreshold, sdk.Uint64ToBigEndian(poolIDThreshold))
+}
+
+// GetSpreadFactorPoolIDMigrationThreshold returns the pool ID migration threshold for spread factor accumulators.
+func (k Keeper) GetSpreadFactorPoolIDMigrationThreshold(ctx sdk.Context) (uint64, error) {
+	store := ctx.KVStore(k.storeKey)
+
+	bz := store.Get(types.KeySpreadRewardAccumulatorMigrationThreshold)
+	if bz == nil {
+		return 0, fmt.Errorf("spread reward accumulator migration threshold not found")
+	}
+
+	threshold := sdk.BigEndianToUint64(bz)
+
+	return threshold, nil
 }

@@ -4,16 +4,17 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils"
 	"github.com/osmosis-labs/osmosis/osmoutils/osmocli"
-	"github.com/osmosis-labs/osmosis/v16/app"
-	"github.com/osmosis-labs/osmosis/v16/x/poolmanager/client/cli"
-	"github.com/osmosis-labs/osmosis/v16/x/poolmanager/client/queryproto"
-	poolmanagertestutil "github.com/osmosis-labs/osmosis/v16/x/poolmanager/client/testutil"
-	"github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/app"
+	"github.com/osmosis-labs/osmosis/v24/x/poolmanager/client/cli"
+	"github.com/osmosis-labs/osmosis/v24/x/poolmanager/client/queryproto"
+	poolmanagertestutil "github.com/osmosis-labs/osmosis/v24/x/poolmanager/client/testutil"
+	"github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -22,7 +23,6 @@ import (
 	clitestutil "github.com/cosmos/cosmos-sdk/testutil/cli"
 	"github.com/cosmos/cosmos-sdk/testutil/network"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	banktestutil "github.com/cosmos/cosmos-sdk/x/bank/client/testutil"
 )
 
 type IntegrationTestSuite struct {
@@ -40,9 +40,11 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.cfg = app.DefaultConfig()
 	s.cfg.GenesisState = poolmanagertestutil.UpdateTxFeeDenom(s.cfg.Codec, s.cfg.BondDenom)
 
-	s.network = network.New(s.T(), s.cfg)
+	net, err := network.New(s.T(), s.T().TempDir(), s.cfg)
+	s.Require().NoError(err)
+	s.network = net
 
-	_, err := s.network.WaitForHeight(1)
+	_, err = s.network.WaitForHeight(1)
 	s.Require().NoError(err)
 
 	val := s.network.Validators[0]
@@ -77,7 +79,7 @@ func TestNewSwapExactAmountOutCmd(t *testing.T) {
 			ExpectedMsg: &types.MsgSwapExactAmountOut{
 				Sender:           testAddresses[0].String(),
 				Routes:           []types.SwapAmountOutRoute{{PoolId: 1, TokenInDenom: "node0token"}},
-				TokenInMaxAmount: sdk.NewIntFromUint64(20),
+				TokenInMaxAmount: osmomath.NewIntFromUint64(20),
 				TokenOut:         sdk.NewInt64Coin("stake", 10),
 			},
 		},
@@ -176,7 +178,7 @@ func TestNewSwapExactAmountInCmd(t *testing.T) {
 				Sender:            testAddresses[0].String(),
 				Routes:            []types.SwapAmountInRoute{{PoolId: 1, TokenOutDenom: "node0token"}},
 				TokenIn:           sdk.NewInt64Coin("stake", 10),
-				TokenOutMinAmount: sdk.NewIntFromUint64(3),
+				TokenOutMinAmount: osmomath.NewIntFromUint64(3),
 			},
 		},
 	}
@@ -261,14 +263,15 @@ func (s *IntegrationTestSuite) TestNewCreatePoolCmd() {
 		keyring.English, sdk.FullFundraiserPath, keyring.DefaultBIP39Passphrase, hd.Secp256k1)
 	s.Require().NoError(err)
 
-	newAddr := sdk.AccAddress(info.GetPubKey().Address())
+	pubkey, err := info.GetPubKey()
+	newAddr := sdk.AccAddress(pubkey.Address())
 
-	_, err = banktestutil.MsgSendExec(
+	_, err = clitestutil.MsgSendExec(
 		val.ClientCtx,
 		val.Address,
 		newAddr,
 		sdk.NewCoins(sdk.NewInt64Coin(s.cfg.BondDenom, 200000000), sdk.NewInt64Coin("node0token", 20000)), fmt.Sprintf("--%s=true", flags.FlagSkipConfirmation),
-		fmt.Sprintf("--%s=%s", flags.FlagBroadcastMode, flags.BroadcastBlock),
+		fmt.Sprintf("--%s=%s", flags.FlagBroadcastMode, flags.BroadcastSync),
 		osmoutils.DefaultFeeString(s.cfg),
 	)
 	s.Require().NoError(err)
@@ -516,7 +519,7 @@ func (s *IntegrationTestSuite) TestNewCreatePoolCmd() {
 				fmt.Sprintf("--%s=%s", flags.FlagFrom, newAddr),
 				// common args
 				fmt.Sprintf("--%s=true", flags.FlagSkipConfirmation),
-				fmt.Sprintf("--%s=%s", flags.FlagBroadcastMode, flags.BroadcastBlock),
+				fmt.Sprintf("--%s=%s", flags.FlagBroadcastMode, flags.BroadcastSync),
 				osmoutils.DefaultFeeString(s.cfg),
 				fmt.Sprintf("--%s=%s", flags.FlagGas, fmt.Sprint(400000)),
 			}
@@ -540,4 +543,24 @@ func (s *IntegrationTestSuite) TestNewCreatePoolCmd() {
 			}
 		})
 	}
+}
+
+func TestEstimateTradeBasedOnPriceImpact(t *testing.T) {
+	desc, _ := cli.GetCmdEstimateTradeBasedOnPriceImpact()
+	tcs := map[string]osmocli.QueryCliTestCase[*queryproto.EstimateTradeBasedOnPriceImpactRequest]{
+		"basic test": {
+			Cmd: "100node0token stake 1 0.01 0.02",
+			ExpectedQuery: &queryproto.EstimateTradeBasedOnPriceImpactRequest{
+				FromCoin: sdk.Coin{
+					Denom:  "node0token",
+					Amount: sdk.NewInt(100),
+				},
+				ToCoinDenom:    "stake",
+				PoolId:         1,
+				MaxPriceImpact: sdk.MustNewDecFromStr("0.01"), // equivalent to 0.01
+				ExternalPrice:  sdk.MustNewDecFromStr("0.02"), // equivalent to 0.02
+			},
+		},
+	}
+	osmocli.RunQueryTestCases(t, desc, tcs)
 }

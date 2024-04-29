@@ -5,7 +5,10 @@ import (
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+
+	govtypesv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 )
 
 const (
@@ -14,19 +17,17 @@ const (
 )
 
 func init() {
-	govtypes.RegisterProposalType(ProposalTypeCreateConcentratedLiquidityPool)
-	govtypes.RegisterProposalTypeCodec(&CreateConcentratedLiquidityPoolsProposal{}, "osmosis/CreateCLPoolsProposal")
-	govtypes.RegisterProposalType(ProposalTypeTickSpacingDecrease)
-	govtypes.RegisterProposalTypeCodec(&TickSpacingDecreaseProposal{}, "osmosis/TickSpacingDecreaseProposal")
+	govtypesv1.RegisterProposalType(ProposalTypeCreateConcentratedLiquidityPool)
+	govtypesv1.RegisterProposalType(ProposalTypeTickSpacingDecrease)
 }
 
 var (
-	_ govtypes.Content = &CreateConcentratedLiquidityPoolsProposal{}
-	_ govtypes.Content = &TickSpacingDecreaseProposal{}
+	_ govtypesv1.Content = &CreateConcentratedLiquidityPoolsProposal{}
+	_ govtypesv1.Content = &TickSpacingDecreaseProposal{}
 )
 
 // NewCreateConcentratedLiquidityPoolsProposal returns a new instance of a create concentrated liquidity pool proposal struct.
-func NewCreateConcentratedLiquidityPoolsProposal(title, description string, records []PoolRecord) govtypes.Content {
+func NewCreateConcentratedLiquidityPoolsProposal(title, description string, records []PoolRecord) govtypesv1.Content {
 	return &CreateConcentratedLiquidityPoolsProposal{
 		Title:       title,
 		Description: description,
@@ -49,7 +50,7 @@ func (p *CreateConcentratedLiquidityPoolsProposal) ProposalType() string {
 
 // ValidateBasic validates a governance proposal's abstract and basic contents
 func (p *CreateConcentratedLiquidityPoolsProposal) ValidateBasic() error {
-	err := govtypes.ValidateAbstract(p)
+	err := govtypesv1.ValidateAbstract(p)
 	if err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func (p *CreateConcentratedLiquidityPoolsProposal) ValidateBasic() error {
 		}
 
 		spreadFactor := record.SpreadFactor
-		if spreadFactor.IsNegative() || spreadFactor.GTE(sdk.OneDec()) {
+		if spreadFactor.IsNegative() || spreadFactor.GTE(osmomath.OneDec()) {
 			return InvalidSpreadFactorError{ActualSpreadFactor: spreadFactor}
 		}
 	}
@@ -83,7 +84,7 @@ func (p *CreateConcentratedLiquidityPoolsProposal) ValidateBasic() error {
 func (p CreateConcentratedLiquidityPoolsProposal) String() string {
 	recordsStr := ""
 	for _, record := range p.PoolRecords {
-		recordsStr = recordsStr + fmt.Sprintf("(Denom0: %s, Denom1: %s, TickSpacing: %d, ExponentAtPriceOne: %d, SpreadFactor: %d) ", record.Denom0, record.Denom1, record.TickSpacing, record.ExponentAtPriceOne, record.SpreadFactor)
+		recordsStr = recordsStr + fmt.Sprintf("(Denom0: %s, Denom1: %s, TickSpacing: %d, SpreadFactor: %d) ", record.Denom0, record.Denom1, record.TickSpacing, record.SpreadFactor)
 	}
 
 	var b strings.Builder
@@ -95,7 +96,7 @@ Records:     %s
 	return b.String()
 }
 
-func NewTickSpacingDecreaseProposal(title, description string, records []PoolIdToTickSpacingRecord) govtypes.Content {
+func NewTickSpacingDecreaseProposal(title, description string, records []PoolIdToTickSpacingRecord) govtypesv1.Content {
 	return &TickSpacingDecreaseProposal{
 		Title:                      title,
 		Description:                description,
@@ -119,7 +120,7 @@ func (p *TickSpacingDecreaseProposal) ProposalType() string {
 
 // ValidateBasic validates a governance proposal's abstract and basic contents.
 func (p *TickSpacingDecreaseProposal) ValidateBasic() error {
-	err := govtypes.ValidateAbstract(p)
+	err := govtypesv1.ValidateAbstract(p)
 	if err != nil {
 		return err
 	}

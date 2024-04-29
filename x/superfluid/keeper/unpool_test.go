@@ -5,15 +5,16 @@ import (
 	"time"
 
 	errorsmod "cosmossdk.io/errors"
-	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/balancer"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
 )
 
 var (
@@ -21,20 +22,20 @@ var (
 
 	// pool assets
 	defaultFooAsset balancer.PoolAsset = balancer.PoolAsset{
-		Weight: sdk.NewInt(100),
-		Token:  sdk.NewCoin("foo", sdk.NewInt(10000)),
+		Weight: osmomath.NewInt(100),
+		Token:  sdk.NewCoin("foo", osmomath.NewInt(10000)),
 	}
 	defaultBondDenomAsset balancer.PoolAsset = balancer.PoolAsset{
-		Weight: sdk.NewInt(100),
-		Token:  sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(10000)),
+		Weight: osmomath.NewInt(100),
+		Token:  sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(10000)),
 	}
 	defaultPoolAssets []balancer.PoolAsset = []balancer.PoolAsset{defaultFooAsset, defaultBondDenomAsset}
 	defaultAcctFunds  sdk.Coins            = sdk.NewCoins(
-		sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(10000000000)),
-		sdk.NewCoin("uosmo", sdk.NewInt(10000000000)),
-		sdk.NewCoin("foo", sdk.NewInt(10000000)),
-		sdk.NewCoin("bar", sdk.NewInt(10000000)),
-		sdk.NewCoin("baz", sdk.NewInt(10000000)),
+		sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(10000000000)),
+		sdk.NewCoin("uosmo", osmomath.NewInt(10000000000)),
+		sdk.NewCoin("foo", osmomath.NewInt(10000000)),
+		sdk.NewCoin("bar", osmomath.NewInt(10000000)),
+		sdk.NewCoin("baz", osmomath.NewInt(10000000)),
 	)
 )
 
@@ -100,7 +101,7 @@ func (s *KeeperTestSuite) TestUnpool() {
 			poolCreateAcc := delAddrs[0]
 			poolJoinAcc := delAddrs[1]
 			for _, acc := range delAddrs {
-				err := simapp.FundAccount(bankKeeper, ctx, acc, defaultAcctFunds)
+				err := testutil.FundAccount(bankKeeper, ctx, acc, defaultAcctFunds)
 				s.Require().NoError(err)
 			}
 
@@ -109,8 +110,8 @@ func (s *KeeperTestSuite) TestUnpool() {
 
 			// create pool of "stake" and "foo"
 			msg := balancer.NewMsgCreateBalancerPool(poolCreateAcc, balancer.PoolParams{
-				SwapFee: sdk.NewDecWithPrec(1, 2),
-				ExitFee: sdk.NewDec(0),
+				SwapFee: osmomath.NewDecWithPrec(1, 2),
+				ExitFee: osmomath.NewDec(0),
 			}, defaultPoolAssets, defaultFutureGovernor)
 
 			poolId, err := poolmanagerKeeper.CreatePool(ctx, msg)
@@ -122,7 +123,7 @@ func (s *KeeperTestSuite) TestUnpool() {
 			s.Require().NoError(err)
 			balanceAfterJoin := bankKeeper.GetAllBalances(ctx, poolJoinAcc)
 
-			joinPoolAmt, _ := balanceBeforeJoin.SafeSub(balanceAfterJoin)
+			joinPoolAmt, _ := balanceBeforeJoin.SafeSub(balanceAfterJoin...)
 
 			pool, err := gammKeeper.GetPoolAndPoke(ctx, poolId)
 			s.Require().NoError(err)
@@ -212,8 +213,8 @@ func (s *KeeperTestSuite) TestUnpool() {
 
 			// exitPool has rounding difference,
 			// we test if correct amt has been exited and locked via comparing with rounding tolerance
-			roundingToleranceCoins := sdk.NewCoins(sdk.NewCoin(defaultFooAsset.Token.Denom, sdk.NewInt(5)), sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(5)))
-			roundDownTolerance, _ := joinPoolAmt.SafeSub(roundingToleranceCoins)
+			roundingToleranceCoins := sdk.NewCoins(sdk.NewCoin(defaultFooAsset.Token.Denom, osmomath.NewInt(5)), sdk.NewCoin(sdk.DefaultBondDenom, osmomath.NewInt(5)))
+			roundDownTolerance, _ := joinPoolAmt.SafeSub(roundingToleranceCoins...)
 			roundUpTolerance := joinPoolAmt.Add(roundingToleranceCoins...)
 			s.Require().True(cumulativeNewLockCoins.AmountOf("foo").GTE(roundDownTolerance.AmountOf("foo")))
 			s.Require().True(cumulativeNewLockCoins.AmountOf(sdk.DefaultBondDenom).GTE(roundDownTolerance.AmountOf(sdk.DefaultBondDenom)))
@@ -296,42 +297,42 @@ func (s *KeeperTestSuite) TestValidateGammLockForSuperfluid() {
 	}
 	testCases := map[string]sendTest{
 		"happy path": {
-			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", sdk.NewInt(100))),
+			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", osmomath.NewInt(100))),
 			accountToValidate: lockCreator,
 			poolIdToValidate:  1,
 			lockIdToValidate:  1,
 		},
 		"error: non-existent lock ID": {
-			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", sdk.NewInt(100))),
+			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", osmomath.NewInt(100))),
 			accountToValidate: lockCreator,
 			poolIdToValidate:  1,
 			lockIdToValidate:  2,
 			expectedError:     errorsmod.Wrap(lockuptypes.ErrLockupNotFound, fmt.Sprintf("lock with ID %d does not exist", 2)),
 		},
 		"error: mismatched owner": {
-			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", sdk.NewInt(100))),
+			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", osmomath.NewInt(100))),
 			accountToValidate: nonLockCreator,
 			poolIdToValidate:  1,
 			lockIdToValidate:  1,
 			expectedError:     lockuptypes.ErrNotLockOwner,
 		},
 		"error: more than one coin in lock": {
-			fundsToLock: sdk.NewCoins(sdk.NewCoin("gamm/pool/1", sdk.NewInt(100)),
-				sdk.NewCoin("gamm/pool/2", sdk.NewInt(100))),
+			fundsToLock: sdk.NewCoins(sdk.NewCoin("gamm/pool/1", osmomath.NewInt(100)),
+				sdk.NewCoin("gamm/pool/2", osmomath.NewInt(100))),
 			accountToValidate: lockCreator,
 			poolIdToValidate:  1,
 			lockIdToValidate:  1,
 			expectedError:     types.ErrMultipleCoinsLockupNotSupported,
 		},
 		"error: wrong pool ID provided when compared to lock denom": {
-			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", sdk.NewInt(100))),
+			fundsToLock:       sdk.NewCoins(sdk.NewCoin("gamm/pool/1", osmomath.NewInt(100))),
 			accountToValidate: lockCreator,
 			poolIdToValidate:  2,
 			lockIdToValidate:  1,
 			expectedError:     types.UnexpectedDenomError{ExpectedDenom: gammtypes.GetPoolShareDenom(2), ProvidedDenom: "gamm/pool/1"},
 		},
 		"error: right pool ID provided but not gamm/pool/ prefix": {
-			fundsToLock:       sdk.NewCoins(sdk.NewCoin("cl/pool/1", sdk.NewInt(100))),
+			fundsToLock:       sdk.NewCoins(sdk.NewCoin("cl/pool/1", osmomath.NewInt(100))),
 			accountToValidate: lockCreator,
 			poolIdToValidate:  1,
 			lockIdToValidate:  1,

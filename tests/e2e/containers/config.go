@@ -17,20 +17,20 @@ type ImageConfig struct {
 const (
 	// Current Git branch osmosis repo/version. It is meant to be built locally.
 	// It is used when skipping upgrade by setting OSMOSIS_E2E_SKIP_UPGRADE to true).
-	// This image should be pre-built with `make docker-build-debug` either in CI or locally.
+	// This image should be pre-built with `make e2e-docker-build-debug` either in CI or locally.
 	CurrentBranchOsmoRepository = "osmosis"
 	CurrentBranchOsmoTag        = "debug"
 	// Pre-upgrade osmosis repo/tag to pull.
 	// It should be uploaded to Docker Hub. OSMOSIS_E2E_SKIP_UPGRADE should be unset
 	// for this functionality to be used.
-	previousVersionOsmoRepository = "osmolabs/osmosis-dev"
-	previousVersionOsmoTag        = "v15.x-9fa047c2-1687827963"
+	previousVersionOsmoRepository = "osmolabs/osmosis"
+	previousVersionOsmoTag        = "24.0.0-alpine"
 	// Pre-upgrade repo/tag for osmosis initialization (this should be one version below upgradeVersion)
 	previousVersionInitRepository = "osmolabs/osmosis-e2e-init-chain"
-	previousVersionInitTag        = "v15.x-9fa047c2-1687827963"
+	previousVersionInitTag        = "24.0.0"
 	// Hermes repo/version for relayer
-	relayerRepository = "osmolabs/hermes"
-	relayerTag        = "1.3.0"
+	relayerRepository = "osmolabs/relayer"
+	relayerTag        = "1.5.1"
 )
 
 // Returns ImageConfig needed for running e2e test.
@@ -65,7 +65,7 @@ func NewImageConfig(isUpgrade, isFork bool) ImageConfig {
 		config.OsmosisTag = CurrentBranchOsmoTag
 	} else {
 		// Upgrades are run at the time when upgrade height is reached
-		// and are submitted via a governance proposal. Thefore, we
+		// and are submitted via a governance proposal. Therefore, we
 		// must start running the previous Osmosis version. Then, the node
 		// should auto-upgrade, at which point we can restart the updated
 		// Osmosis validator container.

@@ -15,10 +15,11 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/types/query"
 
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/balancer"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/v2types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/v2types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 var _ types.QueryServer = Querier{}
@@ -252,7 +253,7 @@ func (q Querier) CalcExitPoolCoinsFromShares(ctx context.Context, req *types.Que
 	exitFee := pool.GetExitFee(sdkCtx)
 
 	totalSharesAmount := pool.GetTotalShares()
-	if req.ShareInAmount.GTE(totalSharesAmount) || req.ShareInAmount.LTE(sdk.ZeroInt()) {
+	if req.ShareInAmount.GTE(totalSharesAmount) || req.ShareInAmount.LTE(osmomath.ZeroInt()) {
 		return nil, errorsmod.Wrapf(types.ErrInvalidMathApprox, "share ratio is zero or negative")
 	}
 
@@ -382,7 +383,9 @@ func (q Querier) SpotPrice(ctx context.Context, req *types.QuerySpotPriceRequest
 	}
 
 	return &types.QuerySpotPriceResponse{
-		SpotPrice: sp.String(),
+		// Note: truncation exists here to maintain backwards compatibility.
+		// This query has historically had 18 decimals in response.
+		SpotPrice: sp.Dec().String(),
 	}, nil
 }
 
@@ -411,16 +414,22 @@ func (q QuerierV2) SpotPrice(ctx context.Context, req *v2types.QuerySpotPriceReq
 	// Deeprecated: use alternate in x/poolmanager
 	// nolint: staticcheck
 	return &v2types.QuerySpotPriceResponse{
-		SpotPrice: sp.String(),
+		// Note: truncation exists here to maintain backwards compatibility.
+		// This query has historically had 18 decimals in response.
+		SpotPrice: sp.Dec().String(),
 	}, nil
 }
 
-// TotalLiquidity returns total liquidity across all pools.
+// TotalLiquidity returns total liquidity across all gamm pools.
 func (q Querier) TotalLiquidity(ctx context.Context, _ *types.QueryTotalLiquidityRequest) (*types.QueryTotalLiquidityResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	totalLiquidity, err := q.Keeper.GetTotalLiquidity(sdkCtx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 
 	return &types.QueryTotalLiquidityResponse{
-		Liquidity: q.Keeper.GetTotalLiquidity(sdkCtx),
+		Liquidity: totalLiquidity,
 	}, nil
 }
 
@@ -497,5 +506,20 @@ func (q Querier) ConcentratedPoolIdLinkFromCFMM(ctx context.Context, req *types.
 
 	return &types.QueryConcentratedPoolIdLinkFromCFMMResponse{
 		ConcentratedPoolId: poolIdEntering,
+	}, nil
+}
+
+func (q Querier) CFMMConcentratedPoolLinks(ctx context.Context, req *types.QueryCFMMConcentratedPoolLinksRequest) (*types.QueryCFMMConcentratedPoolLinksResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+
+	poolLinks, err := q.Keeper.GetAllMigrationInfo(sdk.UnwrapSDKContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.QueryCFMMConcentratedPoolLinksResponse{
+		MigrationRecords: &poolLinks,
 	}, nil
 }

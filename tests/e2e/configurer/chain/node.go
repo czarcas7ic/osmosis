@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/stretchr/testify/require"
-	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
-	coretypes "github.com/tendermint/tendermint/rpc/core/types"
 
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/containers"
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/initialization"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/containers"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/initialization"
 )
 
 type NodeConfig struct {
@@ -46,36 +46,69 @@ func NewNodeConfig(t *testing.T, initNode *initialization.Node, initConfig *init
 // Run runs a node container for the given nodeIndex.
 // The node configuration must be already added to the chain config prior to calling this
 // method.
-func (n *NodeConfig) Run() error {
-	n.t.Logf("starting node container: %s", n.Name)
-	resource, err := n.containerManager.RunNodeResource(n.chainId, n.Name, n.ConfigDir)
-	if err != nil {
-		return err
-	}
+func (n *NodeConfig) Run(rejectConfigDefaults bool) error {
+	maxRetries := 3
+	currentRetry := 0
 
-	hostPort := resource.GetHostPort("26657/tcp")
-	rpcClient, err := rpchttp.New("tcp://"+hostPort, "/websocket")
-	if err != nil {
-		return err
-	}
+	for currentRetry < maxRetries {
+		n.t.Logf("starting node container: %s", n.Name)
+		resource, err := n.containerManager.RunNodeResource(n.chainId, n.Name, n.ConfigDir, rejectConfigDefaults)
+		if err != nil {
+			return err
+		}
 
-	n.rpcClient = rpcClient
+		hostPort := resource.GetHostPort("26657/tcp")
+		rpcClient, err := rpchttp.New("tcp://"+hostPort, "/websocket")
+		if err != nil {
+			return err
+		}
 
-	require.Eventually(
-		n.t,
-		func() bool {
-			// This fails if unsuccessful.
-			_, err := n.QueryCurrentHeight()
-			if err != nil {
-				return false
+		n.rpcClient = rpcClient
+
+		success := false
+		timeout := time.After(time.Second * 10)
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-timeout:
+				n.t.Logf("Osmosis node failed to produce blocks")
+				// break out of the for loop, not just the select statement
+				goto Retry
+			case <-ticker.C:
+				_, err := n.QueryCurrentHeight()
+				if err == nil {
+					n.t.Logf("started node container: %s", n.Name)
+					success = true
+					break
+				}
 			}
-			n.t.Logf("started node container: %s", n.Name)
-			return true
-		},
-		2*time.Minute,
-		time.Second,
-		"Osmosis node failed to produce blocks",
-	)
+
+			if success {
+				break
+			}
+		}
+
+		if success {
+			break
+		}
+
+	Retry:
+		n.t.Logf("failed to start node container, retrying... (%d/%d)", currentRetry+1, maxRetries)
+		// Do not remove the node resource on the last retry
+		if currentRetry < maxRetries-1 {
+			err := n.containerManager.RemoveNodeResource(n.Name)
+			if err != nil {
+				return err
+			}
+		}
+		currentRetry++
+	}
+
+	if currentRetry >= maxRetries {
+		return fmt.Errorf("failed to start node container after %d retries", maxRetries)
+	}
 
 	if err := n.extractOperatorAddressIfValidator(); err != nil {
 		return err
@@ -94,6 +127,24 @@ func (n *NodeConfig) Stop() error {
 	return nil
 }
 
+func (n *NodeConfig) WaitForNumHeights(numBlocks int) {
+	targetHeight, err := n.QueryCurrentHeight()
+	require.NoError(n.t, err)
+	targetHeight += int64(numBlocks)
+	// Ensure the nodes are making progress.
+	doneCondition := func(syncInfo coretypes.SyncInfo) bool {
+		curHeight := syncInfo.LatestBlockHeight
+
+		if curHeight < targetHeight {
+			n.t.Logf("current block height is %d, waiting to reach: %d", curHeight, targetHeight)
+			return false
+		}
+
+		return !syncInfo.CatchingUp
+	}
+	n.WaitUntil(doneCondition)
+}
+
 // WaitUntil waits until node reaches doneCondition. Return nil
 // if reached, error otherwise.
 func (n *NodeConfig) WaitUntil(doneCondition func(syncInfo coretypes.SyncInfo) bool) {
@@ -109,7 +160,8 @@ func (n *NodeConfig) WaitUntil(doneCondition func(syncInfo coretypes.SyncInfo) b
 		}
 		return
 	}
-	n.t.Errorf("node %s timed out waiting for condition, latest block height was %d", n.Name, latestBlockHeight)
+	n.t.Logf("node %s timed out waiting for condition, latest block height was %d", n.Name, latestBlockHeight)
+	n.t.FailNow()
 }
 
 func (n *NodeConfig) extractOperatorAddressIfValidator() error {
@@ -120,7 +172,7 @@ func (n *NodeConfig) extractOperatorAddressIfValidator() error {
 
 	cmd := []string{"osmosisd", "debug", "addr", n.PublicKey}
 	n.t.Logf("extracting validator operator addresses for validator: %s", n.Name)
-	_, errBuf, err := n.containerManager.ExecCmd(n.t, n.Name, cmd, "")
+	_, errBuf, err := n.containerManager.ExecCmd(n.t, n.Name, cmd, "", false, false)
 	if err != nil {
 		return err
 	}

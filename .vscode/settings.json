@@ -1,5 +1,7 @@
 {
+  "cSpell.diagnosticLevel": "Hint",
   "tabnine.experimentalAutoImports": true,
+  "go.lintOnSave": "workspace",
   "go.lintTool": "golangci-lint",
   "go.lintFlags": [
     "--fast"
@@ -9,14 +11,14 @@
   "[go.mod]": {
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports": true
+      "source.organizeImports": "explicit"
     }
   },
   "[go]": {
     "editor.snippetSuggestions": "none",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports": true
+      "source.organizeImports": "explicit"
     }
   },
   "gopls": {
@@ -26,5 +28,15 @@
   "[proto3]": {
     "editor.defaultFormatter": "xaver.clang-format"
   },
-  "clang-format.style": "{BasedOnStyle: Google, IndentWidth: 2, ColumnLimit: 120, AlignConsecutiveAssignments: true, AlignConsecutiveDeclarations: true, SpacesInSquareBrackets: true}"
+  "clang-format.style": "{BasedOnStyle: Google, IndentWidth: 2, ColumnLimit: 120, AlignConsecutiveAssignments: true, AlignConsecutiveDeclarations: true, SpacesInSquareBrackets: true}",
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.autopep8"
+  },
+  "python.formatting.provider": "none",
+  "[go][go.mod]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "rust-analyzer.checkOnSave": false
 }

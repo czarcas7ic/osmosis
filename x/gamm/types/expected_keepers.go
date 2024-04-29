@@ -7,10 +7,11 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	incentivestypes "github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	"github.com/osmosis-labs/osmosis/v16/x/pool-incentives/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	incentivestypes "github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	"github.com/osmosis-labs/osmosis/v24/x/pool-incentives/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 	epochtypes "github.com/osmosis-labs/osmosis/x/epochs/types"
 )
 
@@ -23,6 +24,7 @@ type AccountKeeper interface {
 	SetAccount(ctx sdk.Context, acc authtypes.AccountI)
 
 	GetModuleAddressAndPermissions(moduleName string) (addr sdk.AccAddress, permissions []string)
+	GetModuleAccount(ctx sdk.Context, moduleName string) authtypes.ModuleAccountI
 }
 
 // BankKeeper defines the banking contract that must be fulfilled when
@@ -52,12 +54,13 @@ type CommunityPoolKeeper interface {
 
 // ConcentratedLiquidityKeeper defines the contract needed to be fulfilled for the concentrated liquidity keeper.
 type ConcentratedLiquidityKeeper interface {
+	SetParams(ctx sdk.Context, params cltypes.Params)
 	GetConcentratedPoolById(ctx sdk.Context, poolId uint64) (cltypes.ConcentratedPoolExtension, error)
-	CreateFullRangePosition(ctx sdk.Context, clPoolId uint64, owner sdk.AccAddress, coins sdk.Coins) (positionId uint64, amount0, amount1 sdk.Int, liquidity sdk.Dec, err error)
+	CreateFullRangePosition(ctx sdk.Context, clPoolId uint64, owner sdk.AccAddress, coins sdk.Coins) (positionData cltypes.CreateFullRangePositionData, err error)
 }
 
 // PoolManager defines the interface needed to be fulfilled for
-// the pool manger.
+// the pool manager.
 type PoolManager interface {
 	CreatePool(ctx sdk.Context, msg poolmanagertypes.CreatePoolMsg) (uint64, error)
 
@@ -68,29 +71,33 @@ type PoolManager interface {
 		sender sdk.AccAddress,
 		routes []poolmanagertypes.SwapAmountInRoute,
 		tokenIn sdk.Coin,
-		tokenOutMinAmount sdk.Int) (tokenOutAmount sdk.Int, err error)
+		tokenOutMinAmount osmomath.Int) (tokenOutAmount osmomath.Int, err error)
 
 	RouteExactAmountOut(ctx sdk.Context,
 		sender sdk.AccAddress,
 		routes []poolmanagertypes.SwapAmountOutRoute,
-		tokenInMaxAmount sdk.Int,
+		tokenInMaxAmount osmomath.Int,
 		tokenOut sdk.Coin,
-	) (tokenInAmount sdk.Int, err error)
+	) (tokenInAmount osmomath.Int, err error)
 
 	MultihopEstimateOutGivenExactAmountIn(
 		ctx sdk.Context,
 		routes []poolmanagertypes.SwapAmountInRoute,
 		tokenIn sdk.Coin,
-	) (tokenOutAmount sdk.Int, err error)
+	) (tokenOutAmount osmomath.Int, err error)
 
 	MultihopEstimateInGivenExactAmountOut(
 		ctx sdk.Context,
 		routes []poolmanagertypes.SwapAmountOutRoute,
-		tokenOut sdk.Coin) (tokenInAmount sdk.Int, err error)
+		tokenOut sdk.Coin) (tokenInAmount osmomath.Int, err error)
 
 	GetPoolModule(ctx sdk.Context, poolId uint64) (poolmanagertypes.PoolModuleI, error)
 
 	GetPool(ctx sdk.Context, poolId uint64) (poolmanagertypes.PoolI, error)
+
+	CreateConcentratedPoolAsPoolManager(ctx sdk.Context, msg poolmanagertypes.CreatePoolMsg) (poolmanagertypes.PoolI, error)
+
+	GetTradingPairTakerFee(ctx sdk.Context, denom0, denom1 string) (osmomath.Dec, error)
 }
 
 type PoolIncentivesKeeper interface {

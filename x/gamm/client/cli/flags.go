@@ -22,12 +22,12 @@ const (
 	PoolFileTargetPoolWeights        = "target-pool-weights"
 
 	FlagPoolId = "pool-id"
-	// Will be parsed to sdk.Int.
+	// Will be parsed to osmomath.Int.
 	FlagShareAmountOut = "share-amount-out"
 	// Will be parsed to []sdk.Coin.
 	FlagMaxAmountsIn = "max-amounts-in"
 
-	// Will be parsed to sdk.Int.
+	// Will be parsed to osmomath.Int.
 	FlagShareAmountIn = "share-amount-in"
 	// Will be parsed to []sdk.Coin.
 	FlagMinAmountsOut = "min-amounts-out"
@@ -39,9 +39,12 @@ const (
 	// Will be parsed to []string.
 	FlagSwapRouteDenoms = "swap-route-denoms"
 	// FlagScalingFactors represents the flag name for the scaling factors.
-	FlagScalingFactors = "scaling-factors"
+	FlagScalingFactors                 = "scaling-factors"
+	FlagScalingFactorControllerAddress = "scaling-factor-controller-address"
 
 	FlagMigrationRecords = "migration-records"
+
+	FlagPoolRecords = "pool-records"
 )
 
 type createBalancerPoolInputs struct {

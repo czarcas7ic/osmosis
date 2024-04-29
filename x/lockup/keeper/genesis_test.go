@@ -4,16 +4,17 @@ import (
 	"testing"
 	"time"
 
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
-	osmoapp "github.com/osmosis-labs/osmosis/v16/app"
-	"github.com/osmosis-labs/osmosis/v16/x/lockup"
-	"github.com/osmosis-labs/osmosis/v16/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	osmoapp "github.com/osmosis-labs/osmosis/v24/app"
+	"github.com/osmosis-labs/osmosis/v24/x/lockup"
+	"github.com/osmosis-labs/osmosis/v24/x/lockup/types"
 
-	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
 )
 
 var (
@@ -48,6 +49,9 @@ var (
 				Coins:                 sdk.Coins{sdk.NewInt64Coin("foo", 5000000)},
 			},
 		},
+		Params: &types.Params{
+			ForceUnlockAllowedAddresses: []string{acc1.String(), acc2.String()},
+		},
 	}
 )
 
@@ -71,7 +75,10 @@ func TestInitGenesis(t *testing.T) {
 		Denom:    "foo",
 		Duration: time.Second,
 	})
-	require.Equal(t, sdk.NewInt(30000000), acc)
+	require.Equal(t, osmomath.NewInt(30000000), acc)
+
+	params := app.LockupKeeper.GetParams(ctx)
+	require.Equal(t, params.ForceUnlockAllowedAddresses, []string{acc1.String(), acc2.String()})
 }
 
 func TestExportGenesis(t *testing.T) {
@@ -81,7 +88,7 @@ func TestExportGenesis(t *testing.T) {
 	genesis := testGenesis
 	app.LockupKeeper.InitGenesis(ctx, genesis)
 
-	err := simapp.FundAccount(app.BankKeeper, ctx, acc2, sdk.Coins{sdk.NewInt64Coin("foo", 5000000)})
+	err := testutil.FundAccount(app.BankKeeper, ctx, acc2, sdk.Coins{sdk.NewInt64Coin("foo", 5000000)})
 	require.NoError(t, err)
 	_, err = app.LockupKeeper.CreateLock(ctx, acc2, sdk.Coins{sdk.NewInt64Coin("foo", 5000000)}, time.Second*5)
 	require.NoError(t, err)
@@ -125,6 +132,9 @@ func TestExportGenesis(t *testing.T) {
 			Coins:                 sdk.Coins{sdk.NewInt64Coin("foo", 15000000)},
 		},
 	})
+	require.Equal(t, genesisExported.Params, &types.Params{
+		ForceUnlockAllowedAddresses: []string{acc1.String(), acc2.String()},
+	})
 }
 
 func TestMarshalUnmarshalGenesis(t *testing.T) {
@@ -136,7 +146,7 @@ func TestMarshalUnmarshalGenesis(t *testing.T) {
 	appCodec := encodingConfig.Marshaler
 	am := lockup.NewAppModule(*app.LockupKeeper, app.AccountKeeper, app.BankKeeper)
 
-	err := simapp.FundAccount(app.BankKeeper, ctx, acc2, sdk.Coins{sdk.NewInt64Coin("foo", 5000000)})
+	err := testutil.FundAccount(app.BankKeeper, ctx, acc2, sdk.Coins{sdk.NewInt64Coin("foo", 5000000)})
 	require.NoError(t, err)
 	_, err = app.LockupKeeper.CreateLock(ctx, acc2, sdk.Coins{sdk.NewInt64Coin("foo", 5000000)}, time.Second*5)
 	require.NoError(t, err)

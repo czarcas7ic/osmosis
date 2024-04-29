@@ -4,7 +4,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
 )
 
 func (s *KeeperTestSuite) TestIntermediaryAccountCreation() {
@@ -48,7 +49,7 @@ func (s *KeeperTestSuite) TestIntermediaryAccountCreation() {
 			delAddrs := CreateRandomAccounts(int(tc.delegatorNumber))
 
 			// we create two additional pools: total three pools, 10 gauges
-			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 			var interAccs []types.SuperfluidIntermediaryAccount
 

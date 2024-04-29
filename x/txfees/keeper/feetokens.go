@@ -1,13 +1,16 @@
 package keeper
 
 import (
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 
 	errorsmod "cosmossdk.io/errors"
 
-	"github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	osmoutils "github.com/osmosis-labs/osmosis/osmoutils"
 )
 
 // ConvertToBaseToken converts a fee amount in a whitelisted fee token to the base fee token amount.
@@ -31,27 +34,30 @@ func (k Keeper) ConvertToBaseToken(ctx sdk.Context, inputFee sdk.Coin) (sdk.Coin
 		return sdk.Coin{}, err
 	}
 
-	return sdk.NewCoin(baseDenom, spotPrice.MulInt(inputFee.Amount).RoundInt()), nil
+	// Note: spotPrice truncation is done here for maintaining state-compatibility with v19.x
+	// It should be changed to support full spot price precision before
+	// https://github.com/osmosis-labs/osmosis/issues/6064 is complete
+	return sdk.NewCoin(baseDenom, spotPrice.Dec().MulIntMut(inputFee.Amount).RoundInt()), nil
 }
 
 // CalcFeeSpotPrice converts the provided tx fees into their equivalent value in the base denomination.
 // Spot Price Calculation: spotPrice / (1 - spreadFactor),
 // where spotPrice is defined as:
 // (tokenBalanceIn / tokenWeightIn) / (tokenBalanceOut / tokenWeightOut)
-func (k Keeper) CalcFeeSpotPrice(ctx sdk.Context, inputDenom string) (sdk.Dec, error) {
+func (k Keeper) CalcFeeSpotPrice(ctx sdk.Context, inputDenom string) (osmomath.BigDec, error) {
 	baseDenom, err := k.GetBaseDenom(ctx)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.BigDec{}, err
 	}
 
 	feeToken, err := k.GetFeeToken(ctx, inputDenom)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.BigDec{}, err
 	}
 
-	spotPrice, err := k.spotPriceCalculator.CalculateSpotPrice(ctx, feeToken.PoolID, baseDenom, feeToken.Denom)
+	spotPrice, err := k.poolManager.RouteCalculateSpotPrice(ctx, feeToken.PoolID, baseDenom, feeToken.Denom)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.BigDec{}, err
 	}
 	return spotPrice, nil
 }
@@ -101,7 +107,7 @@ func (k Keeper) ValidateFeeToken(ctx sdk.Context, feeToken types.FeeToken) error
 	// - feeToken.Denom exists
 	// - feeToken.PoolID exists
 	// - feeToken.PoolID has both feeToken.Denom and baseDenom
-	_, err = k.spotPriceCalculator.CalculateSpotPrice(ctx, feeToken.PoolID, feeToken.Denom, baseDenom)
+	_, err = k.poolManager.RouteCalculateSpotPrice(ctx, feeToken.PoolID, feeToken.Denom, baseDenom)
 
 	return err
 }
@@ -181,4 +187,18 @@ func (k Keeper) SetFeeTokens(ctx sdk.Context, feetokens []types.FeeToken) error 
 		}
 	}
 	return nil
+}
+
+// SenderValidationSetFeeTokens first checks to see if the sender is whitelisted to set fee tokens.
+// If the sender is whitelisted, it sets the fee tokens.
+// If the sender is not whitelisted, it returns an error.
+func (k Keeper) SenderValidationSetFeeTokens(ctx sdk.Context, sender string, feetokens []types.FeeToken) error {
+	whitelistedAddresses := k.GetParams(ctx).WhitelistedFeeTokenSetters
+
+	isWhitelisted := osmoutils.Contains(whitelistedAddresses, sender)
+	if !isWhitelisted {
+		return errorsmod.Wrapf(types.ErrNotWhitelistedFeeTokenSetter, "%s", sender)
+	}
+
+	return k.SetFeeTokens(ctx, feetokens)
 }

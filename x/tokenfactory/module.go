@@ -13,22 +13,22 @@ import (
 	"encoding/json"
 	"fmt"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
 
-	"github.com/osmosis-labs/osmosis/v16/simulation/simtypes"
-	simulation "github.com/osmosis-labs/osmosis/v16/x/tokenfactory/simulation"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/simulation/simtypes"
+	simulation "github.com/osmosis-labs/osmosis/v24/x/tokenfactory/simulation"
 
-	"github.com/osmosis-labs/osmosis/v16/x/tokenfactory/client/cli"
-	"github.com/osmosis-labs/osmosis/v16/x/tokenfactory/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/tokenfactory/types"
+	"github.com/osmosis-labs/osmosis/v24/x/tokenfactory/client/cli"
+	"github.com/osmosis-labs/osmosis/v24/x/tokenfactory/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/tokenfactory/types"
 )
 
 var (
@@ -53,7 +53,7 @@ func (AppModuleBasic) Name() string {
 }
 
 func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
-	types.RegisterCodec(cdc)
+	types.RegisterLegacyAminoCodec(cdc)
 }
 
 // RegisterInterfaces registers the module's interface types
@@ -74,10 +74,6 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncod
 	}
 
 	return genState.Validate()
-}
-
-// RegisterRESTRoutes registers the capability module's REST service handlers.
-func (AppModuleBasic) RegisterRESTRoutes(clientCtx client.Context, rtr *mux.Router) {
 }
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the module.
@@ -126,18 +122,8 @@ func (am AppModule) Name() string {
 	return am.AppModuleBasic.Name()
 }
 
-// Route returns the x/tokenfactory module's message routing key.
-func (am AppModule) Route() sdk.Route {
-	return sdk.Route{}
-}
-
 // QuerierRoute returns the x/tokenfactory module's query routing key.
 func (AppModule) QuerierRoute() string { return types.QuerierRoute }
-
-// LegacyQuerierHandler returns the x/tokenfactory module's Querier.
-func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return nil
-}
 
 // RegisterServices registers a GRPC query service to respond to the
 // module-specific GRPC queries.
@@ -186,7 +172,7 @@ func (am AppModule) EndBlock(_ sdk.Context, _ abci.RequestEndBlock) []abci.Valid
 // GenerateGenesisState creates a randomized GenState of the tokenfactory module.
 func (am AppModule) SimulatorGenesisState(simState *module.SimulationState, s *simtypes.SimCtx) {
 	tfDefaultGen := types.DefaultGenesis()
-	tfDefaultGen.Params.DenomCreationFee = sdk.NewCoins(sdk.NewCoin("stake", sdk.NewInt(10000000)))
+	tfDefaultGen.Params.DenomCreationFee = sdk.NewCoins(sdk.NewCoin("stake", osmomath.NewInt(10000000)))
 	tfDefaultGenJson := simState.Cdc.MustMarshalJSON(tfDefaultGen)
 	simState.GenState[types.ModuleName] = tfDefaultGenJson
 }

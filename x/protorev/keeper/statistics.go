@@ -7,24 +7,28 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	gogotypes "github.com/cosmos/gogoproto/types"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/osmoutils"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 )
 
 // ----------------------- Statistics Stores  ----------------------- //
 
 // GetNumberOfTrades returns the number of trades executed by the ProtoRev module
-func (k Keeper) GetNumberOfTrades(ctx sdk.Context) (sdk.Int, error) {
+func (k Keeper) GetNumberOfTrades(ctx sdk.Context) (osmomath.Int, error) {
 	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixNumberOfTrades)
 
 	bz := store.Get(types.KeyPrefixNumberOfTrades)
 	if len(bz) == 0 {
-		return sdk.ZeroInt(), fmt.Errorf("no trades have been executed by the protorev module")
+		return osmomath.ZeroInt(), fmt.Errorf("no trades have been executed by the protorev module")
 	}
 
-	trades := sdk.Int{}
+	trades := osmomath.Int{}
 	if err := trades.Unmarshal(bz); err != nil {
-		return sdk.ZeroInt(), err
+		return osmomath.ZeroInt(), err
 	}
 
 	return trades, nil
@@ -35,7 +39,7 @@ func (k Keeper) IncrementNumberOfTrades(ctx sdk.Context) error {
 	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixNumberOfTrades)
 
 	numberOfTrades, _ := k.GetNumberOfTrades(ctx)
-	numberOfTrades = numberOfTrades.Add(sdk.OneInt())
+	numberOfTrades = numberOfTrades.Add(oneInt)
 
 	bz, err := numberOfTrades.Marshal()
 	if err != nil {
@@ -52,12 +56,12 @@ func (k Keeper) GetProfitsByDenom(ctx sdk.Context, denom string) (sdk.Coin, erro
 
 	bz := store.Get(key)
 	if len(bz) == 0 {
-		return sdk.NewCoin(denom, sdk.ZeroInt()), fmt.Errorf("no profits for denom %s", denom)
+		return sdk.NewCoin(denom, osmomath.ZeroInt()), fmt.Errorf("no profits for denom %s", denom)
 	}
 
 	profits := sdk.Coin{}
 	if err := profits.Unmarshal(bz); err != nil {
-		return sdk.NewCoin(denom, sdk.ZeroInt()), err
+		return sdk.NewCoin(denom, osmomath.ZeroInt()), err
 	}
 
 	return profits, nil
@@ -82,8 +86,48 @@ func (k Keeper) GetAllProfits(ctx sdk.Context) []sdk.Coin {
 	return profits
 }
 
+func (k Keeper) SetCyclicArbProfitTrackerValue(ctx sdk.Context, cyclicArbProfits sdk.Coins) {
+	newCyclicArbProfits := poolmanagertypes.TrackedVolume{
+		Amount: cyclicArbProfits,
+	}
+	osmoutils.MustSet(ctx.KVStore(k.storeKey), types.KeyCyclicArbTracker, &newCyclicArbProfits)
+}
+
+func (k Keeper) GetCyclicArbProfitTrackerValue(ctx sdk.Context) (currentCyclicArbProfits sdk.Coins) {
+	var cyclicArbProfits poolmanagertypes.TrackedVolume
+	cyclicArbProfitsFound, err := osmoutils.Get(ctx.KVStore(k.storeKey), types.KeyCyclicArbTracker, &cyclicArbProfits)
+	if err != nil {
+		// We can only encounter an error if a database or serialization errors occurs, so we panic here.
+		// Normally this would be handled by `osmoutils.MustGet`, but since we want to specifically use `osmoutils.Get`,
+		// we also have to manually panic here.
+		panic(err)
+	}
+
+	// If no volume was found, we treat the existing volume as 0.
+	// While we can technically require volume to exist, we would need to store empty coins in state for each pool (past and present),
+	// which is a high storage cost to pay for a weak guardrail.
+	currentCyclicArbProfits = sdk.NewCoins()
+	if cyclicArbProfitsFound {
+		currentCyclicArbProfits = cyclicArbProfits.Amount
+	}
+
+	return currentCyclicArbProfits
+}
+
+// GetCyclicArbProfitTrackerStartHeight gets the height from which we started accounting for cyclic arb profits.
+func (k Keeper) GetCyclicArbProfitTrackerStartHeight(ctx sdk.Context) int64 {
+	startHeight := gogotypes.Int64Value{}
+	osmoutils.MustGet(ctx.KVStore(k.storeKey), types.KeyCyclicArbTrackerStartHeight, &startHeight)
+	return startHeight.Value
+}
+
+// SetCyclicArbProfitTrackerStartHeight sets the height from which we started accounting for cyclic arb profits.
+func (k Keeper) SetCyclicArbProfitTrackerStartHeight(ctx sdk.Context, startHeight int64) {
+	osmoutils.MustSet(ctx.KVStore(k.storeKey), types.KeyCyclicArbTrackerStartHeight, &gogotypes.Int64Value{Value: startHeight})
+}
+
 // UpdateProfitsByDenom updates the profits made by the ProtoRev module for the given denom
-func (k Keeper) UpdateProfitsByDenom(ctx sdk.Context, denom string, tradeProfit sdk.Int) error {
+func (k Keeper) UpdateProfitsByDenom(ctx sdk.Context, denom string, tradeProfit osmomath.Int) error {
 	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixProfitByDenom)
 	key := types.GetKeyPrefixProfitByDenom(denom)
 
@@ -123,18 +167,18 @@ func (k Keeper) GetAllRoutes(ctx sdk.Context) ([][]uint64, error) {
 }
 
 // GetTradesByRoute returns the number of trades executed by the ProtoRev module for the given route
-func (k Keeper) GetTradesByRoute(ctx sdk.Context, route []uint64) (sdk.Int, error) {
+func (k Keeper) GetTradesByRoute(ctx sdk.Context, route []uint64) (osmomath.Int, error) {
 	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixTradesByRoute)
 	key := types.GetKeyPrefixTradesByRoute(route)
 
 	bz := store.Get(key)
 	if len(bz) == 0 {
-		return sdk.ZeroInt(), fmt.Errorf("no trades for route %d", route)
+		return osmomath.ZeroInt(), fmt.Errorf("no trades for route %d", route)
 	}
 
-	trades := sdk.Int{}
+	trades := osmomath.Int{}
 	if err := trades.Unmarshal(bz); err != nil {
-		return sdk.ZeroInt(), err
+		return osmomath.ZeroInt(), err
 	}
 	return trades, nil
 }
@@ -145,7 +189,7 @@ func (k Keeper) IncrementTradesByRoute(ctx sdk.Context, route []uint64) error {
 	key := types.GetKeyPrefixTradesByRoute(route)
 
 	trades, _ := k.GetTradesByRoute(ctx, route)
-	trades = trades.Add(sdk.OneInt())
+	trades = trades.Add(oneInt)
 	bz, err := trades.Marshal()
 	if err != nil {
 		return err
@@ -162,12 +206,12 @@ func (k Keeper) GetProfitsByRoute(ctx sdk.Context, route []uint64, denom string)
 
 	bz := store.Get(key)
 	if len(bz) == 0 {
-		return sdk.NewCoin(denom, sdk.ZeroInt()), fmt.Errorf("no profits for route %d", route)
+		return sdk.NewCoin(denom, osmomath.ZeroInt()), fmt.Errorf("no profits for route %d", route)
 	}
 
 	profits := sdk.Coin{}
 	if err := profits.Unmarshal(bz); err != nil {
-		return sdk.NewCoin(denom, sdk.ZeroInt()), err
+		return sdk.NewCoin(denom, osmomath.ZeroInt()), err
 	}
 
 	return profits, nil
@@ -194,7 +238,7 @@ func (k Keeper) GetAllProfitsByRoute(ctx sdk.Context, route []uint64) []sdk.Coin
 }
 
 // UpdateProfitsByRoute updates the profits made by the ProtoRev module for the given route and denom
-func (k Keeper) UpdateProfitsByRoute(ctx sdk.Context, route []uint64, denom string, profit sdk.Int) error {
+func (k Keeper) UpdateProfitsByRoute(ctx sdk.Context, route []uint64, denom string, profit osmomath.Int) error {
 	store := prefix.NewStore(ctx.KVStore(k.storeKey), types.KeyPrefixProfitsByRoute)
 	key := types.GetKeyPrefixProfitsByRoute(route, denom)
 
@@ -210,7 +254,7 @@ func (k Keeper) UpdateProfitsByRoute(ctx sdk.Context, route []uint64, denom stri
 }
 
 // UpdateStatistics updates the module statistics after each trade is executed
-func (k Keeper) UpdateStatistics(ctx sdk.Context, route poolmanagertypes.SwapAmountInRoutes, denom string, profit sdk.Int) error {
+func (k Keeper) UpdateStatistics(ctx sdk.Context, route poolmanagertypes.SwapAmountInRoutes, denom string, profit osmomath.Int) error {
 	// Increment the number of trades executed by the ProtoRev module
 	if err := k.IncrementNumberOfTrades(ctx); err != nil {
 		return err

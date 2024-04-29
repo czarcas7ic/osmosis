@@ -15,7 +15,7 @@ const (
 	StoreKey     = ModuleName
 	KeySeparator = "|"
 
-	uint64ByteSize = 8
+	Uint64ByteSize = 8
 	base10         = 10
 
 	ConcentratedLiquidityTokenPrefix = "cl/pool"
@@ -47,10 +47,21 @@ var (
 
 	KeyNextGlobalIncentiveRecordId = []byte{0x12}
 
+	KeyTotalLiquidity     = []byte{0x13}
+	KeyContractHookPrefix = []byte{0x14}
+
+	KeyIncentiveAccumulatorMigrationThreshold    = []byte{0x15}
+	KeySpreadRewardAccumulatorMigrationThreshold = []byte{0x16}
+
 	// TickPrefix + pool id
-	KeyTickPrefixByPoolIdLengthBytes = len(TickPrefix) + uint64ByteSize
+	KeyTickPrefixByPoolIdLengthBytes = len(TickPrefix) + Uint64ByteSize
 	// TickPrefix + pool id + sign byte(negative / positive prefix) + tick index: 18bytes in total
-	KeyTickLengthBytes = KeyTickPrefixByPoolIdLengthBytes + 1 + uint64ByteSize
+	KeyTickLengthBytes = KeyTickPrefixByPoolIdLengthBytes + 1 + Uint64ByteSize
+
+	// the full length of the pool <> position id key link
+	PoolPositionIDFullPrefixLen = len(PoolPositionPrefix) + Uint64ByteSize + len(KeySeparator) + Uint64ByteSize
+	// the index of the key separator in the pool <> position id key link.
+	PoolPositionIDKeySeparatorIndex = len(PoolPositionPrefix) + Uint64ByteSize
 )
 
 // TickIndexToBytes converts a tick index to a byte slice. The encoding is:
@@ -197,7 +208,7 @@ func KeyUserPositions(addr sdk.AccAddress) []byte {
 func KeyPoolPositionPositionId(poolId uint64, positionId uint64) []byte {
 	poolIdBz := sdk.Uint64ToBigEndian(poolId)
 	positionIdBz := sdk.Uint64ToBigEndian(positionId)
-	key := make([]byte, 0, len(PoolPositionPrefix)+uint64ByteSize+len(KeySeparator)+uint64ByteSize)
+	key := make([]byte, 0, PoolPositionIDFullPrefixLen)
 	key = append(key, PoolPositionPrefix...)
 	key = append(key, poolIdBz...)
 	key = append(key, KeySeparator...)
@@ -207,7 +218,7 @@ func KeyPoolPositionPositionId(poolId uint64, positionId uint64) []byte {
 
 func KeyPoolPosition(poolId uint64) []byte {
 	poolIdBz := sdk.Uint64ToBigEndian(poolId)
-	key := make([]byte, 0, len(PoolPositionPrefix)+uint64ByteSize)
+	key := make([]byte, 0, len(PoolPositionPrefix)+Uint64ByteSize)
 	key = append(key, PoolPositionPrefix...)
 	key = append(key, poolIdBz...)
 	return key
@@ -216,7 +227,11 @@ func KeyPoolPosition(poolId uint64) []byte {
 // Pool Prefix Keys
 // KeyPool is used to map a pool id to a pool struct
 func KeyPool(poolId uint64) []byte {
-	return []byte(fmt.Sprintf("%s%d", PoolPrefix, poolId))
+	// Start with PoolPrefix initialized
+	result := []byte{0x03}
+	// Directly append the string representation of poolId as bytes
+	result = strconv.AppendUint(result, poolId, 10)
+	return result
 }
 
 // Incentive Prefix Keys
@@ -287,4 +302,15 @@ func MustGetPoolIdFromShareDenom(denom string) uint64 {
 		panic(err)
 	}
 	return poolId
+}
+
+func GetDenomPrefix(denom string) []byte {
+	return append(KeyTotalLiquidity, []byte(denom)...)
+}
+
+// CL Hook Keys
+
+// GetPoolPrefixStore returns a unique key for each combination of poolID and prefix
+func GetPoolPrefixStoreKey(poolID uint64) []byte {
+	return []byte(fmt.Sprintf("%s%d%s", KeyContractHookPrefix, poolID, KeySeparator))
 }

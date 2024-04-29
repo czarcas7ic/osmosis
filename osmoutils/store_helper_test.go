@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/cosmos/cosmos-sdk/x/auth"
@@ -16,9 +16,12 @@ import (
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
+	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/osmoutils"
 	"github.com/osmosis-labs/osmosis/osmoutils/noapptest"
 	"github.com/osmosis-labs/osmosis/osmoutils/osmoassert"
+
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 )
 
 // We need to setup a test suite with account keeper
@@ -30,7 +33,7 @@ type TestSuite struct {
 	ctx   sdk.Context
 	store sdk.KVStore
 
-	authStoreKey  sdk.StoreKey
+	authStoreKey  storetypes.StoreKey
 	accountKeeper authkeeper.AccountKeeperI
 }
 
@@ -43,7 +46,7 @@ func (suite *TestSuite) SetupTest() {
 	paramsKey := sdk.NewKVStoreKey(paramstypes.StoreKey)
 	paramsTKey := sdk.NewKVStoreKey(paramstypes.TStoreKey)
 	suite.ctx = noapptest.DefaultCtxWithStoreKeys(
-		[]sdk.StoreKey{customStoreKey, suite.authStoreKey, paramsKey, paramsTKey})
+		[]storetypes.StoreKey{customStoreKey, suite.authStoreKey, paramsKey, paramsTKey})
 	suite.store = suite.ctx.KVStore(customStoreKey)
 	// setup params (needed for auth)
 	encConfig := noapptest.MakeTestEncodingConfig(auth.AppModuleBasic{}, params.AppModuleBasic{})
@@ -55,12 +58,13 @@ func (suite *TestSuite) SetupTest() {
 		"fee_collector": nil,
 		"mint":          {"minter"},
 	}
-	authsubspace, _ := paramsKeeper.GetSubspace(authtypes.ModuleName)
 	suite.accountKeeper = authkeeper.NewAccountKeeper(
 		encConfig.Codec,
 		suite.authStoreKey,
-		authsubspace,
-		authtypes.ProtoBaseAccount, maccPerms)
+		authtypes.ProtoBaseAccount,
+		maccPerms,
+		"osmo",
+		authtypes.NewModuleAddress(authtypes.ModuleName).String())
 }
 
 const (
@@ -871,40 +875,38 @@ func (s *TestSuite) TestMustGet() {
 	}{
 		"basic valid test": {
 			preSetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
-				keyB: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
-				keyC: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
+				keyB: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
+				keyC: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
 
 			expectedGetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
-				keyB: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
-				keyC: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
+				keyB: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
+				keyC: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
-
 			actualResultProto: &sdk.DecProto{},
 		},
 		"attempt to get non-existent key - panic": {
 			preSetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
-				keyC: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
+				keyC: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
 
 			expectedGetKeyValues: map[string]proto.Message{
-				keyB: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyB: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
-
 			actualResultProto: &sdk.DecProto{},
 
 			expectPanic: true,
 		},
 		"invalid proto Dec vs AuthParams- error": {
 			preSetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
 			},
 
 			expectedGetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
 			},
 
 			actualResultProto: &authtypes.Params{},
@@ -924,9 +926,15 @@ func (s *TestSuite) TestMustGet() {
 			osmoassert.ConditionalPanic(s.T(), tc.expectPanic, func() {
 				for key, expectedValue := range tc.expectedGetKeyValues {
 					// System under test.
+					gasStart := s.ctx.GasMeter().GasConsumed()
 					osmoutils.MustGet(s.store, []byte(key), tc.actualResultProto)
+					gasEnd := s.ctx.GasMeter().GasConsumed()
 					// Assertions.
 					s.Require().Equal(expectedValue.String(), tc.actualResultProto.String())
+
+					_, gasFlat, gasKey, gasValue, err := osmoutils.TrackGasUsedInGet(s.store, []byte(key), tc.actualResultProto)
+					s.Require().NoError(err)
+					s.Require().Equal(gasEnd-gasStart, gasFlat+gasKey+gasValue)
 				}
 			})
 		})
@@ -951,31 +959,29 @@ func (s *TestSuite) TestGet() {
 	}{
 		"basic valid test": {
 			preSetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
-				keyB: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
-				keyC: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
+				keyB: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
+				keyC: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
 
 			expectedGetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
-				keyB: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
-				keyC: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
+				keyB: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
+				keyC: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
-
 			actualResultProto: &sdk.DecProto{},
 
 			expectFound: true,
 		},
 		"attempt to get non-existent key - not found & no err return": {
 			preSetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
-				keyC: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
+				keyC: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
 
 			expectedGetKeyValues: map[string]proto.Message{
-				keyB: &sdk.DecProto{Dec: sdk.OneDec().Add(sdk.OneDec())},
+				keyB: &sdk.DecProto{Dec: osmomath.OneDec().Add(osmomath.OneDec())},
 			},
-
 			actualResultProto: &sdk.DecProto{},
 
 			expectFound: false,
@@ -984,11 +990,11 @@ func (s *TestSuite) TestGet() {
 		},
 		"invalid proto Dec vs AuthParams - found but Unmarshal err": {
 			preSetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
 			},
 
 			expectedGetKeyValues: map[string]proto.Message{
-				keyA: &sdk.DecProto{Dec: sdk.OneDec()},
+				keyA: &sdk.DecProto{Dec: osmomath.OneDec()},
 			},
 
 			actualResultProto: &authtypes.Params{},
@@ -1044,9 +1050,8 @@ func (s *TestSuite) TestMustSet() {
 		"basic valid Dec test": {
 			setKey: keyA,
 			setValue: &sdk.DecProto{
-				Dec: sdk.OneDec(),
+				Dec: osmomath.OneDec(),
 			},
-
 			actualResultProto: &sdk.DecProto{},
 		},
 		"basic valid AuthParams test": {
@@ -1085,35 +1090,33 @@ func (s *TestSuite) TestMustSet() {
 // decimal values from the store and panics if an error is encountered.
 func (s *TestSuite) TestMustGetDec() {
 	tests := map[string]struct {
-		// keys and values to preset
-		preSetKeyValues map[string]sdk.Dec
+		// keys and values to preseosmomath.Dec
+		preSetKeyValues map[string]osmomath.Dec
 
-		// keys and values to attempt to get and validate
-		expectedGetKeyValues map[string]sdk.Dec
+		// keys and values to attempt toosmomath.Decd validate
+		expectedGetKeyValues map[string]osmomath.Dec
 
 		expectPanic bool
 	}{
 		"valid get": {
-			preSetKeyValues: map[string]sdk.Dec{
-				keyA: sdk.OneDec(),
-				keyB: sdk.OneDec().Add(sdk.OneDec()),
-				keyC: sdk.OneDec().Add(sdk.OneDec()).Add(sdk.OneDec()),
+			preSetKeyValues: map[string]osmomath.Dec{
+				keyA: osmomath.OneDec(),
+				keyB: osmomath.OneDec().Add(osmomath.OneDec()),
+				keyC: osmomath.OneDec().Add(osmomath.OneDec()).Add(osmomath.OneDec()),
 			},
-
-			expectedGetKeyValues: map[string]sdk.Dec{
-				keyA: sdk.OneDec(),
-				keyB: sdk.OneDec().Add(sdk.OneDec()),
-				keyC: sdk.OneDec().Add(sdk.OneDec()).Add(sdk.OneDec()),
+			expectedGetKeyValues: map[string]osmomath.Dec{
+				keyA: osmomath.OneDec(),
+				keyB: osmomath.OneDec().Add(osmomath.OneDec()),
+				keyC: osmomath.OneDec().Add(osmomath.OneDec()).Add(osmomath.OneDec()),
 			},
 		},
-		"attempt to get non-existent key - panic": {
-			preSetKeyValues: map[string]sdk.Dec{
-				keyA: sdk.OneDec(),
-				keyC: sdk.OneDec().Add(sdk.OneDec()).Add(sdk.OneDec()),
+		"attempt to get non-existent osmomath.Decanic": {
+			preSetKeyValues: map[string]osmomath.Dec{
+				keyA: osmomath.OneDec(),
+				keyC: osmomath.OneDec().Add(osmomath.OneDec()).Add(osmomath.OneDec()),
 			},
-
-			expectedGetKeyValues: map[string]sdk.Dec{
-				keyA: sdk.OneDec(),
+			expectedGetKeyValues: map[string]osmomath.Dec{
+				keyA: osmomath.OneDec(),
 				keyB: {}, // this one panics
 			},
 
@@ -1149,7 +1152,7 @@ func (s *TestSuite) TestMustGetDec() {
 // only panic if the proto argument is invalid.
 // Therefore, we only test a success case here.
 func (s *TestSuite) TestMustSetDec() {
-	originalDecValue := sdk.OneDec()
+	originalDecValue := osmomath.OneDec()
 
 	// System under test.
 	osmoutils.MustSetDec(s.store, []byte(keyA), originalDecValue)
@@ -1246,34 +1249,32 @@ func (s *TestSuite) TestHasAnyAtPrefix() {
 
 func (s *TestSuite) TestGetDec() {
 	tests := map[string]struct {
-		// keys and values to preset
-		preSetKeyValues map[string]sdk.Dec
+		// keys and values to preseosmomath.Dec
+		preSetKeyValues map[string]osmomath.Dec
 
-		// keys and values to attempt to get and validate
-		expectedGetKeyValues map[string]sdk.Dec
+		// keys and values to attempt toosmomath.Decd validate
+		expectedGetKeyValues map[string]osmomath.Dec
 
 		expectError error
 	}{
 		"valid get": {
-			preSetKeyValues: map[string]sdk.Dec{
-				keyA: sdk.OneDec(),
-				keyB: sdk.OneDec().Add(sdk.OneDec()),
-				keyC: sdk.OneDec().Add(sdk.OneDec()).Add(sdk.OneDec()),
+			preSetKeyValues: map[string]osmomath.Dec{
+				keyA: osmomath.OneDec(),
+				keyB: osmomath.OneDec().Add(osmomath.OneDec()),
+				keyC: osmomath.OneDec().Add(osmomath.OneDec()).Add(osmomath.OneDec()),
 			},
-
-			expectedGetKeyValues: map[string]sdk.Dec{
-				keyA: sdk.OneDec(),
-				keyB: sdk.OneDec().Add(sdk.OneDec()),
-				keyC: sdk.OneDec().Add(sdk.OneDec()).Add(sdk.OneDec()),
+			expectedGetKeyValues: map[string]osmomath.Dec{
+				keyA: osmomath.OneDec(),
+				keyB: osmomath.OneDec().Add(osmomath.OneDec()),
+				keyC: osmomath.OneDec().Add(osmomath.OneDec()).Add(osmomath.OneDec()),
 			},
 		},
-		"error: attempt to get non-existent key": {
-			preSetKeyValues: map[string]sdk.Dec{
-				keyA: sdk.OneDec(),
-				keyC: sdk.OneDec().Add(sdk.OneDec()).Add(sdk.OneDec()),
+		"error: attempt to get non-exosmomath.Deckey": {
+			preSetKeyValues: map[string]osmomath.Dec{
+				keyA: osmomath.OneDec(),
+				keyC: osmomath.OneDec().Add(osmomath.OneDec()).Add(osmomath.OneDec()),
 			},
-
-			expectedGetKeyValues: map[string]sdk.Dec{
+			expectedGetKeyValues: map[string]osmomath.Dec{
 				keyB: {},
 			},
 

@@ -6,17 +6,18 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
-	cl "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity"
-	clmath "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/math"
-	clmodel "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/model"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/pool-models/balancer"
-	gammmigration "github.com/osmosis-labs/osmosis/v16/x/gamm/types/migration"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
+	cl "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity"
+	clmath "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/math"
+	clmodel "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/model"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/pool-models/balancer"
+	gammmigration "github.com/osmosis-labs/osmosis/v24/x/gamm/types/migration"
 )
 
 type BenchTestSuite struct {
@@ -26,7 +27,7 @@ type BenchTestSuite struct {
 func (s *BenchTestSuite) createPosition(accountIndex int, poolId uint64, coin0, coin1 sdk.Coin, lowerTick, upperTick int64) {
 	tokensDesired := sdk.NewCoins(coin0, coin1)
 
-	_, _, _, _, _, _, err := s.App.ConcentratedLiquidityKeeper.CreatePosition(s.Ctx, poolId, s.TestAccs[accountIndex], tokensDesired, sdk.ZeroInt(), sdk.ZeroInt(), lowerTick, upperTick)
+	_, err := s.App.ConcentratedLiquidityKeeper.CreatePosition(s.Ctx, poolId, s.TestAccs[accountIndex], tokensDesired, osmomath.ZeroInt(), osmomath.ZeroInt(), lowerTick, upperTick)
 	if err != nil {
 		// This can happen for ticks that map to the very small prices
 		// e.g 2 * 10^(-18) ends up mapping to the same sqrt price
@@ -55,16 +56,16 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 		denom0               = DefaultCoin0.Denom
 		denom1               = DefaultCoin1.Denom
 		denomIn              = denom0
-		numberOfPositionsInt = sdk.NewInt(numberOfPositions)
-		maxAmountOfEachToken = sdk.NewInt(maxAmountDeposited).Mul(numberOfPositionsInt)
+		numberOfPositionsInt = osmomath.NewInt(numberOfPositions)
+		maxAmountOfEachToken = osmomath.NewInt(maxAmountDeposited).Mul(numberOfPositionsInt)
 		seed                 = int64(1)
 		defaultDenom0Asset   = balancer.PoolAsset{
-			Weight: sdk.NewInt(100),
-			Token:  sdk.NewCoin(denom0, sdk.NewInt(1000000000)),
+			Weight: osmomath.NewInt(100),
+			Token:  sdk.NewCoin(denom0, osmomath.NewInt(1000000000)),
 		}
 		defaultDenom1Asset = balancer.PoolAsset{
-			Weight: sdk.NewInt(100),
-			Token:  sdk.NewCoin(denom1, sdk.NewInt(1000000000)),
+			Weight: osmomath.NewInt(100),
+			Token:  sdk.NewCoin(denom1, osmomath.NewInt(1000000000)),
 		}
 		defaultPoolAssets = []balancer.PoolAsset{defaultDenom0Asset, defaultDenom1Asset}
 	)
@@ -78,7 +79,7 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 		cleanup := s.SetupWithLevelDb()
 
 		for _, acc := range s.TestAccs {
-			simapp.FundAccount(s.App.BankKeeper, s.Ctx, acc, sdk.NewCoins(
+			testutil.FundAccount(s.App.BankKeeper, s.Ctx, acc, sdk.NewCoins(
 				sdk.NewCoin(denom0, maxAmountOfEachToken),
 				sdk.NewCoin(denom1, maxAmountOfEachToken),
 				sdk.NewCoin("uosmo", maxAmountOfEachToken),
@@ -87,14 +88,14 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 
 		// Create a balancer pool
 		gammPoolId, err := s.App.PoolManagerKeeper.CreatePool(s.Ctx, balancer.NewMsgCreateBalancerPool(s.TestAccs[0], balancer.PoolParams{
-			SwapFee: sdk.MustNewDecFromStr("0.001"),
-			ExitFee: sdk.ZeroDec(),
+			SwapFee: osmomath.MustNewDecFromStr("0.001"),
+			ExitFee: osmomath.ZeroDec(),
 		}, defaultPoolAssets, ""))
 		noError(b, err)
 
 		// Create a cl pool.
 		clPoolId, err := s.App.PoolManagerKeeper.CreatePool(s.Ctx, clmodel.NewMsgCreateConcentratedPool(
-			s.TestAccs[0], denom0, denom1, tickSpacing, sdk.MustNewDecFromStr("0.001"),
+			s.TestAccs[0], denom0, denom1, tickSpacing, osmomath.MustNewDecFromStr("0.001"),
 		))
 		noError(b, err)
 
@@ -110,10 +111,10 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 		s.Require().NoError(err)
 
 		// Create first position to set a price of 1 and tick of zero.
-		tokenDesired0 := sdk.NewCoin(denom0, sdk.NewInt(100))
-		tokenDesired1 := sdk.NewCoin(denom1, sdk.NewInt(100))
+		tokenDesired0 := sdk.NewCoin(denom0, osmomath.NewInt(100))
+		tokenDesired1 := sdk.NewCoin(denom1, osmomath.NewInt(100))
 		tokensDesired := sdk.NewCoins(tokenDesired0, tokenDesired1)
-		_, _, _, _, _, _, err = clKeeper.CreatePosition(s.Ctx, clPoolId, s.TestAccs[0], tokensDesired, sdk.ZeroInt(), sdk.ZeroInt(), types.MinInitializedTick, types.MaxTick)
+		_, err = clKeeper.CreatePosition(s.Ctx, clPoolId, s.TestAccs[0], tokensDesired, osmomath.ZeroInt(), osmomath.ZeroInt(), types.MinInitializedTick, types.MaxTick)
 		noError(b, err)
 
 		pool, err := clKeeper.GetPoolById(s.Ctx, clPoolId)
@@ -149,7 +150,10 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 				// Normalize upperTick to be a multiple of tickSpacing
 				upperTick = upperTick - upperTick%tickSpacing
 
-				priceLowerTick, priceUpperTick, _, _, err := clmath.TicksToSqrtPrice(lowerTick, upperTick)
+				priceLowerTick, err := clmath.TickToPrice(lowerTick)
+				noError(b, err)
+
+				priceUpperTick, err := clmath.TickToPrice(upperTick)
 				noError(b, err)
 
 				lowerTick, upperTick, err = cl.RoundTickToCanonicalPriceTick(
@@ -159,8 +163,8 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 					continue
 				}
 
-				tokenDesired0 := sdk.NewCoin(denom0, sdk.NewInt(rand.Int63n(maxAmountDeposited)))
-				tokenDesired1 := sdk.NewCoin(denom1, sdk.NewInt(rand.Int63n(maxAmountDeposited)))
+				tokenDesired0 := sdk.NewCoin(denom0, osmomath.NewInt(rand.Int63n(maxAmountDeposited)))
+				tokenDesired1 := sdk.NewCoin(denom1, osmomath.NewInt(rand.Int63n(maxAmountDeposited)))
 
 				accountIndex := rand.Intn(len(s.TestAccs))
 				s.createPosition(accountIndex, clPoolId, tokenDesired0, tokenDesired1, lowerTick, upperTick)
@@ -168,13 +172,13 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 		}
 
 		createPosition := func(lowerTick, upperTick int64) {
-			maxAmountDepositedFullRange := sdk.NewInt(maxAmountDeposited).MulRaw(5)
+			maxAmountDepositedFullRange := osmomath.NewInt(maxAmountDeposited).MulRaw(5)
 			tokenDesired0 := sdk.NewCoin(denom0, maxAmountDepositedFullRange)
 			tokenDesired1 := sdk.NewCoin(denom1, maxAmountDepositedFullRange)
 			tokensDesired := sdk.NewCoins(tokenDesired0, tokenDesired1)
 			accountIndex := rand.Intn(len(s.TestAccs))
 			account := s.TestAccs[accountIndex]
-			simapp.FundAccount(s.App.BankKeeper, s.Ctx, account, tokensDesired)
+			testutil.FundAccount(s.App.BankKeeper, s.Ctx, account, tokensDesired)
 			s.createPosition(accountIndex, clPoolId, tokenDesired0, tokenDesired1, lowerTick, upperTick)
 		}
 		// Setup numberOfPositions full range positions for deeper liquidity.
@@ -216,7 +220,7 @@ func runBenchmark(b *testing.B, testFunc func(b *testing.B, s *BenchTestSuite, p
 			setupConcentratedPositions()
 		}
 
-		swapAmountIn := sdk.MustNewDecFromStr(amountIn).TruncateInt()
+		swapAmountIn := osmomath.MustNewDecFromStr(amountIn).TruncateInt()
 		largeSwapInCoin := sdk.NewCoin(denomIn, swapAmountIn)
 		// Commit so that the changes are propagated to IAVL.
 		s.Commit()
@@ -230,14 +234,14 @@ func BenchmarkSwapExactAmountIn(b *testing.B) {
 	runBenchmark(b, func(b *testing.B, s *BenchTestSuite, pool types.ConcentratedPoolExtension, largeSwapInCoin sdk.Coin, currentTick int64) {
 		clKeeper := s.App.ConcentratedLiquidityKeeper
 
-		liquidityNet, err := clKeeper.GetTickLiquidityNetInDirection(s.Ctx, pool.GetId(), largeSwapInCoin.Denom, sdk.NewInt(currentTick), sdk.Int{})
+		liquidityNet, err := clKeeper.GetTickLiquidityNetInDirection(s.Ctx, pool.GetId(), largeSwapInCoin.Denom, osmomath.NewInt(currentTick), osmomath.Int{})
 		noError(b, err)
-		simapp.FundAccount(s.App.BankKeeper, s.Ctx, s.TestAccs[0], sdk.NewCoins(largeSwapInCoin))
+		testutil.FundAccount(s.App.BankKeeper, s.Ctx, s.TestAccs[0], sdk.NewCoins(largeSwapInCoin))
 
 		b.StartTimer()
 
 		// System under test
-		_, err = clKeeper.SwapExactAmountIn(s.Ctx, s.TestAccs[0], pool, largeSwapInCoin, DefaultCoin1.Denom, sdk.NewInt(1), pool.GetSpreadFactor(s.Ctx))
+		_, err = clKeeper.SwapExactAmountIn(s.Ctx, s.TestAccs[0], pool, largeSwapInCoin, DefaultCoin1.Denom, osmomath.NewInt(1), pool.GetSpreadFactor(s.Ctx))
 		b.StopTimer()
 		noError(b, err)
 
@@ -253,7 +257,7 @@ func BenchmarkGetTickLiquidityNetInDirection(b *testing.B) {
 		b.StartTimer()
 
 		// System under test
-		liquidityNet, err := clKeeper.GetTickLiquidityNetInDirection(s.Ctx, pool.GetId(), largeSwapInCoin.Denom, sdk.NewInt(currentTick), sdk.Int{})
+		liquidityNet, err := clKeeper.GetTickLiquidityNetInDirection(s.Ctx, pool.GetId(), largeSwapInCoin.Denom, osmomath.NewInt(currentTick), osmomath.Int{})
 		b.StopTimer()
 		noError(b, err)
 
@@ -269,7 +273,7 @@ func BenchmarkGetTickLiquidityForFullRange(b *testing.B) {
 		b.StartTimer()
 
 		// System under test
-		liquidityNet, err := clKeeper.GetTickLiquidityForFullRange(s.Ctx, pool.GetId())
+		liquidityNet, _, err := clKeeper.GetTickLiquidityForFullRange(s.Ctx, pool.GetId())
 		b.StopTimer()
 		noError(b, err)
 

@@ -8,7 +8,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/lockup/types"
 )
 
 // RegisterInvariants registers all governance invariants.
@@ -29,7 +30,7 @@ func SyntheticLockupInvariant(keeper Keeper) sdk.Invariant {
 			}
 			if baselock.ID != synthlock.UnderlyingLockId {
 				return sdk.FormatInvariant(types.ModuleName, "synthetic-lockup-invariant",
-					fmt.Sprintf("\tSynthetic lock denom %s\n\tUnderlying lock ID: %d\n\tActual underying lock ID: %d\n",
+					fmt.Sprintf("\tSynthetic lock denom %s\n\tUnderlying lock ID: %d\n\tActual underlying lock ID: %d\n",
 						synthlock.SynthDenom, synthlock.UnderlyingLockId, baselock.ID,
 					)), true
 			}
@@ -65,7 +66,7 @@ func AccumulationStoreInvariant(keeper Keeper) sdk.Invariant {
 				})
 
 				locks := keeper.GetLocksLongerThanDurationDenom(ctx, denom, duration)
-				lockupSum := sdk.ZeroInt()
+				lockupSum := osmomath.ZeroInt()
 				for _, lock := range locks {
 					lockupSum = lockupSum.Add(lock.Coins.AmountOf(denom))
 				}
@@ -93,7 +94,7 @@ func LocksBalancesInvariant(keeper Keeper) sdk.Invariant {
 		// loop all denoms on lockup module
 		for _, coin := range balances {
 			denom := coin.Denom
-			lockedAmount := sdk.ZeroInt()
+			lockedAmount := osmomath.ZeroInt()
 			locksByDenom := keeper.GetLocksDenom(ctx, denom)
 			for _, lock := range locksByDenom {
 				lockedAmount = lockedAmount.Add(lock.Coins.AmountOf(denom))

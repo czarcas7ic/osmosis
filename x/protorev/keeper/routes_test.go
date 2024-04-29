@@ -1,10 +1,9 @@
 package keeper_test
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 )
 
 type TestRoute struct {
@@ -15,6 +14,7 @@ type TestRoute struct {
 
 // TestBuildRoutes tests the BuildRoutes function
 func (s *KeeperTestSuite) TestBuildRoutes() {
+	s.SetupPoolsTest()
 	cases := []struct {
 		description    string
 		inputDenom     string
@@ -44,12 +44,16 @@ func (s *KeeperTestSuite) TestBuildRoutes() {
 			description: "Route exists for swap in Bitcoin and swap out Atom",
 			inputDenom:  "bitcoin",
 			outputDenom: "Atom",
-			poolID:      4,
+			poolID:      55,
 			expectedRoutes: [][]TestRoute{
 				{
 					{PoolId: 25, InputDenom: types.OsmosisDenomination, OutputDenom: "Atom"},
-					{PoolId: 4, InputDenom: "Atom", OutputDenom: "bitcoin"},
+					{PoolId: 55, InputDenom: "Atom", OutputDenom: "bitcoin"},
 					{PoolId: 10, InputDenom: "bitcoin", OutputDenom: types.OsmosisDenomination},
+				},
+				{
+					{PoolId: 55, InputDenom: "Atom", OutputDenom: "bitcoin"},
+					{PoolId: 4, InputDenom: "bitcoin", OutputDenom: "Atom"},
 				},
 			},
 		},
@@ -91,6 +95,22 @@ func (s *KeeperTestSuite) TestBuildRoutes() {
 				},
 			},
 		},
+		{
+			description: "Two Pool Route exists for (osmo, atom)",
+			inputDenom:  "Atom",
+			outputDenom: types.OsmosisDenomination,
+			poolID:      51,
+			expectedRoutes: [][]TestRoute{
+				{
+					{PoolId: 51, InputDenom: types.OsmosisDenomination, OutputDenom: "Atom"},
+					{PoolId: 25, InputDenom: "Atom", OutputDenom: types.OsmosisDenomination},
+				},
+				{
+					{PoolId: 25, InputDenom: "Atom", OutputDenom: types.OsmosisDenomination},
+					{PoolId: 51, InputDenom: types.OsmosisDenomination, OutputDenom: "Atom"},
+				},
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -101,6 +121,7 @@ func (s *KeeperTestSuite) TestBuildRoutes() {
 			for routeIndex, route := range routes {
 				for tradeIndex, poolID := range route.Route.PoolIds() {
 					s.Require().Equal(tc.expectedRoutes[routeIndex][tradeIndex].PoolId, poolID)
+					s.Require().Equal(tc.expectedRoutes[routeIndex][tradeIndex].OutputDenom, route.Route[tradeIndex].TokenOutDenom)
 				}
 			}
 		})
@@ -109,6 +130,7 @@ func (s *KeeperTestSuite) TestBuildRoutes() {
 
 // TestBuildHighestLiquidityRoute tests the BuildHighestLiquidityRoute function
 func (s *KeeperTestSuite) TestBuildHighestLiquidityRoute() {
+	s.SetupPoolsTest()
 	cases := []struct {
 		description              string
 		swapDenom                string
@@ -199,15 +221,11 @@ func (s *KeeperTestSuite) TestBuildHighestLiquidityRoute() {
 
 	for _, tc := range cases {
 		s.Run(tc.description, func() {
-			s.App.ProtoRevKeeper.SetPoolWeights(s.Ctx, types.PoolWeights{
-				StableWeight:       5,
-				BalancerWeight:     2,
-				ConcentratedWeight: 2,
-			})
+			s.App.ProtoRevKeeper.SetInfoByPoolType(s.Ctx, types.DefaultPoolTypeInfo)
 
 			baseDenom := types.BaseDenom{
 				Denom:    tc.swapDenom,
-				StepSize: sdk.NewInt(1_000_000),
+				StepSize: osmomath.NewInt(1_000_000),
 			}
 			routeMetaData, err := s.App.ProtoRevKeeper.BuildHighestLiquidityRoute(s.Ctx, baseDenom, tc.swapIn, tc.swapOut, tc.poolId)
 
@@ -225,15 +243,110 @@ func (s *KeeperTestSuite) TestBuildHighestLiquidityRoute() {
 	}
 }
 
+// TestBuildTwoPoolRoute tests the BuildTwoPoolRoute function
+func (s *KeeperTestSuite) TestBuildTwoPoolRoute() {
+	s.SetupPoolsTest()
+	cases := []struct {
+		description   string
+		swapDenom     types.BaseDenom
+		tokenIn       string
+		tokenOut      string
+		poolId        uint64
+		expectedRoute []TestRoute
+		hasRoute      bool
+	}{
+		{
+			description: "two pool route can be created with base as token out",
+			swapDenom: types.BaseDenom{
+				Denom:    types.OsmosisDenomination,
+				StepSize: osmomath.NewInt(1_000_000),
+			},
+			tokenIn:  "stake",
+			tokenOut: types.OsmosisDenomination,
+			poolId:   54,
+			expectedRoute: []TestRoute{
+				{PoolId: 54, InputDenom: types.OsmosisDenomination, OutputDenom: "stake"},
+				{PoolId: 55, InputDenom: "stake", OutputDenom: types.OsmosisDenomination},
+			},
+			hasRoute: true,
+		},
+		{
+			description: "two pool route can be created with base as token in",
+			swapDenom: types.BaseDenom{
+				Denom:    types.OsmosisDenomination,
+				StepSize: osmomath.NewInt(1_000_000),
+			},
+			tokenIn:  types.OsmosisDenomination,
+			tokenOut: "stake",
+			poolId:   54,
+			expectedRoute: []TestRoute{
+				{PoolId: 55, InputDenom: types.OsmosisDenomination, OutputDenom: "stake"},
+				{PoolId: 54, InputDenom: "stake", OutputDenom: types.OsmosisDenomination},
+			},
+			hasRoute: true,
+		},
+		{
+			description: "two pool route where swap is on the highest liquidity pool",
+			swapDenom: types.BaseDenom{
+				Denom:    types.OsmosisDenomination,
+				StepSize: osmomath.NewInt(1_000_000),
+			},
+			tokenIn:       "stake",
+			tokenOut:      types.OsmosisDenomination,
+			poolId:        55,
+			expectedRoute: []TestRoute{},
+			hasRoute:      false,
+		},
+		{
+			description: "trade executes on pool not tracked by the module",
+			swapDenom: types.BaseDenom{
+				Denom:    types.OsmosisDenomination,
+				StepSize: osmomath.NewInt(1_000_000),
+			},
+			tokenIn:       "stake",
+			tokenOut:      types.OsmosisDenomination,
+			poolId:        1000000,
+			expectedRoute: []TestRoute{},
+			hasRoute:      false,
+		},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.description, func() {
+			routeMetaData, err := s.App.ProtoRevKeeper.BuildTwoPoolRoute(
+				s.Ctx,
+				tc.swapDenom,
+				tc.tokenIn,
+				tc.tokenOut,
+				tc.poolId,
+			)
+
+			if tc.hasRoute {
+				s.Require().NoError(err)
+				s.Require().Equal(len(tc.expectedRoute), len(routeMetaData.Route.PoolIds()))
+
+				for index, trade := range tc.expectedRoute {
+					s.Require().Equal(trade.PoolId, routeMetaData.Route[index].PoolId)
+					s.Require().Equal(trade.OutputDenom, routeMetaData.Route[index].TokenOutDenom)
+				}
+			} else {
+				s.Require().Equal(len(tc.expectedRoute), len(routeMetaData.Route.PoolIds()))
+				s.Require().Error(err)
+			}
+		})
+	}
+}
+
 // TestBuildHotRoutes tests the BuildHotRoutes function
 func (s *KeeperTestSuite) TestBuildHotRoutes() {
+	s.SetupPoolsTest()
 	cases := []struct {
 		description             string
 		swapIn                  string
 		swapOut                 string
 		poolId                  uint64
 		expectedRoutes          [][]TestRoute
-		expectedStepSize        []sdk.Int
+		expectedStepSize        []osmomath.Int
 		expectedRoutePoolPoints []uint64
 		hasRoutes               bool
 	}{
@@ -249,7 +362,7 @@ func (s *KeeperTestSuite) TestBuildHotRoutes() {
 					{4, "bitcoin", "Atom"},
 				},
 			},
-			expectedStepSize:        []sdk.Int{sdk.NewInt(1_000_000)},
+			expectedStepSize:        []osmomath.Int{osmomath.NewInt(1_000_000)},
 			expectedRoutePoolPoints: []uint64{6},
 			hasRoutes:               true,
 		},
@@ -266,7 +379,7 @@ func (s *KeeperTestSuite) TestBuildHotRoutes() {
 					{10, "test/2", "Atom"},
 				},
 			},
-			expectedStepSize:        []sdk.Int{sdk.NewInt(1_000_000)},
+			expectedStepSize:        []osmomath.Int{osmomath.NewInt(1_000_000)},
 			expectedRoutePoolPoints: []uint64{8},
 			hasRoutes:               true,
 		},
@@ -274,11 +387,7 @@ func (s *KeeperTestSuite) TestBuildHotRoutes() {
 
 	for _, tc := range cases {
 		s.Run(tc.description, func() {
-			s.App.ProtoRevKeeper.SetPoolWeights(s.Ctx, types.PoolWeights{
-				StableWeight:       5,
-				BalancerWeight:     2,
-				ConcentratedWeight: 2,
-			})
+			s.App.ProtoRevKeeper.SetInfoByPoolType(s.Ctx, types.DefaultPoolTypeInfo)
 
 			routes, err := s.App.ProtoRevKeeper.BuildHotRoutes(s.Ctx, tc.swapIn, tc.swapOut, tc.poolId)
 
@@ -311,6 +420,7 @@ func (s *KeeperTestSuite) TestBuildHotRoutes() {
 
 // TestCalculateRoutePoolPoints tests the CalculateRoutePoolPoints function
 func (s *KeeperTestSuite) TestCalculateRoutePoolPoints() {
+	s.SetupPoolsTest()
 	cases := []struct {
 		description             string
 		route                   poolmanagertypes.SwapAmountInRoutes
@@ -332,13 +442,13 @@ func (s *KeeperTestSuite) TestCalculateRoutePoolPoints() {
 		{
 			description:             "Valid route containing only stable swap pools",
 			route:                   []poolmanagertypes.SwapAmountInRoute{{PoolId: 40, TokenOutDenom: ""}, {PoolId: 40, TokenOutDenom: ""}, {PoolId: 40, TokenOutDenom: ""}},
-			expectedRoutePoolPoints: 9,
+			expectedRoutePoolPoints: 15,
 			expectedPass:            true,
 		},
 		{
 			description:             "Valid route with more than 3 hops",
 			route:                   []poolmanagertypes.SwapAmountInRoute{{PoolId: 40, TokenOutDenom: ""}, {PoolId: 40, TokenOutDenom: ""}, {PoolId: 40, TokenOutDenom: ""}, {PoolId: 1, TokenOutDenom: ""}},
-			expectedRoutePoolPoints: 11,
+			expectedRoutePoolPoints: 17,
 			expectedPass:            true,
 		},
 		{
@@ -347,13 +457,24 @@ func (s *KeeperTestSuite) TestCalculateRoutePoolPoints() {
 			expectedRoutePoolPoints: 11,
 			expectedPass:            false,
 		},
+		{
+			description:             "Valid route with a cosmwasm pool",
+			route:                   []poolmanagertypes.SwapAmountInRoute{{PoolId: 1, TokenOutDenom: ""}, {PoolId: 51, TokenOutDenom: ""}, {PoolId: 2, TokenOutDenom: ""}},
+			expectedRoutePoolPoints: 8,
+			expectedPass:            true,
+		},
+		{
+			description:             "Valid route with cw pool, balancer, stable swap and cl pool",
+			route:                   []poolmanagertypes.SwapAmountInRoute{{PoolId: 1, TokenOutDenom: ""}, {PoolId: 51, TokenOutDenom: ""}, {PoolId: 40, TokenOutDenom: ""}, {PoolId: 50, TokenOutDenom: ""}},
+			expectedRoutePoolPoints: 18,
+			expectedPass:            true,
+		},
 	}
 
+	s.Require().NoError(s.App.ProtoRevKeeper.SetMaxPointsPerTx(s.Ctx, 25))
+	s.Require().NoError(s.App.ProtoRevKeeper.SetMaxPointsPerBlock(s.Ctx, 100))
 	for _, tc := range cases {
 		s.Run(tc.description, func() {
-			s.SetupTest()
-			s.App.ProtoRevKeeper.SetPoolWeights(s.Ctx, types.PoolWeights{StableWeight: 3, BalancerWeight: 2, ConcentratedWeight: 1})
-
 			routePoolPoints, err := s.App.ProtoRevKeeper.CalculateRoutePoolPoints(s.Ctx, tc.route)
 			if tc.expectedPass {
 				s.Require().NoError(err)

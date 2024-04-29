@@ -6,13 +6,13 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
-	"github.com/cosmos/cosmos-sdk/simapp/helpers"
+	sims "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/simulation"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 
-	"github.com/osmosis-labs/osmosis/v16/app/params"
-	tokenfactorytypes "github.com/osmosis-labs/osmosis/v16/x/tokenfactory/types"
+	"github.com/osmosis-labs/osmosis/v24/app/params"
+	tokenfactorytypes "github.com/osmosis-labs/osmosis/v24/x/tokenfactory/types"
 
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	authsign "github.com/cosmos/cosmos-sdk/x/auth/signing"
@@ -60,20 +60,20 @@ func (sim *SimCtx) defaultTxBuilder(
 // TODO: Fix these args
 func (sim *SimCtx) deliverTx(tx sdk.Tx, msg sdk.Msg, msgName string) (simulation.OperationMsg, []simulation.FutureOperation, []byte, error) {
 	txConfig := params.MakeEncodingConfig().TxConfig // TODO: unhardcode
-	gasInfo, results, err := sim.BaseApp().Deliver(txConfig.TxEncoder(), tx)
+	_, results, err := sim.BaseApp().SimDeliver(txConfig.TxEncoder(), tx)
 	if err != nil {
-		return simulation.NoOpMsg(msgName, msgName, fmt.Sprintf("unable to deliver tx. \nreason: %v\n results: %v\n msg: %s\n tx: %s", err, results, msg, tx)), nil, nil, err
+		return simulation.OperationMsg{}, nil, nil, err
 	}
 
-	opMsg := simulation.NewOperationMsg(msg, true, "", gasInfo.GasWanted, gasInfo.GasUsed, nil)
+	opMsg := simulation.NewOperationMsg(msg, true, "", nil)
 	opMsg.Route = msgName
 	opMsg.Name = msgName
 
-	return opMsg, nil, results.Data, nil
+	return opMsg, []simulation.FutureOperation{}, results.Data, nil
 }
 
 // GenTx generates a signed mock transaction.
-// TODO: Surely theres proper API's in the SDK for this?
+// TODO: Surely there's proper API's in the SDK for this?
 // (This was copied from SDK simapp, and deleted the egregiously non-deterministic memo handling)
 func genTx(gen client.TxConfig, msgs []sdk.Msg, feeAmt sdk.Coins, gas uint64, chainID string, accNums, accSeqs []uint64, priv ...cryptotypes.PrivKey) (sdk.Tx, error) {
 	sigs := make([]signing.SignatureV2, len(priv))
@@ -131,7 +131,7 @@ func genTx(gen client.TxConfig, msgs []sdk.Msg, feeAmt sdk.Coins, gas uint64, ch
 func getGas(msg sdk.Msg) uint64 {
 	_, ok := msg.(*tokenfactorytypes.MsgCreateDenom)
 	if ok {
-		return uint64(tokenfactorytypes.DefaultCreationGasFee + helpers.DefaultGenTxGas)
+		return uint64(tokenfactorytypes.DefaultCreationGasFee + sims.DefaultGenTxGas)
 	}
-	return uint64(helpers.DefaultGenTxGas)
+	return uint64(sims.DefaultGenTxGas)
 }

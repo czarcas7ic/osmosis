@@ -1,15 +1,20 @@
 package osmoutils
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
+	db "github.com/cometbft/cometbft-db"
 	"github.com/cosmos/cosmos-sdk/store/prefix"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	db "github.com/tendermint/tm-db"
+
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+
+	"github.com/osmosis-labs/osmosis/osmomath"
 
 	"github.com/cosmos/cosmos-sdk/store"
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 )
 
 var (
@@ -168,14 +173,14 @@ func MustGet(store store.KVStore, key []byte, result proto.Message) {
 }
 
 // MustSetDec sets dec value to store at key. Panics on any error.
-func MustSetDec(store store.KVStore, key []byte, value sdk.Dec) {
+func MustSetDec(store store.KVStore, key []byte, value osmomath.Dec) {
 	MustSet(store, key, &sdk.DecProto{
 		Dec: value,
 	})
 }
 
 // MustGetDec gets dec value from store at key. Panics on any error.
-func MustGetDec(store store.KVStore, key []byte) sdk.Dec {
+func MustGetDec(store store.KVStore, key []byte) osmomath.Dec {
 	result := &sdk.DecProto{}
 	MustGet(store, key, result)
 	return result.Dec
@@ -184,14 +189,14 @@ func MustGetDec(store store.KVStore, key []byte) sdk.Dec {
 // GetDec gets dec value from store at key. Returns error if:
 // - database error occurs.
 // - no value at given key is found.
-func GetDec(store store.KVStore, key []byte) (sdk.Dec, error) {
+func GetDec(store store.KVStore, key []byte) (osmomath.Dec, error) {
 	result := &sdk.DecProto{}
 	isFound, err := Get(store, key, result)
 	if err != nil {
-		return sdk.Dec{}, err
+		return osmomath.Dec{}, err
 	}
 	if !isFound {
-		return sdk.Dec{}, DecNotFoundError{Key: string(key)}
+		return osmomath.Dec{}, DecNotFoundError{Key: string(key)}
 	}
 	return result.Dec, nil
 }
@@ -211,7 +216,7 @@ func Get(store store.KVStore, key []byte, result proto.Message) (found bool, err
 }
 
 // DeleteAllKeysFromPrefix deletes all store records that contains the given prefixKey.
-func DeleteAllKeysFromPrefix(ctx sdk.Context, store store.KVStore, prefixKey []byte) {
+func DeleteAllKeysFromPrefix(store store.KVStore, prefixKey []byte) {
 	prefixStore := prefix.NewStore(store, prefixKey)
 	iter := prefixStore.Iterator(nil, nil)
 	defer iter.Close()
@@ -219,4 +224,92 @@ func DeleteAllKeysFromPrefix(ctx sdk.Context, store store.KVStore, prefixKey []b
 	for ; iter.Valid(); iter.Next() {
 		prefixStore.Delete(iter.Key())
 	}
+}
+
+// GetCoinArrayFromPrefix returns all coins from the store that has the given prefix.
+func GetCoinArrayFromPrefix(ctx sdk.Context, storeKey storetypes.StoreKey, storePrefix []byte) []sdk.Coin {
+	coinArray := make([]sdk.Coin, 0)
+
+	store := ctx.KVStore(storeKey)
+	iterator := sdk.KVStorePrefixIterator(store, storePrefix)
+
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		bz := iterator.Value()
+		sdkInt := osmomath.Int{}
+		if err := sdkInt.Unmarshal(bz); err == nil {
+			denom := bytes.TrimPrefix(iterator.Key(), storePrefix)
+			coinArray = append(coinArray, sdk.NewCoin(string(denom), sdkInt))
+		}
+	}
+
+	return coinArray
+}
+
+// GetCoinByDenomFromPrefix returns the coin from the store that has the given prefix and denom.
+// If the denom is not found, a zero coin is returned.
+func GetCoinByDenomFromPrefix(ctx sdk.Context, storeKey storetypes.StoreKey, storePrefix []byte, denom string) (sdk.Coin, error) {
+	store := prefix.NewStore(ctx.KVStore(storeKey), storePrefix)
+	key := []byte(denom)
+
+	bz := store.Get(key)
+	if len(bz) == 0 {
+		return sdk.NewCoin(denom, osmomath.ZeroInt()), nil
+	}
+
+	sdkInt := osmomath.Int{}
+	if err := sdkInt.Unmarshal(bz); err != nil {
+		return sdk.NewCoin(denom, osmomath.ZeroInt()), err
+	}
+
+	return sdk.NewCoin(denom, sdkInt), nil
+}
+
+// IncreaseCoinByDenomFromPrefix increases the coin from the store that has the given prefix and denom by the specified amount.
+func IncreaseCoinByDenomFromPrefix(ctx sdk.Context, storeKey storetypes.StoreKey, storePrefix []byte, denom string, increasedAmt osmomath.Int) error {
+	store := prefix.NewStore(ctx.KVStore(storeKey), storePrefix)
+	key := []byte(denom)
+
+	coin, err := GetCoinByDenomFromPrefix(ctx, storeKey, storePrefix, denom)
+	if err != nil {
+		return err
+	}
+
+	coin.Amount = coin.Amount.Add(increasedAmt)
+	bz, err := coin.Amount.Marshal()
+	if err != nil {
+		return err
+	}
+
+	store.Set(key, bz)
+	return nil
+}
+
+var kvGasConfig = storetypes.KVGasConfig()
+
+// Get returns a value at key by mutating the result parameter. Returns true if the value was found and the
+// result mutated correctly. If the value is not in the store, returns false.
+// Returns error only when database or serialization errors occur. (And when an error occurs, returns false)
+//
+// This function also returns three gas numbers:
+// Gas flat, gas for key read, gas for value read.
+// You must charge all 3 for the gas accounting to be correct in the current SDK version.
+func TrackGasUsedInGet(store store.KVStore, key []byte, result proto.Message) (found bool, gasFlat, gasKey, gasVal uint64, err error) {
+	gasFlat = kvGasConfig.ReadCostFlat
+	gasKey = uint64(len(key)) * kvGasConfig.ReadCostPerByte
+	b := store.Get(key)
+	gasVal = uint64(len(b)) * kvGasConfig.ReadCostPerByte
+	if b == nil {
+		return false, gasFlat, gasKey, gasVal, nil
+	}
+	if err := proto.Unmarshal(b, result); err != nil {
+		return true, gasFlat, gasKey, gasVal, err
+	}
+	return true, gasFlat, gasKey, gasVal, nil
+}
+
+func ChargeMockReadGas(ctx sdk.Context, gasFlat, gasKey, gasVal uint64) {
+	ctx.GasMeter().ConsumeGas(gasFlat, storetypes.GasReadCostFlatDesc)
+	ctx.GasMeter().ConsumeGas(gasKey, storetypes.GasReadPerByteDesc)
+	ctx.GasMeter().ConsumeGas(gasVal, storetypes.GasReadPerByteDesc)
 }

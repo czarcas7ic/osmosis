@@ -8,17 +8,34 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"github.com/osmosis-labs/osmosis/osmomath"
-	"github.com/osmosis-labs/osmosis/v16/app/apptesting"
-	"github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	gammmigration "github.com/osmosis-labs/osmosis/v16/x/gamm/types/migration"
-	poolincentivestypes "github.com/osmosis-labs/osmosis/v16/x/pool-incentives/types"
+	"github.com/osmosis-labs/osmosis/osmoutils/osmoassert"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
+	"github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	gammmigration "github.com/osmosis-labs/osmosis/v24/x/gamm/types/migration"
+	poolincentivestypes "github.com/osmosis-labs/osmosis/v24/x/pool-incentives/types"
+)
+
+const (
+	validPoolId = uint64(1)
+)
+
+var (
+	DAIIBCDenom  = "ibc/0CD3A0285E1341859B5E86B6AB7682F023D03E97607CCC1DC95706411D866DF7"
+	USDCIBCDenom = "ibc/D189335C6E4A68B513C10AB227BF1C1D38C746766278BA3EEB4FB14124F1D858"
+
+	defaultDaiAmount, _ = osmomath.NewIntFromString("73000000000000000000000")
+	defaultDenom0mount  = osmomath.NewInt(10000000000)
+	desiredDenom0       = "uosmo"
+	desiredDenom0Coin   = sdk.NewCoin(desiredDenom0, defaultDenom0mount)
+	daiCoin             = sdk.NewCoin(DAIIBCDenom, defaultDaiAmount)
+	usdcCoin            = sdk.NewCoin(USDCIBCDenom, defaultDaiAmount)
 )
 
 func (s *KeeperTestSuite) TestMigrate() {
 	defaultAccount := apptesting.CreateRandomAccounts(1)[0]
-	defaultGammShares := sdk.NewCoin("gamm/pool/1", sdk.MustNewDecFromStr("100000000000000000000").RoundInt())
-	invalidGammShares := sdk.NewCoin("gamm/pool/1", sdk.MustNewDecFromStr("190000000000000000001").RoundInt())
-	defaultAccountFunds := sdk.NewCoins(sdk.NewCoin("eth", sdk.NewInt(200000000000)), sdk.NewCoin("usdc", sdk.NewInt(200000000000)))
+	defaultGammShares := sdk.NewCoin("gamm/pool/1", osmomath.MustNewDecFromStr("100000000000000000000").RoundInt())
+	invalidGammShares := sdk.NewCoin("gamm/pool/1", osmomath.MustNewDecFromStr("190000000000000000001").RoundInt())
+	defaultAccountFunds := sdk.NewCoins(sdk.NewCoin("eth", osmomath.NewInt(200000000000)), sdk.NewCoin("usdc", osmomath.NewInt(200000000000)))
 
 	// Explanation of additive tolerance of 100000:
 	//
@@ -39,7 +56,7 @@ func (s *KeeperTestSuite) TestMigrate() {
 	// These leaves us with full transfer of asset 0 and a (correct) transfer of asset 1 amounting to full GAMM balance minus 100000.
 	// We expect this tolerance to be sufficient as long as our test cases are on the same order of magnitude.
 	defaultErrorTolerance := osmomath.ErrTolerance{
-		AdditiveTolerance: sdk.NewDec(100000),
+		AdditiveTolerance: osmomath.NewDec(100000),
 		RoundingDir:       osmomath.RoundDown,
 	}
 	defaultJoinTime := s.Ctx.BlockTime()
@@ -47,16 +64,16 @@ func (s *KeeperTestSuite) TestMigrate() {
 	type param struct {
 		sender                sdk.AccAddress
 		sharesToMigrateDenom  string
-		sharesToMigrateAmount sdk.Int
+		sharesToMigrateAmount osmomath.Int
 	}
 
 	tests := []struct {
 		name                   string
 		param                  param
 		expectedErr            error
-		sharesToCreate         sdk.Int
+		sharesToCreate         osmomath.Int
 		tokenOutMins           sdk.Coins
-		expectedLiquidity      sdk.Dec
+		expectedLiquidity      osmomath.Dec
 		setupPoolMigrationLink bool
 		errTolerance           osmomath.ErrTolerance
 	}{
@@ -68,7 +85,7 @@ func (s *KeeperTestSuite) TestMigrate() {
 				sharesToMigrateAmount: defaultGammShares.Amount,
 			},
 			sharesToCreate:         defaultGammShares.Amount,
-			expectedLiquidity:      sdk.MustNewDecFromStr("100000000000.000000010000000000"),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("100000000000.000000010000000000"),
 			setupPoolMigrationLink: true,
 			errTolerance:           defaultErrorTolerance,
 		},
@@ -80,7 +97,7 @@ func (s *KeeperTestSuite) TestMigrate() {
 				sharesToMigrateAmount: defaultGammShares.Amount,
 			},
 			sharesToCreate:         defaultGammShares.Amount,
-			expectedLiquidity:      sdk.MustNewDecFromStr("100000000000.000000010000000000"),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("100000000000.000000010000000000"),
 			setupPoolMigrationLink: false,
 			expectedErr:            types.ConcentratedPoolMigrationLinkNotFoundError{PoolIdLeaving: 1},
 			errTolerance:           defaultErrorTolerance,
@@ -90,10 +107,10 @@ func (s *KeeperTestSuite) TestMigrate() {
 			param: param{
 				sender:                defaultAccount,
 				sharesToMigrateDenom:  defaultGammShares.Denom,
-				sharesToMigrateAmount: defaultGammShares.Amount.Quo(sdk.NewInt(2)),
+				sharesToMigrateAmount: defaultGammShares.Amount.Quo(osmomath.NewInt(2)),
 			},
 			sharesToCreate:         defaultGammShares.Amount,
-			expectedLiquidity:      sdk.MustNewDecFromStr("50000000000.000000005000000000"),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("50000000000.000000005000000000"),
 			setupPoolMigrationLink: true,
 			errTolerance:           defaultErrorTolerance,
 		},
@@ -102,10 +119,10 @@ func (s *KeeperTestSuite) TestMigrate() {
 			param: param{
 				sender:                defaultAccount,
 				sharesToMigrateDenom:  defaultGammShares.Denom,
-				sharesToMigrateAmount: defaultGammShares.Amount.Quo(sdk.NewInt(2)),
+				sharesToMigrateAmount: defaultGammShares.Amount.Quo(osmomath.NewInt(2)),
 			},
-			sharesToCreate:         defaultGammShares.Amount.Mul(sdk.NewInt(2)),
-			expectedLiquidity:      sdk.MustNewDecFromStr("49999999999.000000004999999999"),
+			sharesToCreate:         defaultGammShares.Amount.Mul(osmomath.NewInt(2)),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("49999999999.000000004999999999"),
 			setupPoolMigrationLink: true,
 			errTolerance:           defaultErrorTolerance,
 		},
@@ -117,7 +134,7 @@ func (s *KeeperTestSuite) TestMigrate() {
 				sharesToMigrateAmount: invalidGammShares.Amount,
 			},
 			sharesToCreate:         defaultGammShares.Amount,
-			expectedLiquidity:      sdk.MustNewDecFromStr("100000000000.000000010000000000"),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("100000000000.000000010000000000"),
 			setupPoolMigrationLink: true,
 			expectedErr:            errorsmod.Wrap(sdkerrors.ErrInsufficientFunds, fmt.Sprintf("%s is smaller than %s", defaultGammShares, invalidGammShares)),
 		},
@@ -130,8 +147,8 @@ func (s *KeeperTestSuite) TestMigrate() {
 				sharesToMigrateAmount: defaultGammShares.Amount,
 			},
 			sharesToCreate:         defaultGammShares.Amount,
-			tokenOutMins:           sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(90000000000)), sdk.NewCoin(USDC, sdk.NewInt(90000000000))),
-			expectedLiquidity:      sdk.MustNewDecFromStr("100000000000.000000010000000000"),
+			tokenOutMins:           sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(90000000000)), sdk.NewCoin(USDC, osmomath.NewInt(90000000000))),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("100000000000.000000010000000000"),
 			setupPoolMigrationLink: true,
 			errTolerance:           defaultErrorTolerance,
 		},
@@ -143,12 +160,12 @@ func (s *KeeperTestSuite) TestMigrate() {
 				sharesToMigrateAmount: defaultGammShares.Amount,
 			},
 			sharesToCreate:         defaultGammShares.Amount,
-			tokenOutMins:           sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(110000000000)), sdk.NewCoin(USDC, sdk.NewInt(110000000000))),
-			expectedLiquidity:      sdk.MustNewDecFromStr("100000000000.000000010000000000"),
+			tokenOutMins:           sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(110000000000)), sdk.NewCoin(USDC, osmomath.NewInt(110000000000))),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("100000000000.000000010000000000"),
 			setupPoolMigrationLink: true,
 			expectedErr: errorsmod.Wrapf(types.ErrLimitMinAmount,
 				"Exit pool returned %s , minimum tokens out specified as %s",
-				sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(100000000000)), sdk.NewCoin(USDC, sdk.NewInt(100000000000))), sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(110000000000)), sdk.NewCoin(USDC, sdk.NewInt(110000000000)))),
+				sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(100000000000)), sdk.NewCoin(USDC, osmomath.NewInt(100000000000))), sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(110000000000)), sdk.NewCoin(USDC, osmomath.NewInt(110000000000)))),
 			errTolerance: defaultErrorTolerance,
 		},
 		{
@@ -159,12 +176,12 @@ func (s *KeeperTestSuite) TestMigrate() {
 				sharesToMigrateAmount: defaultGammShares.Amount,
 			},
 			sharesToCreate:         defaultGammShares.Amount,
-			tokenOutMins:           sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(110000000000)), sdk.NewCoin(USDC, sdk.NewInt(100000000000))),
-			expectedLiquidity:      sdk.MustNewDecFromStr("100000000000.000000010000000000"),
+			tokenOutMins:           sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(110000000000)), sdk.NewCoin(USDC, osmomath.NewInt(100000000000))),
+			expectedLiquidity:      osmomath.MustNewDecFromStr("100000000000.000000010000000000"),
 			setupPoolMigrationLink: true,
 			expectedErr: errorsmod.Wrapf(types.ErrLimitMinAmount,
 				"Exit pool returned %s , minimum tokens out specified as %s",
-				sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(100000000000)), sdk.NewCoin(USDC, sdk.NewInt(100000000000))), sdk.NewCoins(sdk.NewCoin(ETH, sdk.NewInt(110000000000)), sdk.NewCoin(USDC, sdk.NewInt(100000000000)))),
+				sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(100000000000)), sdk.NewCoin(USDC, osmomath.NewInt(100000000000))), sdk.NewCoins(sdk.NewCoin(ETH, osmomath.NewInt(110000000000)), sdk.NewCoin(USDC, osmomath.NewInt(100000000000)))),
 			errTolerance: defaultErrorTolerance,
 		},
 	}
@@ -176,7 +193,7 @@ func (s *KeeperTestSuite) TestMigrate() {
 
 		// Prepare both balancer and concentrated pools
 		s.FundAcc(test.param.sender, defaultAccountFunds)
-		balancerPoolId := s.PrepareBalancerPoolWithCoins(sdk.NewCoin("eth", sdk.NewInt(100000000000)), sdk.NewCoin("usdc", sdk.NewInt(100000000000)))
+		balancerPoolId := s.PrepareBalancerPoolWithCoins(sdk.NewCoin("eth", osmomath.NewInt(100000000000)), sdk.NewCoin("usdc", osmomath.NewInt(100000000000)))
 		balancerPool, err := s.App.GAMMKeeper.GetPoolAndPoke(s.Ctx, balancerPoolId)
 		s.Require().NoError(err)
 		clPool := s.PrepareConcentratedPool()
@@ -193,7 +210,7 @@ func (s *KeeperTestSuite) TestMigrate() {
 		clPoolAddress := clPool.GetAddress()
 
 		// Join balancer pool to create gamm shares directed in the test case
-		_, _, err = s.App.GAMMKeeper.JoinPoolNoSwap(s.Ctx, test.param.sender, balancerPoolId, test.sharesToCreate, sdk.NewCoins(sdk.NewCoin("eth", sdk.NewInt(999999999999999)), sdk.NewCoin("usdc", sdk.NewInt(999999999999999))))
+		_, _, err = s.App.GAMMKeeper.JoinPoolNoSwap(s.Ctx, test.param.sender, balancerPoolId, test.sharesToCreate, sdk.NewCoins(sdk.NewCoin("eth", osmomath.NewInt(999999999999999)), sdk.NewCoin("usdc", osmomath.NewInt(999999999999999))))
 		s.Require().NoError(err)
 
 		// Note balancer pool balance after joining balancer pool
@@ -207,20 +224,20 @@ func (s *KeeperTestSuite) TestMigrate() {
 		balancerPool, err = s.App.GAMMKeeper.GetPoolAndPoke(s.Ctx, balancerPoolId)
 		s.Require().NoError(err)
 		sharesToMigrate := sdk.NewCoin(test.param.sharesToMigrateDenom, test.param.sharesToMigrateAmount)
-		expectedCoinsOut, err := balancerPool.CalcExitPoolCoinsFromShares(s.Ctx, sharesToMigrate.Amount, sdk.ZeroDec())
+		expectedCoinsOut, err := balancerPool.CalcExitPoolCoinsFromShares(s.Ctx, sharesToMigrate.Amount, osmomath.ZeroDec())
 		s.Require().NoError(err)
 
 		// Migrate the user's gamm shares to a full range concentrated liquidity position
 		userBalancesBeforeMigration := s.App.BankKeeper.GetAllBalances(s.Ctx, test.param.sender)
-		positionId, amount0, amount1, _, poolIdLeaving, poolIdEntering, err := keeper.MigrateUnlockedPositionFromBalancerToConcentrated(s.Ctx, test.param.sender, sharesToMigrate, test.tokenOutMins)
+		positionData, migratedPools, err := keeper.MigrateUnlockedPositionFromBalancerToConcentrated(s.Ctx, test.param.sender, sharesToMigrate, test.tokenOutMins)
 		userBalancesAfterMigration := s.App.BankKeeper.GetAllBalances(s.Ctx, test.param.sender)
 		if test.expectedErr != nil {
 			s.Require().Error(err)
 			s.Require().ErrorContains(err, test.expectedErr.Error())
 
 			// Expect zero values for both pool ids
-			s.Require().Zero(poolIdLeaving)
-			s.Require().Zero(poolIdEntering)
+			s.Require().Zero(migratedPools.LeavingID)
+			s.Require().Zero(migratedPools.EnteringID)
 
 			// Assure the user's gamm shares still exist
 			userGammBalanceAfterFailedMigration := s.App.BankKeeper.GetBalance(s.Ctx, test.param.sender, "gamm/pool/1")
@@ -229,12 +246,12 @@ func (s *KeeperTestSuite) TestMigrate() {
 			// Assure cl pool has no balance after a failed migration.
 			clPoolEthBalanceAfterFailedMigration := s.App.BankKeeper.GetBalance(s.Ctx, clPoolAddress, ETH)
 			clPoolUsdcBalanceAfterFailedMigration := s.App.BankKeeper.GetBalance(s.Ctx, clPoolAddress, USDC)
-			s.Require().Equal(sdk.NewInt(0), clPoolEthBalanceAfterFailedMigration.Amount)
-			s.Require().Equal(sdk.NewInt(0), clPoolUsdcBalanceAfterFailedMigration.Amount)
+			s.Require().Equal(osmomath.NewInt(0), clPoolEthBalanceAfterFailedMigration.Amount)
+			s.Require().Equal(osmomath.NewInt(0), clPoolUsdcBalanceAfterFailedMigration.Amount)
 
 			// Assure the position was not created.
 			// TODO: When we implement lock breaking, we need to change time.Time{} to the lock's end time.
-			_, err := s.App.ConcentratedLiquidityKeeper.GetPositionLiquidity(s.Ctx, positionId)
+			_, err := s.App.ConcentratedLiquidityKeeper.GetPositionLiquidity(s.Ctx, positionData.ID)
 			s.Require().Error(err)
 			continue
 		}
@@ -242,19 +259,19 @@ func (s *KeeperTestSuite) TestMigrate() {
 
 		// Expect the poolIdLeaving to be the balancer pool id
 		// Expect the poolIdEntering to be the concentrated liquidity pool id
-		s.Require().Equal(balancerPoolId, poolIdLeaving)
-		s.Require().Equal(clPool.GetId(), poolIdEntering)
+		s.Require().Equal(balancerPoolId, migratedPools.LeavingID)
+		s.Require().Equal(clPool.GetId(), migratedPools.EnteringID)
 
 		// Determine how much of the user's balance was not used in the migration
 		// This amount should be returned to the user.
-		expectedUserFinalEthBalanceDiff := expectedCoinsOut.AmountOf(ETH).Sub(amount0)
-		expectedUserFinalUsdcBalanceDiff := expectedCoinsOut.AmountOf(USDC).Sub(amount1)
+		expectedUserFinalEthBalanceDiff := expectedCoinsOut.AmountOf(ETH).Sub(positionData.Amount0)
+		expectedUserFinalUsdcBalanceDiff := expectedCoinsOut.AmountOf(USDC).Sub(positionData.Amount1)
 		s.Require().Equal(userBalancesBeforeMigration.AmountOf(ETH).Add(expectedUserFinalEthBalanceDiff).String(), userBalancesAfterMigration.AmountOf(ETH).String())
 		s.Require().Equal(userBalancesBeforeMigration.AmountOf(USDC).Add(expectedUserFinalUsdcBalanceDiff).String(), userBalancesAfterMigration.AmountOf(USDC).String())
 
 		// Assure the expected position was created.
 		// TODO: When we implement lock breaking, we need to change time.Time{} to the lock's end time.
-		position, err := s.App.ConcentratedLiquidityKeeper.GetPositionLiquidity(s.Ctx, positionId)
+		position, err := s.App.ConcentratedLiquidityKeeper.GetPositionLiquidity(s.Ctx, positionData.ID)
 		s.Require().NoError(err)
 		s.Require().Equal(test.expectedLiquidity, position)
 
@@ -272,13 +289,13 @@ func (s *KeeperTestSuite) TestMigrate() {
 
 		// The balance in the cl pool should be equal to what the user previously had in the gamm pool.
 		// This test is within 100 shares due to rounding that occurs from utilizing .000000000000000001 instead of 0.
-		s.Require().Equal(0, test.errTolerance.Compare(userEthBalanceTransferredToClPool.Amount, clPoolEthBalanceAfterMigration.Amount))
-		s.Require().Equal(0, test.errTolerance.Compare(userUsdcBalanceTransferredToClPool.Amount, clPoolUsdcBalanceAfterMigration.Amount))
+		osmoassert.Equal(s.T(), test.errTolerance, userEthBalanceTransferredToClPool.Amount, clPoolEthBalanceAfterMigration.Amount)
+		osmoassert.Equal(s.T(), test.errTolerance, userUsdcBalanceTransferredToClPool.Amount, clPoolUsdcBalanceAfterMigration.Amount)
 
 		// Assert user amount transferred to cl pool from gamm pool should be equal to the amount we migrated from the migrate message.
 		// This test is within 100 shares due to rounding that occurs from utilizing .000000000000000001 instead of 0.
-		s.Require().Equal(0, test.errTolerance.Compare(userEthBalanceTransferredToClPool.Amount, amount0))
-		s.Require().Equal(0, test.errTolerance.Compare(userUsdcBalanceTransferredToClPool.Amount, amount1))
+		osmoassert.Equal(s.T(), test.errTolerance, userEthBalanceTransferredToClPool.Amount, positionData.Amount0)
+		osmoassert.Equal(s.T(), test.errTolerance, userUsdcBalanceTransferredToClPool.Amount, positionData.Amount0)
 	}
 }
 
@@ -414,8 +431,8 @@ func (s *KeeperTestSuite) TestReplaceMigrationRecords() {
 			s.SetupTest()
 			keeper := s.App.GAMMKeeper
 
-			defaultBalancerCoin0 := sdk.NewCoin(ETH, sdk.NewInt(1000000000))
-			defaultBalancerCoin1 := sdk.NewCoin(USDC, sdk.NewInt(1000000000))
+			defaultBalancerCoin0 := sdk.NewCoin(ETH, osmomath.NewInt(1000000000))
+			defaultBalancerCoin1 := sdk.NewCoin(USDC, osmomath.NewInt(1000000000))
 
 			if test.overwriteBalancerDenom0 != "" {
 				defaultBalancerCoin0.Denom = test.overwriteBalancerDenom0
@@ -432,7 +449,7 @@ func (s *KeeperTestSuite) TestReplaceMigrationRecords() {
 				s.PrepareBalancerPoolWithCoins(poolCoins...)
 			}
 			for i := 0; i < 2; i++ {
-				s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, defaultTickSpacing, sdk.ZeroDec())
+				s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, defaultTickSpacing, osmomath.ZeroDec())
 			}
 			// Four asset balancer pool ID if created: 5
 			if test.createFourAssetBalancerPool {
@@ -673,8 +690,8 @@ func (s *KeeperTestSuite) TestUpdateMigrationRecords() {
 			s.SetupTest()
 			keeper := s.App.GAMMKeeper
 
-			defaultBalancerCoin0 := sdk.NewCoin(ETH, sdk.NewInt(1000000000))
-			defaultBalancerCoin1 := sdk.NewCoin(USDC, sdk.NewInt(1000000000))
+			defaultBalancerCoin0 := sdk.NewCoin(ETH, osmomath.NewInt(1000000000))
+			defaultBalancerCoin1 := sdk.NewCoin(USDC, osmomath.NewInt(1000000000))
 
 			if test.overwriteBalancerDenom0 != "" {
 				defaultBalancerCoin0.Denom = test.overwriteBalancerDenom0
@@ -691,7 +708,7 @@ func (s *KeeperTestSuite) TestUpdateMigrationRecords() {
 				s.PrepareBalancerPoolWithCoins(poolCoins...)
 			}
 			for i := 0; i < 4; i++ {
-				s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, defaultTickSpacing, sdk.ZeroDec())
+				s.PrepareCustomConcentratedPool(s.TestAccs[0], ETH, USDC, defaultTickSpacing, osmomath.ZeroDec())
 			}
 			// Four asset balancer pool ID if created: 9
 			if test.createFourAssetBalancerPool {
@@ -772,7 +789,7 @@ func (s *KeeperTestSuite) TestGetLinkedConcentratedPoolID() {
 			s.PrepareMultipleBalancerPools(3)
 			s.PrepareMultipleConcentratedPools(3)
 
-			keeper.OverwriteMigrationRecordsAndRedirectDistrRecords(s.Ctx, DefaultMigrationRecords)
+			keeper.OverwriteMigrationRecords(s.Ctx, DefaultMigrationRecords)
 
 			for i, poolIdLeaving := range test.poolIdLeaving {
 				poolIdEntering, err := keeper.GetLinkedConcentratedPoolID(s.Ctx, poolIdLeaving)
@@ -839,7 +856,7 @@ func (s *KeeperTestSuite) TestGetLinkedBalancerPoolID() {
 			s.PrepareMultipleConcentratedPools(3)
 
 			if !test.skipLinking {
-				keeper.OverwriteMigrationRecordsAndRedirectDistrRecords(s.Ctx, DefaultMigrationRecords)
+				keeper.OverwriteMigrationRecords(s.Ctx, DefaultMigrationRecords)
 			}
 
 			s.Require().True(len(test.poolIdEntering) > 0)
@@ -885,7 +902,7 @@ func (s *KeeperTestSuite) TestGetAllMigrationInfo() {
 			s.PrepareMultipleConcentratedPools(3)
 
 			if !test.skipLinking {
-				keeper.OverwriteMigrationRecordsAndRedirectDistrRecords(s.Ctx, DefaultMigrationRecords)
+				keeper.OverwriteMigrationRecords(s.Ctx, DefaultMigrationRecords)
 			}
 
 			migrationRecords, err := s.App.GAMMKeeper.GetAllMigrationInfo(s.Ctx)
@@ -899,102 +916,222 @@ func (s *KeeperTestSuite) TestGetAllMigrationInfo() {
 	}
 }
 
-func (suite *KeeperTestSuite) TestRedirectDistributionRecord() {
-	suite.Setup()
-
-	var (
-		defaultUsdcAmount = sdk.NewInt(7300000000)
-		defaultOsmoAmount = sdk.NewInt(10000000000)
-		usdcCoin          = sdk.NewCoin("uusdc", defaultUsdcAmount)
-		osmoCoin          = sdk.NewCoin("uosmo", defaultOsmoAmount)
-	)
-
-	longestLockableDuration, err := suite.App.PoolIncentivesKeeper.GetLongestLockableDuration(suite.Ctx)
-	suite.Require().NoError(err)
-
+func (s *KeeperTestSuite) TestCreateConcentratedPoolFromCFMM() {
 	tests := map[string]struct {
 		poolLiquidity sdk.Coins
-		cfmmPoolId    uint64
-		clPoolId      uint64
-		expectError   error
+
+		cfmmPoolIdToLinkWith uint64
+		desiredDenom0        string
+		expectedDenoms       []string
+		expectError          error
 	}{
-		"happy path": {
-			poolLiquidity: sdk.NewCoins(usdcCoin, osmoCoin),
-			cfmmPoolId:    uint64(1),
-			clPoolId:      uint64(3),
+		"success": {
+			poolLiquidity:        sdk.NewCoins(desiredDenom0Coin, daiCoin),
+			cfmmPoolIdToLinkWith: validPoolId,
+			desiredDenom0:        desiredDenom0,
+			expectedDenoms:       []string{desiredDenom0, daiCoin.Denom},
 		},
-		"error: cfmm pool ID doesn't exist": {
-			poolLiquidity: sdk.NewCoins(usdcCoin, osmoCoin),
-			cfmmPoolId:    uint64(4),
-			clPoolId:      uint64(3),
-			expectError:   poolincentivestypes.NoGaugeAssociatedWithPoolError{PoolId: 4, Duration: longestLockableDuration},
+		"error: invalid denom 0": {
+			poolLiquidity:        sdk.NewCoins(desiredDenom0Coin, daiCoin),
+			cfmmPoolIdToLinkWith: validPoolId,
+			desiredDenom0:        USDCIBCDenom,
+			expectError:          types.NoDesiredDenomInPoolError{DesiredDenom: USDCIBCDenom},
 		},
-		"error: cl pool ID doesn't exist": {
-			poolLiquidity: sdk.NewCoins(usdcCoin, osmoCoin),
-			cfmmPoolId:    uint64(1),
-			clPoolId:      uint64(4),
-			expectError:   poolincentivestypes.NoGaugeAssociatedWithPoolError{PoolId: 4, Duration: longestLockableDuration},
+		"error: pool with 3 assets, must have two": {
+			poolLiquidity:        sdk.NewCoins(desiredDenom0Coin, daiCoin, usdcCoin),
+			cfmmPoolIdToLinkWith: validPoolId,
+			desiredDenom0:        USDCIBCDenom,
+			expectError:          types.ErrMustHaveTwoDenoms,
 		},
 	}
 
 	for name, tc := range tests {
 		tc := tc
-		suite.Run(name, func() {
-			suite.SetupTest()
+		s.Run(name, func() {
+			s.SetupTest()
 
-			// Create primary balancer pool.
-			balancerId := suite.PrepareBalancerPoolWithCoins(tc.poolLiquidity...)
-			balancerPool, err := suite.App.PoolManagerKeeper.GetPool(suite.Ctx, balancerId)
-			suite.Require().NoError(err)
+			balancerId := s.PrepareBalancerPoolWithCoins(tc.poolLiquidity...)
 
-			// Create another balancer pool to test that its gauge links are unchanged
-			balancerId2 := suite.PrepareBalancerPoolWithCoins(tc.poolLiquidity...)
+			balancerPool, err := s.App.PoolManagerKeeper.GetPool(s.Ctx, balancerId)
+			s.Require().NoError(err)
 
-			// Get gauges for both balancer pools.
-			gaugeToRedirect, err := suite.App.PoolIncentivesKeeper.GetPoolGaugeId(suite.Ctx, balancerPool.GetId(), longestLockableDuration)
-			suite.Require().NoError(err)
-			gaugeToNotRedirect, err := suite.App.PoolIncentivesKeeper.GetPoolGaugeId(suite.Ctx, balancerId2, longestLockableDuration)
-			suite.Require().NoError(err)
+			clPoolReturned, err := s.App.GAMMKeeper.CreateConcentratedPoolFromCFMM(s.Ctx, tc.cfmmPoolIdToLinkWith, tc.desiredDenom0, osmomath.ZeroDec(), defaultTickSpacing)
 
-			// Distribution info prior to redirecting.
+			if tc.expectError != nil {
+				s.Require().Error(err)
+				s.Require().Nil(clPoolReturned)
+				return
+			}
+			s.Require().NoError(err)
+
+			// Validate that pool saved in state is the same as the one returned
+			clPoolInState, err := s.App.PoolManagerKeeper.GetPool(s.Ctx, clPoolReturned.GetId())
+			s.Require().NoError(err)
+			s.Require().Equal(clPoolReturned, clPoolInState)
+
+			// Validate CL and balancer pools have the same spread factor.
+			s.Require().Equal(balancerPool.GetSpreadFactor(s.Ctx), clPoolReturned.GetSpreadFactor(s.Ctx))
+
+			// Validate that CL and balancer pools have the same denoms
+			balancerDenoms, err := s.App.PoolManagerKeeper.RouteGetPoolDenoms(s.Ctx, balancerPool.GetId())
+			s.Require().NoError(err)
+
+			concentratedDenoms, err := s.App.PoolManagerKeeper.RouteGetPoolDenoms(s.Ctx, clPoolReturned.GetId())
+			s.Require().NoError(err)
+
+			// Order between balancer and concentrated might differ
+			// because balancer lexicographically orders denoms but CL does not.
+			s.Require().ElementsMatch(balancerDenoms, concentratedDenoms)
+			s.Require().Equal(tc.expectedDenoms, concentratedDenoms)
+		})
+	}
+}
+
+func (s *KeeperTestSuite) TestCreateCanonicalConcentratedLiquidityPoolAndMigrationLink() {
+	s.Setup()
+
+	longestLockableDuration, err := s.App.PoolIncentivesKeeper.GetLongestLockableDuration(s.Ctx)
+	s.Require().NoError(err)
+
+	tests := map[string]struct {
+		poolLiquidity              sdk.Coins
+		cfmmPoolIdToLinkWith       uint64
+		desiredDenom0              string
+		expectedBalancerDenoms     []string
+		expectedConcentratedDenoms []string
+		expectError                error
+	}{
+		"success - denoms reordered relative to balancer": {
+			poolLiquidity:        sdk.NewCoins(desiredDenom0Coin, daiCoin),
+			cfmmPoolIdToLinkWith: validPoolId,
+			// lexicographically ordered
+			expectedBalancerDenoms: []string{daiCoin.Denom, desiredDenom0Coin.Denom},
+			// determined by desired denom 0
+			expectedConcentratedDenoms: []string{desiredDenom0Coin.Denom, daiCoin.Denom},
+			desiredDenom0:              desiredDenom0,
+		},
+		"success - denoms are not reordered relative to balancer": {
+			poolLiquidity:        sdk.NewCoins(desiredDenom0Coin, daiCoin),
+			cfmmPoolIdToLinkWith: validPoolId,
+			// lexicographically ordered
+			expectedBalancerDenoms: []string{daiCoin.Denom, desiredDenom0Coin.Denom},
+			// determined by desired denom 0
+			expectedConcentratedDenoms: []string{daiCoin.Denom, desiredDenom0Coin.Denom},
+			desiredDenom0:              daiCoin.Denom,
+		},
+		"error: invalid denom 0": {
+			poolLiquidity:        sdk.NewCoins(desiredDenom0Coin, daiCoin),
+			cfmmPoolIdToLinkWith: validPoolId,
+			desiredDenom0:        USDCIBCDenom,
+			expectError:          types.NoDesiredDenomInPoolError{DesiredDenom: USDCIBCDenom},
+		},
+		"error: pool with 3 assets, must have two": {
+			poolLiquidity:        sdk.NewCoins(desiredDenom0Coin, daiCoin, usdcCoin),
+			cfmmPoolIdToLinkWith: validPoolId,
+			desiredDenom0:        USDCIBCDenom,
+			expectError:          types.ErrMustHaveTwoDenoms,
+		},
+	}
+
+	for name, tc := range tests {
+		tc := tc
+		s.Run(name, func() {
+			s.SetupTest()
+
+			balancerId := s.PrepareBalancerPoolWithCoins(tc.poolLiquidity...)
+
+			// Another pool for testing that its gauge and migration links are unchanged.
+			balancerId2 := s.PrepareBalancerPoolWithCoins(tc.poolLiquidity...)
+
+			// Another pool for testing that previously existing migration links don't get overwritten.
+			balancerId3 := s.PrepareBalancerPoolWithCoins(tc.poolLiquidity...)
+
+			clPoolOld, err := s.App.GAMMKeeper.CreateCanonicalConcentratedLiquidityPoolAndMigrationLink(s.Ctx, balancerId3, tc.desiredDenom0, osmomath.ZeroDec(), defaultTickSpacing)
+
+			balancerPool, err := s.App.PoolManagerKeeper.GetPool(s.Ctx, balancerId)
+			s.Require().NoError(err)
+
+			// Get balancer gauges.
+			gaugeToRedirect, _ := s.App.PoolIncentivesKeeper.GetPoolGaugeId(s.Ctx, balancerPool.GetId(), longestLockableDuration)
+
+			gaugeToNotRedeirect, _ := s.App.PoolIncentivesKeeper.GetPoolGaugeId(s.Ctx, balancerId2, longestLockableDuration)
+
 			originalDistrInfo := poolincentivestypes.DistrInfo{
-				TotalWeight: sdk.NewInt(100),
+				TotalWeight: osmomath.NewInt(100),
 				Records: []poolincentivestypes.DistrRecord{
 					{
 						GaugeId: gaugeToRedirect,
-						Weight:  sdk.NewInt(50),
+						Weight:  osmomath.NewInt(50),
 					},
 					{
-						GaugeId: gaugeToNotRedirect,
-						Weight:  sdk.NewInt(50),
+						GaugeId: gaugeToNotRedeirect,
+						Weight:  osmomath.NewInt(50),
 					},
 				},
 			}
-			suite.App.PoolIncentivesKeeper.SetDistrInfo(suite.Ctx, originalDistrInfo)
+			s.App.PoolIncentivesKeeper.SetDistrInfo(s.Ctx, originalDistrInfo)
 
-			// Create concentrated pool.
-			clPool := suite.PrepareCustomConcentratedPool(suite.TestAccs[0], tc.poolLiquidity[1].Denom, tc.poolLiquidity[0].Denom, 100, sdk.MustNewDecFromStr("0.001"))
+			// CreateCanonicalConcentratedLiquidityPoolAndMigration is used to change the distribution records and now no longer does.
+			// We take the distribution records before execution to ensure it is not changed.
+			distrInfoPre := s.App.PoolIncentivesKeeper.GetDistrInfo(s.Ctx)
 
-			// Redirect distribution record from the primary balancer pool to the concentrated pool.
-			err = suite.App.GAMMKeeper.RedirectDistributionRecord(suite.Ctx, tc.cfmmPoolId, tc.clPoolId)
+			clPool, err := s.App.GAMMKeeper.CreateCanonicalConcentratedLiquidityPoolAndMigrationLink(s.Ctx, tc.cfmmPoolIdToLinkWith, tc.desiredDenom0, osmomath.ZeroDec(), defaultTickSpacing)
+
 			if tc.expectError != nil {
-				suite.Require().Error(err)
+				s.Require().Error(err)
 				return
 			}
-			suite.Require().NoError(err)
+			s.Require().NoError(err)
 
-			// Validate that the balancer gauge is now linked to the new concentrated pool.
-			concentratedPoolGaugeId, err := suite.App.PoolIncentivesKeeper.GetPoolGaugeId(suite.Ctx, clPool.GetId(), suite.App.IncentivesKeeper.GetEpochInfo(suite.Ctx).Duration)
-			suite.Require().NoError(err)
-			distrInfo := suite.App.PoolIncentivesKeeper.GetDistrInfo(suite.Ctx)
-			suite.Require().Equal(distrInfo.Records[0].GaugeId, concentratedPoolGaugeId)
+			// Get the new concentrated pool.
+			// Note, +4 because we create 3 balancer pools and 1 cl pool during test setup, and 1 concentrated pool during migration.
+			clPoolInState, err := s.App.PoolManagerKeeper.GetPool(s.Ctx, validPoolId+4)
+			s.Require().NoError(err)
+			s.Require().Equal(clPool, clPoolInState)
 
-			// Validate that distribution record from another pool is not redirected.
-			suite.Require().Equal(distrInfo.Records[1].GaugeId, gaugeToNotRedirect)
+			// Validate that CL and balancer pools have the same denoms
+			balancerDenoms, err := s.App.PoolManagerKeeper.RouteGetPoolDenoms(s.Ctx, balancerPool.GetId())
+			s.Require().NoError(err)
+
+			concentratedDenoms, err := s.App.PoolManagerKeeper.RouteGetPoolDenoms(s.Ctx, clPoolInState.GetId())
+			s.Require().NoError(err)
+
+			// This check does not guarantee order.
+			s.Require().ElementsMatch(balancerDenoms, concentratedDenoms)
+
+			// Validate order of balancer denoms is lexicographically sorted.
+			s.Require().Equal(tc.expectedBalancerDenoms, balancerDenoms)
+
+			// Validate order of concentrated pool denoms which might be different from balancer.
+			s.Require().Equal(tc.expectedConcentratedDenoms, concentratedDenoms)
+
+			// Validate that the new concentrated pool has a gauge.
+			_, err = s.App.PoolIncentivesKeeper.GetPoolGaugeId(s.Ctx, clPoolInState.GetId(), s.App.IncentivesKeeper.GetEpochInfo(s.Ctx).Duration)
+			s.Require().NoError(err)
+
+			// Ensure the distribution records are unchanged.
+			distrInfoPost := s.App.PoolIncentivesKeeper.GetDistrInfo(s.Ctx)
+			s.Require().Equal(distrInfoPre, distrInfoPost)
+
+			// Validate migration record.
+			migrationInfo, err := s.App.GAMMKeeper.GetAllMigrationInfo(s.Ctx)
+			s.Require().NoError(err)
+			s.Require().Equal(migrationInfo, gammmigration.MigrationRecords{
+				BalancerToConcentratedPoolLinks: []gammmigration.BalancerToConcentratedPoolLink{
+					{
+						BalancerPoolId: balancerId,
+						ClPoolId:       clPoolInState.GetId(),
+					},
+					{
+						BalancerPoolId: balancerId3,
+						ClPoolId:       clPoolOld.GetId(),
+					},
+				},
+			})
 
 			// Validate that old gauge still exist
-			_, err = suite.App.IncentivesKeeper.GetGaugeByID(suite.Ctx, gaugeToRedirect)
-			suite.Require().NoError(err)
+			_, err = s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, gaugeToRedirect)
+			s.Require().NoError(err)
 		})
 	}
 }

@@ -5,22 +5,25 @@ import (
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/gogoproto/proto"
 
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
-	"github.com/osmosis-labs/osmosis/v16/x/twap/types"
+	"github.com/osmosis-labs/osmosis/v24/x/twap/types"
+
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 )
 
 type Keeper struct {
-	storeKey     sdk.StoreKey
-	transientKey *sdk.TransientStoreKey
+	storeKey     storetypes.StoreKey
+	transientKey *storetypes.TransientStoreKey
 
 	paramSpace paramtypes.Subspace
 
 	poolmanagerKeeper types.PoolManagerInterface
 }
 
-func NewKeeper(storeKey sdk.StoreKey, transientKey *sdk.TransientStoreKey, paramSpace paramtypes.Subspace, poolmanagerKeeper types.PoolManagerInterface) *Keeper {
+func NewKeeper(storeKey storetypes.StoreKey, transientKey *storetypes.TransientStoreKey, paramSpace paramtypes.Subspace, poolmanagerKeeper types.PoolManagerInterface) *Keeper {
 	// set KeyTable if it has not already been set
 	if !paramSpace.HasKeyTable() {
 		paramSpace = paramSpace.WithKeyTable(types.ParamKeyTable())
@@ -38,6 +41,11 @@ func (k Keeper) GetParams(ctx sdk.Context) (params types.Params) {
 // SetParams sets the total set of twap parameters.
 func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
 	k.paramSpace.SetParamSet(ctx, &params)
+}
+
+// SetParam sets a specific twap module's parameter with the provided parameter.
+func (k Keeper) SetParam(ctx sdk.Context, key []byte, value interface{}) {
+	k.paramSpace.Set(ctx, key, value)
 }
 
 func (k *Keeper) PruneEpochIdentifier(ctx sdk.Context) string {
@@ -71,9 +79,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) {
 
 // ExportGenesis returns the twap module's exported genesis.
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
-	// These are ordered in increasing order, guaranteed by the iterator
-	// that is prefixed by time.
-	twapRecords, err := k.getAllHistoricalTimeIndexedTWAPs(ctx)
+	twapRecords, err := k.getAllHistoricalPoolIndexedTWAPs(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -92,4 +98,32 @@ func (k Keeper) GetGeometricStrategy() *geometric {
 // GetArithmeticStrategy gets arithmetic TWAP keeper.
 func (k Keeper) GetArithmeticStrategy() *arithmetic {
 	return &arithmetic{k}
+}
+
+// GetPruningState gets the current pruning state, which is used to determine
+// whether to prune historical records in the EndBlock. This allows us to spread
+// out the computational cost of pruning over time rather than all at once at epoch.
+func (k Keeper) GetPruningState(ctx sdk.Context) types.PruningState {
+	store := ctx.KVStore(k.storeKey)
+	state := types.PruningState{}
+
+	bz := store.Get(types.PruningStateKey)
+	if bz == nil {
+		return state
+	}
+	err := proto.Unmarshal(bz, &state)
+	if err != nil {
+		panic(err)
+	}
+	return state
+}
+
+func (k Keeper) SetPruningState(ctx sdk.Context, state types.PruningState) {
+	store := ctx.KVStore(k.storeKey)
+
+	bz, err := proto.Marshal(&state)
+	if err != nil {
+		panic(err)
+	}
+	store.Set(types.PruningStateKey, bz)
 }

@@ -2,13 +2,16 @@ package keeper
 
 import (
 	"fmt"
+	"path/filepath"
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
-	"github.com/osmosis-labs/osmosis/v16/x/txfees/keeper/txfee_filters"
-	"github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	mempool1559 "github.com/osmosis-labs/osmosis/v24/x/txfees/keeper/mempool-1559"
+	"github.com/osmosis-labs/osmosis/v24/x/txfees/keeper/txfee_filters"
+	"github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
@@ -25,6 +28,10 @@ type MempoolFeeDecorator struct {
 }
 
 func NewMempoolFeeDecorator(txFeesKeeper Keeper, opts types.MempoolFeeOptions) MempoolFeeDecorator {
+	if opts.Mempool1559Enabled {
+		mempool1559.CurEipState.BackupFilePath = filepath.Join(txFeesKeeper.dataDir, mempool1559.BackupFilename)
+	}
+
 	return MempoolFeeDecorator{
 		TxFeesKeeper: txFeesKeeper,
 		Opts:         opts,
@@ -50,10 +57,23 @@ func (mfd MempoolFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate b
 		}
 	}
 
+	// UNFORKINGTODO C: Added this logic so that we can create gentx's without having to pay a fee.
+	// If this is genesis height, don't check the fee.
+	// This is needed so that gentx's can be created without having to pay a fee (chicken/egg problem).
+	if ctx.BlockHeight() == 0 {
+		return next(ctx, tx, simulate)
+	}
+
 	feeCoins := feeTx.GetFee()
 
 	if len(feeCoins) > 1 {
 		return ctx, types.ErrTooManyFeeCoins
+	}
+
+	// TODO: Is there a better way to do this?
+	// I want ctx.IsDeliverTx() but that doesn't exist.
+	if !ctx.IsCheckTx() && !ctx.IsReCheckTx() {
+		mempool1559.DeliverTxCode(ctx, feeTx)
 	}
 
 	baseDenom, err := mfd.TxFeesKeeper.GetBaseDenom(ctx)
@@ -95,7 +115,7 @@ func (mfd MempoolFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate b
 	return next(ctx, tx, simulate)
 }
 
-func (mfd MempoolFeeDecorator) getMinBaseGasPrice(ctx sdk.Context, baseDenom string, simulate bool, feeTx sdk.FeeTx) sdk.Dec {
+func (mfd MempoolFeeDecorator) getMinBaseGasPrice(ctx sdk.Context, baseDenom string, simulate bool, feeTx sdk.FeeTx) osmomath.Dec {
 	// In block execution (DeliverTx), its set to the governance decided upon consensus min fee.
 	minBaseGasPrice := types.ConsensusMinFee
 	// If we are in CheckTx, a separate function is ran locally to ensure sufficient fees for entering our mempool.
@@ -104,15 +124,17 @@ func (mfd MempoolFeeDecorator) getMinBaseGasPrice(ctx sdk.Context, baseDenom str
 		minBaseGasPrice = sdk.MaxDec(minBaseGasPrice, mfd.GetMinBaseGasPriceForTx(ctx, baseDenom, feeTx))
 	}
 	// If we are in genesis or are simulating a tx, then we actually override all of the above, to set it to 0.
-	if ctx.IsGenesis() || simulate {
-		minBaseGasPrice = sdk.ZeroDec()
+	// UNFORKINGTODO OQ: look into what we should use in place of ctx.IsGenesis() here
+	// if ctx.IsGenesis() || simulate {
+	if simulate {
+		minBaseGasPrice = osmomath.ZeroDec()
 	}
 	return minBaseGasPrice
 }
 
 // IsSufficientFee checks if the feeCoin provided (in any asset), is worth enough osmo at current spot prices
 // to pay the gas cost of this tx.
-func (k Keeper) IsSufficientFee(ctx sdk.Context, minBaseGasPrice sdk.Dec, gasRequested uint64, feeCoin sdk.Coin) error {
+func (k Keeper) IsSufficientFee(ctx sdk.Context, minBaseGasPrice osmomath.Dec, gasRequested uint64, feeCoin sdk.Coin) error {
 	baseDenom, err := k.GetBaseDenom(ctx)
 	if err != nil {
 		return err
@@ -120,8 +142,10 @@ func (k Keeper) IsSufficientFee(ctx sdk.Context, minBaseGasPrice sdk.Dec, gasReq
 
 	// Determine the required fees by multiplying the required minimum gas
 	// price by the gas limit, where fee = ceil(minGasPrice * gasLimit).
-	glDec := sdk.NewDec(int64(gasRequested))
-	requiredBaseFee := sdk.NewCoin(baseDenom, minBaseGasPrice.Mul(glDec).Ceil().RoundInt())
+	// note we mutate this one line below, to avoid extra heap allocations.
+	glDec := osmomath.NewDec(int64(gasRequested))
+	baseFeeAmt := glDec.MulMut(minBaseGasPrice).Ceil().RoundInt()
+	requiredBaseFee := sdk.Coin{Denom: baseDenom, Amount: baseFeeAmt}
 
 	convertedFee, err := k.ConvertToBaseToken(ctx, feeCoin)
 	if err != nil {
@@ -135,7 +159,9 @@ func (k Keeper) IsSufficientFee(ctx sdk.Context, minBaseGasPrice sdk.Dec, gasReq
 	return nil
 }
 
-func (mfd MempoolFeeDecorator) GetMinBaseGasPriceForTx(ctx sdk.Context, baseDenom string, tx sdk.FeeTx) sdk.Dec {
+func (mfd MempoolFeeDecorator) GetMinBaseGasPriceForTx(ctx sdk.Context, baseDenom string, tx sdk.FeeTx) osmomath.Dec {
+	var is1559enabled = mfd.Opts.Mempool1559Enabled
+
 	cfgMinGasPrice := ctx.MinGasPrices().AmountOf(baseDenom)
 	// the check below prevents tx gas from getting over HighGasTxThreshold which is default to 1_000_000
 	if tx.GetGas() >= mfd.Opts.HighGasTxThreshold {
@@ -143,6 +169,14 @@ func (mfd MempoolFeeDecorator) GetMinBaseGasPriceForTx(ctx sdk.Context, baseDeno
 	}
 	if txfee_filters.IsArbTxLoose(tx) {
 		cfgMinGasPrice = sdk.MaxDec(cfgMinGasPrice, mfd.Opts.MinGasPriceForArbitrageTx)
+	}
+	// Initial tx only, no recheck
+	if is1559enabled && ctx.IsCheckTx() && !ctx.IsReCheckTx() {
+		cfgMinGasPrice = sdk.MaxDec(cfgMinGasPrice, mempool1559.CurEipState.GetCurBaseFee())
+	}
+	// RecheckTx only
+	if is1559enabled && ctx.IsReCheckTx() {
+		cfgMinGasPrice = sdk.MaxDec(cfgMinGasPrice, mempool1559.CurEipState.GetCurRecheckBaseFee())
 	}
 	return cfgMinGasPrice
 }
@@ -174,14 +208,14 @@ func (dfd DeductFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 		return ctx, errorsmod.Wrap(sdkerrors.ErrTxDecode, "Tx must be a FeeTx")
 	}
 
-	// checks to make sure the module account has been set to collect fees in base token
-	if addr := dfd.ak.GetModuleAddress(types.FeeCollectorName); addr == nil {
-		return ctx, fmt.Errorf("fee collector module account (%s) has not been set", types.FeeCollectorName)
+	// checks to make sure the auth module account has been set to collect tx fees in base token, to be used for staking rewards
+	if addr := dfd.ak.GetModuleAddress(authtypes.FeeCollectorName); addr == nil {
+		return ctx, fmt.Errorf("fee collector module account (%s) has not been set", authtypes.FeeCollectorName)
 	}
 
-	// checks to make sure a separate module account has been set to collect fees not in base token
-	if addrNonNativeFee := dfd.ak.GetModuleAddress(types.NonNativeFeeCollectorName); addrNonNativeFee == nil {
-		return ctx, fmt.Errorf("non native fee collector module account (%s) has not been set", types.NonNativeFeeCollectorName)
+	// checks to make sure a separate module account has been set to collect tx fees not in base token
+	if addrNonNativeFee := dfd.ak.GetModuleAddress(types.NonNativeTxFeeCollectorName); addrNonNativeFee == nil {
+		return ctx, fmt.Errorf("fee collector for staking module account (%s) has not been set", types.NonNativeTxFeeCollectorName)
 	}
 
 	// fee can be in any denom (checked for validity later)
@@ -212,16 +246,30 @@ func (dfd DeductFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 		return ctx, errorsmod.Wrapf(sdkerrors.ErrUnknownAddress, "fee payer address: %s does not exist", deductFeesFrom)
 	}
 
+	fees := feeTx.GetFee()
+
+	// if we are simulating, set the fees to 1 uosmo as they don't matter.
+	// set it as coming from the burn addr
+	if simulate && fees.IsZero() {
+		fees = sdk.NewCoins(sdk.NewInt64Coin("uosmo", 1))
+		burnAcctAddr, _ := sdk.AccAddressFromBech32("osmo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmcn030")
+		// were doing 1 extra get account call alas
+		burnAcct := dfd.ak.GetAccount(ctx, burnAcctAddr)
+		if burnAcct != nil {
+			deductFeesFromAcc = burnAcct
+		}
+	}
+
 	// deducts the fees and transfer them to the module account
-	if !feeTx.GetFee().IsZero() {
-		err = DeductFees(dfd.txFeesKeeper, dfd.bankKeeper, ctx, deductFeesFromAcc, feeTx.GetFee())
+	if !fees.IsZero() {
+		err = DeductFees(dfd.txFeesKeeper, dfd.bankKeeper, ctx, deductFeesFromAcc, fees)
 		if err != nil {
 			return ctx, err
 		}
 	}
 
 	ctx.EventManager().EmitEvents(sdk.Events{sdk.NewEvent(sdk.EventTypeTx,
-		sdk.NewAttribute(sdk.AttributeKeyFee, feeTx.GetFee().String()),
+		sdk.NewAttribute(sdk.AttributeKeyFee, fees.String()),
 	)})
 
 	return next(ctx, tx, simulate)
@@ -242,14 +290,14 @@ func DeductFees(txFeesKeeper types.TxFeesKeeper, bankKeeper types.BankKeeper, ct
 
 	// checks if input fee is uOSMO (assumes only one fee token exists in the fees array (as per the check in mempoolFeeDecorator))
 	if fees[0].Denom == baseDenom {
-		// sends to FeeCollectorName module account
-		err := bankKeeper.SendCoinsFromAccountToModule(ctx, acc.GetAddress(), types.FeeCollectorName, fees)
+		// sends to FeeCollectorName module account, which distributes staking rewards
+		err := bankKeeper.SendCoinsFromAccountToModule(ctx, acc.GetAddress(), authtypes.FeeCollectorName, fees)
 		if err != nil {
 			return errorsmod.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
 		}
 	} else {
-		// sends to NonNativeFeeCollectorName module account
-		err := bankKeeper.SendCoinsFromAccountToModule(ctx, acc.GetAddress(), types.NonNativeFeeCollectorName, fees)
+		// sends to FeeCollectorForStakingRewardsName module account
+		err := bankKeeper.SendCoinsFromAccountToModule(ctx, acc.GetAddress(), types.NonNativeTxFeeCollectorName, fees)
 		if err != nil {
 			return errorsmod.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
 		}

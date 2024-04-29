@@ -5,9 +5,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 	epochstypes "github.com/osmosis-labs/osmosis/x/epochs/types"
 )
 
@@ -26,7 +27,7 @@ type BankKeeper interface {
 // LockupKeeper defines the expected interface needed to retrieve locks.
 type LockupKeeper interface {
 	GetLocksLongerThanDurationDenom(ctx sdk.Context, denom string, duration time.Duration) []lockuptypes.PeriodLock
-	GetPeriodLocksAccumulation(ctx sdk.Context, query lockuptypes.QueryCondition) sdk.Int
+	GetPeriodLocksAccumulation(ctx sdk.Context, query lockuptypes.QueryCondition) osmomath.Int
 	GetAccountPeriodLocks(ctx sdk.Context, addr sdk.AccAddress) []lockuptypes.PeriodLock
 	GetLockByID(ctx sdk.Context, lockID uint64) (*lockuptypes.PeriodLock, error)
 }
@@ -47,8 +48,9 @@ type TxFeesKeeper interface {
 }
 
 type ConcentratedLiquidityKeeper interface {
-	CreateIncentive(ctx sdk.Context, poolId uint64, sender sdk.AccAddress, incentiveCoin sdk.Coin, emissionRate sdk.Dec, startTime time.Time, minUptime time.Duration) (cltypes.IncentiveRecord, error)
+	CreateIncentive(ctx sdk.Context, poolId uint64, sender sdk.AccAddress, incentiveCoin sdk.Coin, emissionRate osmomath.Dec, startTime time.Time, minUptime time.Duration) (cltypes.IncentiveRecord, error)
 	GetConcentratedPoolById(ctx sdk.Context, poolId uint64) (cltypes.ConcentratedPoolExtension, error)
+	GetParams(ctx sdk.Context) (params cltypes.Params)
 }
 
 type AccountKeeper interface {
@@ -57,7 +59,9 @@ type AccountKeeper interface {
 
 type PoolIncentiveKeeper interface {
 	GetPoolIdFromGaugeId(ctx sdk.Context, gaugeId uint64, lockableDuration time.Duration) (uint64, error)
-	SetPoolGaugeIdNoLock(ctx sdk.Context, poolId uint64, gaugeId uint64)
+	GetInternalGaugeIDForPool(ctx sdk.Context, poolID uint64) (uint64, error)
+	SetPoolGaugeIdNoLock(ctx sdk.Context, poolId uint64, gaugeId uint64, uptime time.Duration)
+	GetLongestLockableDuration(ctx sdk.Context) (time.Duration, error)
 }
 
 type GAMMKeeper interface {
@@ -66,4 +70,10 @@ type GAMMKeeper interface {
 
 type PoolManagerKeeper interface {
 	GetPool(ctx sdk.Context, poolId uint64) (poolmanagertypes.PoolI, error)
+	GetOsmoVolumeForPool(ctx sdk.Context, poolId uint64) osmomath.Int
+	GetPoolModuleAndPool(ctx sdk.Context, poolId uint64) (swapModule poolmanagertypes.PoolModuleI, pool poolmanagertypes.PoolI, err error)
+}
+
+type ProtorevKeeper interface {
+	GetPoolForDenomPairNoOrder(ctx sdk.Context, denom1, denom2 string) (uint64, error)
 }

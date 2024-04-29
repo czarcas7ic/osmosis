@@ -6,10 +6,12 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	cl "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity"
-	clmodel "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/model"
-	"github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/app/apptesting"
+	cl "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity"
+	clmodel "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/model"
+	"github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 // TestCreateConcentratedPool_Events tests that events are correctly emitted
@@ -29,7 +31,7 @@ func (s *KeeperTestSuite) TestCreateConcentratedPool_Events() {
 			denom1:                   USDC,
 			tickSpacing:              DefaultTickSpacing,
 			expectedPoolCreatedEvent: 1,
-			expectedMessageEvents:    4, // 1 for pool created, 1 for coin spent, 1 for coin received, 1 for after pool create hook
+			expectedMessageEvents:    3, // 1 for coin spent, 1 for coin received, 1 for after pool create hook
 		},
 		"error: tickSpacing zero": {
 			denom0:        ETH,
@@ -94,16 +96,16 @@ func (s *KeeperTestSuite) TestCreatePositionMsg() {
 			expectedError: types.InvalidLowerUpperTickError{LowerTick: DefaultUpperTick, UpperTick: DefaultUpperTick},
 		},
 		"error: tokens provided is three": {
-			tokensProvided: DefaultCoins.Add(sdk.NewCoin("foo", sdk.NewInt(10))),
+			tokensProvided: DefaultCoins.Add(sdk.NewCoin("foo", osmomath.NewInt(10))),
 			expectedError:  types.CoinLengthError{Length: 3, MaxLength: 2},
 		},
 		"error: token min amount 0 is negative": {
-			amount0Minimum: sdk.NewInt(-10),
-			expectedError:  types.NotPositiveRequireAmountError{Amount: sdk.NewInt(-10).String()},
+			amount0Minimum: osmomath.NewInt(-10),
+			expectedError:  types.NotPositiveRequireAmountError{Amount: osmomath.NewInt(-10).String()},
 		},
 		"error: token min amount 1 is negative": {
-			amount1Minimum: sdk.NewInt(-10),
-			expectedError:  types.NotPositiveRequireAmountError{Amount: sdk.NewInt(-10).String()},
+			amount1Minimum: osmomath.NewInt(-10),
+			expectedError:  types.NotPositiveRequireAmountError{Amount: osmomath.NewInt(-10).String()},
 		},
 	}
 	for name, tc := range testcases {
@@ -139,7 +141,7 @@ func (s *KeeperTestSuite) TestCreatePositionMsg() {
 				response, err := msgServer.CreatePosition(sdk.WrapSDKContext(ctx), msg)
 				s.NoError(err)
 				s.NotNil(response)
-				s.AssertEventEmitted(ctx, sdk.EventTypeMessage, 2)
+				s.AssertEventEmitted(ctx, sdk.EventTypeMessage, 1)
 			} else {
 				s.Require().ErrorContains(msg.ValidateBasic(), tc.expectedError.Error())
 			}
@@ -158,7 +160,7 @@ func (s *KeeperTestSuite) TestAddToPosition_Events() {
 	}{
 		"happy path": {
 			expectedAddedToPositionEvent: 1,
-			expectedMessageEvents:        5,
+			expectedMessageEvents:        3,
 		},
 		"error: last position in pool": {
 			lastPositionInPool:           true,
@@ -237,7 +239,7 @@ func (s *KeeperTestSuite) TestCollectSpreadRewards_Events() {
 			numPositionsToCreate:                   1,
 			expectedTotalCollectSpreadRewardsEvent: 1,
 			expectedCollectSpreadRewardsEvent:      1,
-			expectedMessageEvents:                  2, // 1 for collect fees, 1 for send message
+			expectedMessageEvents:                  1, // 1 for send message
 		},
 		"two position IDs": {
 			upperTick:                              DefaultUpperTick,
@@ -246,7 +248,7 @@ func (s *KeeperTestSuite) TestCollectSpreadRewards_Events() {
 			numPositionsToCreate:                   2,
 			expectedTotalCollectSpreadRewardsEvent: 1,
 			expectedCollectSpreadRewardsEvent:      2,
-			expectedMessageEvents:                  3, // 1 for collect fees, 2 for send messages
+			expectedMessageEvents:                  2, // 2 for send messages
 		},
 		"three position IDs": {
 			upperTick:                              DefaultUpperTick,
@@ -255,7 +257,7 @@ func (s *KeeperTestSuite) TestCollectSpreadRewards_Events() {
 			numPositionsToCreate:                   3,
 			expectedTotalCollectSpreadRewardsEvent: 1,
 			expectedCollectSpreadRewardsEvent:      3,
-			expectedMessageEvents:                  4, // 1 for collect fees, 3 for send messages
+			expectedMessageEvents:                  3, // 3 for send messages
 		},
 		"error: attempt to claim fees with different owner": {
 			upperTick:                              DefaultUpperTick,
@@ -296,7 +298,7 @@ func (s *KeeperTestSuite) TestCollectSpreadRewards_Events() {
 
 			// Add spread rewards to the pool's accum so we aren't just claiming 0 rewards.
 			// Claiming 0 rewards is still a valid message, but is not as valuable for testing.
-			s.AddToSpreadRewardAccumulator(validPoolId, sdk.NewDecCoin(ETH, sdk.NewInt(1)))
+			s.AddToSpreadRewardAccumulator(validPoolId, sdk.NewDecCoin(ETH, osmomath.NewInt(1)))
 
 			// Determine expected rewards from all provided positions without modifying state.
 			expectedTotalSpreadRewards := sdk.Coins(nil)
@@ -355,7 +357,7 @@ func (s *KeeperTestSuite) TestCollectIncentives_Events() {
 			numPositionsToCreate:                1,
 			expectedTotalCollectIncentivesEvent: 1,
 			expectedCollectIncentivesEvent:      1,
-			expectedMessageEvents:               3, // 1 for collect incentives, 1 for collect send, 1 for forfeit send
+			expectedMessageEvents:               1, // 1 for collect send
 		},
 		"two position IDs": {
 			upperTick:                           DefaultUpperTick,
@@ -364,7 +366,7 @@ func (s *KeeperTestSuite) TestCollectIncentives_Events() {
 			numPositionsToCreate:                2,
 			expectedTotalCollectIncentivesEvent: 1,
 			expectedCollectIncentivesEvent:      2,
-			expectedMessageEvents:               5, // 1 for collect incentives, 2 for collect send, 2 for forfeit send
+			expectedMessageEvents:               2, // 2 for collect send
 		},
 		"three position IDs": {
 			upperTick:                           DefaultUpperTick,
@@ -373,7 +375,7 @@ func (s *KeeperTestSuite) TestCollectIncentives_Events() {
 			numPositionsToCreate:                3,
 			expectedTotalCollectIncentivesEvent: 1,
 			expectedCollectIncentivesEvent:      3,
-			expectedMessageEvents:               7, // 1 for collect incentives, 3 for collect send, 3 for forfeit send
+			expectedMessageEvents:               3, // 3 for collect send
 		},
 		"error: three position IDs - not an owner": {
 			upperTick:                  DefaultUpperTick,
@@ -419,12 +421,12 @@ func (s *KeeperTestSuite) TestCollectIncentives_Events() {
 			err = addToUptimeAccums(ctx, pool.GetId(), s.App.ConcentratedLiquidityKeeper, uptimeHelper.hundredTokensMultiDenom)
 			s.Require().NoError(err)
 
-			numPositions := sdk.NewInt(int64(len(tc.positionIds)))
+			numPositions := osmomath.NewInt(int64(len(tc.positionIds)))
 			// Fund the incentives address with the amount of incentives we expect the positions to both claim and forfeit.
 			// The claim amount must be funded to the incentives address in order for the rewards to be sent to the user.
 			// The forfeited about must be funded to the incentives address in order for the forfeited rewards to be sent to the community pool.
 			incentivesToBeSentToUsers := expectedIncentivesFromUptimeGrowth(uptimeHelper.hundredTokensMultiDenom, DefaultLiquidityAmt, positionAge, numPositions)
-			incentivesToBeSentToCommunityPool := expectedIncentivesFromUptimeGrowth(uptimeHelper.hundredTokensMultiDenom, DefaultLiquidityAmt, twoWeeks, numPositions).Sub(incentivesToBeSentToUsers)
+			incentivesToBeSentToCommunityPool := expectedIncentivesFromUptimeGrowth(uptimeHelper.hundredTokensMultiDenom, DefaultLiquidityAmt, twoWeeks, numPositions).Sub(incentivesToBeSentToUsers...)
 			totalAmountToFund := incentivesToBeSentToUsers.Add(incentivesToBeSentToCommunityPool...)
 			s.FundAcc(pool.GetIncentivesAddress(), totalAmountToFund)
 
@@ -541,6 +543,142 @@ func (s *KeeperTestSuite) TestFungify_Events() {
 			// 	s.Require().ErrorAs(err, &tc.expectedError)
 			// 	s.Require().Nil(response)
 			// }
+		})
+	}
+}
+
+func (s *KeeperTestSuite) TestTransferPositions_Events() {
+	// expectedUptimes are used for claimable incentives tests
+	expectedUptimes := getExpectedUptimes()
+
+	testcases := map[string]struct {
+		positionIds                    []uint64
+		numPositionsToCreate           int
+		shouldSetupUnownedPosition     bool
+		hasIncentivesToClaim           bool
+		hasSpreadRewardsToClaim        bool
+		expectedTransferPositionsEvent int
+		expectedMessageEvents          int // We expect these to always be 0 because no additional events are being triggered
+		isLastPositionInPool           bool
+		expectedError                  error
+	}{
+		"single position ID": {
+			positionIds:                    []uint64{DefaultPositionId},
+			numPositionsToCreate:           1,
+			expectedTransferPositionsEvent: 1,
+		},
+		"single position ID with claimable incentives": {
+			positionIds:                    []uint64{DefaultPositionId},
+			hasIncentivesToClaim:           true,
+			numPositionsToCreate:           1,
+			expectedTransferPositionsEvent: 1,
+			expectedMessageEvents:          0,
+		},
+		"single position ID with claimable spread rewards": {
+			positionIds:                    []uint64{DefaultPositionId},
+			hasSpreadRewardsToClaim:        true,
+			numPositionsToCreate:           1,
+			expectedTransferPositionsEvent: 1,
+			expectedMessageEvents:          0,
+		},
+		"single position ID with claimable incentives and spread rewards": {
+			positionIds:                    []uint64{DefaultPositionId},
+			hasIncentivesToClaim:           true,
+			hasSpreadRewardsToClaim:        true,
+			numPositionsToCreate:           1,
+			expectedTransferPositionsEvent: 1,
+			expectedMessageEvents:          0,
+		},
+		"two position IDs": {
+			positionIds:                    []uint64{DefaultPositionId, DefaultPositionId + 1},
+			numPositionsToCreate:           2,
+			expectedTransferPositionsEvent: 1,
+		},
+		"three position IDs": {
+			positionIds:                    []uint64{DefaultPositionId, DefaultPositionId + 1, DefaultPositionId + 2},
+			numPositionsToCreate:           3,
+			expectedTransferPositionsEvent: 1,
+		},
+		"three position IDs with claimable incentives and spread rewards": {
+			positionIds:                    []uint64{DefaultPositionId, DefaultPositionId + 1, DefaultPositionId + 2},
+			hasIncentivesToClaim:           true,
+			hasSpreadRewardsToClaim:        true,
+			numPositionsToCreate:           3,
+			expectedTransferPositionsEvent: 1,
+			expectedMessageEvents:          0,
+		},
+		"two position IDs, second ID does not exist": {
+			positionIds:          []uint64{DefaultPositionId, DefaultPositionId + 1},
+			numPositionsToCreate: 1,
+			expectedError:        types.PositionIdNotFoundError{PositionId: DefaultPositionId + 1},
+		},
+		"three position IDs, not an owner of one of them": {
+			positionIds:                []uint64{DefaultPositionId, DefaultPositionId + 1, DefaultPositionId + 2},
+			numPositionsToCreate:       2,
+			shouldSetupUnownedPosition: true,
+			expectedError:              types.NotPositionOwnerError{},
+		},
+	}
+
+	for name, tc := range testcases {
+		s.Run(name, func() {
+			s.SetupTest()
+
+			// Create a cl pool with a default position
+			pool := s.PrepareConcentratedPool()
+			for i := 0; i < tc.numPositionsToCreate; i++ {
+				s.SetupDefaultPosition(pool.GetId())
+			}
+
+			if tc.shouldSetupUnownedPosition {
+				// Position from another account.
+				s.SetupDefaultPositionAcc(pool.GetId(), s.TestAccs[1])
+			}
+
+			if tc.hasIncentivesToClaim {
+				s.fundIncentiveAddr(pool.GetIncentivesAddress(), tc.positionIds)
+				s.addUptimeGrowthInsideRange(s.Ctx, pool.GetId(), apptesting.DefaultLowerTick+1, DefaultLowerTick, DefaultUpperTick, expectedUptimes.hundredTokensMultiDenom)
+			}
+
+			if tc.hasSpreadRewardsToClaim {
+				s.fundSpreadRewardsAddr(s.Ctx, pool.GetSpreadRewardsAddress(), tc.positionIds)
+				s.AddToSpreadRewardAccumulator(pool.GetId(), sdk.NewDecCoin(ETH, osmomath.NewInt(10)))
+			}
+
+			// Move block time forward one day to claim and forfeit part of the incentives.
+			s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(time.Hour * 24))
+
+			if !tc.isLastPositionInPool {
+				// Setup a far out of range position that we do not touch, so when we transfer positions we do not transfer the last position in the pool.
+				// This is because we special case this logic in the keeper to not allow the last position in the pool to be transferred.
+				s.SetupPosition(pool.GetId(), s.TestAccs[2], sdk.NewCoins(DefaultCoin1), DefaultMinTick, DefaultMinTick+100, true)
+			}
+
+			msgServer := cl.NewMsgServerImpl(s.App.ConcentratedLiquidityKeeper)
+
+			// Reset event counts to 0 by creating a new manager.
+			s.Ctx = s.Ctx.WithEventManager(sdk.NewEventManager())
+			s.Equal(0, len(s.Ctx.EventManager().Events()))
+
+			msg := &types.MsgTransferPositions{
+				PositionIds: tc.positionIds,
+				Sender:      s.TestAccs[0].String(),
+				NewOwner:    s.TestAccs[1].String(),
+			}
+
+			// System under test
+			response, err := msgServer.TransferPositions(sdk.WrapSDKContext(s.Ctx), msg)
+
+			if tc.expectedError == nil {
+				s.Require().NoError(err)
+				s.Require().NotNil(response)
+				s.AssertEventEmitted(s.Ctx, types.TypeEvtTransferPositions, tc.expectedTransferPositionsEvent)
+				s.AssertEventEmitted(s.Ctx, sdk.EventTypeMessage, tc.expectedMessageEvents)
+			} else {
+				s.Require().Error(err)
+				s.Require().ErrorAs(err, &tc.expectedError)
+				s.Require().Nil(response)
+			}
 		})
 	}
 }

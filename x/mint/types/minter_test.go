@@ -4,15 +4,16 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/osmosis-labs/osmosis/v16/x/mint/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/mint/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	defaultDeveloperVestingProportion = sdk.NewDecWithPrec(3, 1)
-	defaultProvisionsAmount           = sdk.NewDec(10)
+	defaultDeveloperVestingProportion = osmomath.NewDecWithPrec(3, 1)
+	defaultProvisionsAmount           = osmomath.NewDec(10)
 	defaultParams                     = types.Params{
 		MintDenom: sdk.DefaultBondDenom,
 		DistributionProportions: types.DistributionProportions{
@@ -22,10 +23,10 @@ var (
 )
 
 // Benchmarking :)
-// previously using sdk.Int operations:
+// previously using osmomath.Int operations:
 // BenchmarkEpochProvision-4 5000000 220 ns/op
 //
-// using sdk.Dec operations: (current implementation)
+// using osmomath.Dec operations: (current implementation)
 // BenchmarkEpochProvision-4 3000000 429 ns/op
 func BenchmarkEpochProvision(b *testing.B) {
 	b.ReportAllocs()
@@ -34,7 +35,7 @@ func BenchmarkEpochProvision(b *testing.B) {
 
 	s1 := rand.NewSource(100)
 	r1 := rand.New(s1)
-	minter.EpochProvisions = sdk.NewDec(r1.Int63n(1000000))
+	minter.EpochProvisions = osmomath.NewDec(r1.Int63n(1000000))
 
 	// run the EpochProvision function b.N times
 	for n := 0; n < b.N; n++ {
@@ -69,7 +70,7 @@ func TestMinterValidate(t *testing.T) {
 		{
 			"negative -errir",
 			types.Minter{
-				EpochProvisions: sdk.NewDec(-1),
+				EpochProvisions: osmomath.NewDec(-1),
 			},
 			types.ErrNegativeEpochProvisions,
 		},
@@ -93,14 +94,14 @@ func TestMinterValidate(t *testing.T) {
 	}
 }
 
-// TestGetInflationProvisions sanity checks that inflation provisons are calculated correctly.
+// TestGetInflationProvisions sanity checks that inflation provisions are calculated correctly.
 func TestGetInflationProvisions(t *testing.T) {
 	// Setup
 	var (
 		minter = types.NewMinter(defaultProvisionsAmount)
 
 		expectedDenom           = defaultParams.MintDenom
-		expectedInflationAmount = defaultProvisionsAmount.Mul(sdk.OneDec().Sub(defaultDeveloperVestingProportion))
+		expectedInflationAmount = defaultProvisionsAmount.Mul(osmomath.OneDec().Sub(defaultDeveloperVestingProportion))
 	)
 
 	// System under test
@@ -111,7 +112,7 @@ func TestGetInflationProvisions(t *testing.T) {
 	require.Equal(t, expectedInflationAmount, actualInflationProvisions.Amount)
 }
 
-// TestGetDeveloperVestingProvisions sanity checks that developer vesting provisons are calculated correctly.
+// TestGetDeveloperVestingProvisions sanity checks that developer vesting provisions are calculated correctly.
 func TestGetDeveloperVestingProvisions(t *testing.T) {
 	// Setup
 	var (

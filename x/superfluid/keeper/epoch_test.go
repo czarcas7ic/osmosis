@@ -7,27 +7,30 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	cltypes "github.com/osmosis-labs/osmosis/v16/x/concentrated-liquidity/types"
-	gammtypes "github.com/osmosis-labs/osmosis/v16/x/gamm/types"
-	incentivestypes "github.com/osmosis-labs/osmosis/v16/x/incentives/types"
-	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/keeper"
-	"github.com/osmosis-labs/osmosis/v16/x/superfluid/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	appparams "github.com/osmosis-labs/osmosis/v24/app/params"
+	cltypes "github.com/osmosis-labs/osmosis/v24/x/concentrated-liquidity/types"
+	gammtypes "github.com/osmosis-labs/osmosis/v24/x/gamm/types"
+	incentivestypes "github.com/osmosis-labs/osmosis/v24/x/incentives/types"
+	lockuptypes "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/keeper"
+	"github.com/osmosis-labs/osmosis/v24/x/superfluid/types"
 )
 
 func (s *KeeperTestSuite) TestUpdateOsmoEquivalentMultipliers() {
 	testCases := []struct {
-		name               string
-		asset              types.SuperfluidAsset
-		expectedMultiplier sdk.Dec
-		removeStakingAsset bool
-		poolDoesNotExist   bool
-		expectedError      error
+		name                  string
+		asset                 types.SuperfluidAsset
+		expectedMultiplier    osmomath.Dec
+		removeStakingAsset    bool
+		poolDoesNotExist      bool
+		expectedError         error
+		expectedZeroMultipler bool
 	}{
 		{
 			name:               "update LP token Osmo equivalent successfully",
 			asset:              types.SuperfluidAsset{Denom: DefaultGammAsset, AssetType: types.SuperfluidAssetTypeLPShare},
-			expectedMultiplier: sdk.MustNewDecFromStr("0.01"),
+			expectedMultiplier: osmomath.MustNewDecFromStr("0.01"),
 		},
 		{
 			name:             "update LP token Osmo equivalent with pool unexpectedly deleted",
@@ -44,19 +47,21 @@ func (s *KeeperTestSuite) TestUpdateOsmoEquivalentMultipliers() {
 		{
 			name:               "update concentrated share Osmo equivalent successfully",
 			asset:              types.SuperfluidAsset{Denom: cltypes.GetConcentratedLockupDenomFromPoolId(1), AssetType: types.SuperfluidAssetTypeConcentratedShare},
-			expectedMultiplier: sdk.MustNewDecFromStr("1"),
+			expectedMultiplier: osmomath.MustNewDecFromStr("1"),
 		},
 		{
 			name:             "update concentrated share Osmo equivalent with pool unexpectedly deleted",
 			asset:            types.SuperfluidAsset{Denom: cltypes.GetConcentratedLockupDenomFromPoolId(1), AssetType: types.SuperfluidAssetTypeConcentratedShare},
 			poolDoesNotExist: true,
-			expectedError:    cltypes.PoolNotFoundError{PoolId: 1},
+			// Note: this does not error since CL errors are surrounded in `ApplyFuncIfNoError`
+			expectedZeroMultipler: true,
 		},
 		{
 			name:               "update concentrated share Osmo equivalent with pool unexpectedly removed Osmo",
 			asset:              types.SuperfluidAsset{Denom: cltypes.GetConcentratedLockupDenomFromPoolId(1), AssetType: types.SuperfluidAssetTypeConcentratedShare},
 			removeStakingAsset: true,
-			expectedError:      errors.New("pool has unexpectedly removed OSMO as one of its underlying assets"),
+			// Note: this does not error since CL errors are surrounded in `ApplyFuncIfNoError`
+			expectedZeroMultipler: true,
 		},
 	}
 
@@ -72,11 +77,11 @@ func (s *KeeperTestSuite) TestUpdateOsmoEquivalentMultipliers() {
 			if tc.removeStakingAsset {
 				stakeDenom = "bar"
 			}
-			poolCoins := sdk.NewCoins(sdk.NewCoin(stakeDenom, sdk.NewInt(1000000000000000000)), sdk.NewCoin("foo", sdk.NewInt(1000000000000000000)))
+			poolCoins := sdk.NewCoins(sdk.NewCoin(stakeDenom, osmomath.NewInt(1000000000000000000)), sdk.NewCoin("foo", osmomath.NewInt(1000000000000000000)))
 
 			// Ensure that the multiplier is zero before the test
 			multiplier := superfluidKeeper.GetOsmoEquivalentMultiplier(ctx, tc.asset.Denom)
-			s.Require().Equal(multiplier, sdk.ZeroDec())
+			s.Require().Equal(multiplier, osmomath.ZeroDec())
 
 			// Create the respective pool if the test case requires it
 			if !tc.poolDoesNotExist {
@@ -97,7 +102,7 @@ func (s *KeeperTestSuite) TestUpdateOsmoEquivalentMultipliers() {
 				// Ensure unwind superfluid asset is called
 				// Check that multiplier was not set
 				multiplier := superfluidKeeper.GetOsmoEquivalentMultiplier(ctx, tc.asset.Denom)
-				s.Require().Equal(multiplier, sdk.ZeroDec())
+				s.Require().Equal(multiplier, osmomath.ZeroDec())
 				// Check that the asset was deleted
 				_, err := superfluidKeeper.GetSuperfluidAsset(ctx, tc.asset.Denom)
 				s.Require().Error(err)
@@ -106,7 +111,13 @@ func (s *KeeperTestSuite) TestUpdateOsmoEquivalentMultipliers() {
 
 				// Check that multiplier was set correctly
 				multiplier := superfluidKeeper.GetOsmoEquivalentMultiplier(ctx, tc.asset.Denom)
-				s.Require().NotEqual(multiplier, sdk.ZeroDec())
+
+				if !tc.expectedZeroMultipler {
+					s.Require().NotEqual(multiplier, osmomath.ZeroDec())
+				} else {
+					// Zero on success is expected on CL errors since those are surrounded with `ApplyFuncIfNoError`
+					s.Require().Equal(multiplier, osmomath.ZeroDec())
+				}
 			}
 		})
 	}
@@ -130,11 +141,14 @@ type distributionTestCase struct {
 
 var (
 	// distributed coin when there is one account receiving from one gauge
-	defaultSingleLockDistributedCoins = sdk.NewCoins(sdk.NewInt64Coin("stake", 19999))
+	// since val tokens is 11000000 and reward is 20000, we get 18181stake
+	defaultSingleLockDistributedCoins = sdk.NewCoins(sdk.NewInt64Coin("stake", 18181))
 	// distributed coins when there is two account receiving from one gauge
-	defaultTwoLockDistributedCoins = sdk.NewCoins(sdk.NewInt64Coin("stake", 9999))
+	// since val tokens is 2100000 and reward is 20000, we get 9523stake
+	defaultTwoLockDistributedCoins = sdk.NewCoins(sdk.NewInt64Coin("stake", 9523))
 	// distributed coins when there is one account receiving from two gauge
-	defaultTwoGaugeDistributedCoins = sdk.NewCoins(sdk.NewInt64Coin("stake", 19998))
+	// two lock distribution * 2
+	defaultTwoGaugeDistributedCoins = sdk.NewCoins(sdk.NewInt64Coin("stake", 19046))
 	distributionTestCases           = []distributionTestCase{
 		{
 			"happy path with single validator and delegator",
@@ -187,10 +201,14 @@ func (s *KeeperTestSuite) TestMoveSuperfluidDelegationRewardToGauges() {
 		s.Run(tc.name, func() {
 			s.SetupTest()
 
+			// Since this test creates or adds to a gauge, we need to ensure a route exists in protorev hot routes.
+			// The pool doesn't need to actually exist for this test, so we can just ensure the denom pair has some entry.
+			s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, STAKE, 9999)
+
 			// setup validators
 			valAddrs := s.SetupValidators(tc.validatorStats)
 
-			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+			denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 			// setup superfluid delegations
 			_, intermediaryAccs, _ := s.setupSuperfluidDelegations(valAddrs, tc.superDelegations, denoms)
@@ -198,11 +216,12 @@ func (s *KeeperTestSuite) TestMoveSuperfluidDelegationRewardToGauges() {
 
 			// allocate rewards to designated validators
 			for _, valIndex := range tc.rewardedVals {
-				s.AllocateRewardsToValidator(valAddrs[valIndex], sdk.NewInt(20000))
+				s.AllocateRewardsToValidator(valAddrs[valIndex], osmomath.NewInt(20000))
 			}
 
 			// move intermediary account delegation rewards to gauges
-			s.App.SuperfluidKeeper.MoveSuperfluidDelegationRewardToGauges(s.Ctx)
+			accs := s.App.SuperfluidKeeper.GetAllIntermediaryAccounts(s.Ctx)
+			s.App.SuperfluidKeeper.MoveSuperfluidDelegationRewardToGauges(s.Ctx, accs)
 
 			// check invariant is fine
 			reason, broken := keeper.AllInvariants(*s.App.SuperfluidKeeper)(s.Ctx)
@@ -238,20 +257,25 @@ func (s *KeeperTestSuite) TestDistributeSuperfluidGauges() {
 	changeRewardReceiverTestCases := []bool{true, false}
 	for _, tc := range distributionTestCases {
 		// run distributionTestCases two times.
-		// Once with lock reward reciver as owner,
+		// Once with lock reward receiver as owner,
 		// Second time with lock reward receiver as a different account.
 		for _, changeRewardReceiver := range changeRewardReceiverTestCases {
 			tc := tc
 
 			s.Run(tc.name, func() {
 				s.SetupTest()
+
+				// Since this test creates or adds to a gauge, we need to ensure a route exists in protorev hot routes.
+				// The pool doesn't need to actually exist for this test, so we can just ensure the denom pair has some entry.
+				s.App.ProtoRevKeeper.SetPoolForDenomPair(s.Ctx, appparams.BaseCoinUnit, STAKE, 9999)
+
 				// create one more account to set reward receiver as arbitrary account
 				thirdTestAcc := CreateRandomAccounts(1)
 				s.TestAccs = append(s.TestAccs, thirdTestAcc...)
 				// setup validators
 				valAddrs := s.SetupValidators(tc.validatorStats)
 
-				denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]sdk.Dec{sdk.NewDec(20), sdk.NewDec(20)})
+				denoms, _ := s.SetupGammPoolsAndSuperfluidAssets([]osmomath.Dec{osmomath.NewDec(20), osmomath.NewDec(20)})
 
 				// setup superfluid delegations
 				delAddresses, intermediaryAccs, locks := s.setupSuperfluidDelegations(valAddrs, tc.superDelegations, denoms)
@@ -275,11 +299,12 @@ func (s *KeeperTestSuite) TestDistributeSuperfluidGauges() {
 
 				// allocate rewards to designated validators
 				for _, valIndex := range tc.rewardedVals {
-					s.AllocateRewardsToValidator(valAddrs[valIndex], sdk.NewInt(20000))
+					s.AllocateRewardsToValidator(valAddrs[valIndex], osmomath.NewInt(20000))
 				}
 
 				// move intermediary account delegation rewards to gauges
-				s.App.SuperfluidKeeper.MoveSuperfluidDelegationRewardToGauges(s.Ctx)
+				accs := s.App.SuperfluidKeeper.GetAllIntermediaryAccounts(s.Ctx)
+				s.App.SuperfluidKeeper.MoveSuperfluidDelegationRewardToGauges(s.Ctx, accs)
 
 				// move gauges to active gauge by declaring epoch end
 				s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(time.Minute))
@@ -314,8 +339,8 @@ func (s *KeeperTestSuite) TestDistributeSuperfluidGauges() {
 
 					if gaugeCheck.rewarded {
 						s.Require().Equal(gauge.FilledEpochs, uint64(1))
-						s.Require().Equal(gaugeCheck.expectedDistributedCoins, gauge.DistributedCoins)
-						s.Require().Equal(gauge.Coins.Sub(gauge.DistributedCoins).AmountOf(bondDenom), moduleBalanceAfter.Amount)
+						s.Require().Equal(gaugeCheck.expectedDistributedCoins.String(), gauge.DistributedCoins.String())
+						s.Require().Equal(gauge.Coins.Sub(gauge.DistributedCoins...).AmountOf(bondDenom), moduleBalanceAfter.Amount)
 
 						// iterate over delegator index that received incentive from this gauge and check balance
 						for _, lockIndex := range gaugeCheck.lockIndexes {
@@ -355,7 +380,7 @@ func (s *KeeperTestSuite) TestDistributeSuperfluidGauges() {
 								rewardReceiver = lock.Owner
 							}
 							delegatorBalance := s.App.BankKeeper.GetBalance(s.Ctx, sdk.MustAccAddressFromBech32(rewardReceiver), bondDenom)
-							s.Require().Equal(sdk.ZeroInt(), delegatorBalance.Amount)
+							s.Require().Equal(osmomath.ZeroInt(), delegatorBalance.Amount)
 						}
 					}
 				}

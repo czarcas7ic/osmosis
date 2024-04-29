@@ -13,7 +13,9 @@ func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgSetValidatorSetPreference{}, "osmosis/MsgSetValidatorSetPreference", nil)
 	cdc.RegisterConcrete(&MsgDelegateToValidatorSet{}, "osmosis/MsgDelegateToValidatorSet", nil)
 	cdc.RegisterConcrete(&MsgUndelegateFromValidatorSet{}, "osmosis/MsgUndelegateFromValidatorSet", nil)
+	cdc.RegisterConcrete(&MsgUndelegateFromRebalancedValidatorSet{}, "osmosis/MsgUndelegateFromRebalValset", nil)
 	cdc.RegisterConcrete(&MsgWithdrawDelegationRewards{}, "osmosis/MsgWithdrawDelegationRewards", nil)
+	cdc.RegisterConcrete(&MsgRedelegateValidatorSet{}, "osmosis/MsgRedelegateValidatorSet", nil)
 }
 
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
@@ -22,7 +24,9 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgSetValidatorSetPreference{},
 		&MsgDelegateToValidatorSet{},
 		&MsgUndelegateFromValidatorSet{},
+		&MsgUndelegateFromRebalancedValidatorSet{},
 		&MsgWithdrawDelegationRewards{},
+		&MsgRedelegateValidatorSet{},
 	)
 
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)

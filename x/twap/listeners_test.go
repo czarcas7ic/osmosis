@@ -6,11 +6,11 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/osmosis-labs/osmosis/osmoutils"
-	"github.com/osmosis-labs/osmosis/v16/x/twap"
-	"github.com/osmosis-labs/osmosis/v16/x/twap/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/x/twap"
+	"github.com/osmosis-labs/osmosis/v24/x/twap/types"
 
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
 )
 
 var defaultPoolId uint64 = 1
@@ -57,7 +57,7 @@ func (s *TestSuite) TestAfterPoolCreatedHook() {
 					s.RunBasicSwap(poolId)
 				}
 
-				denoms := osmoutils.CoinsDenoms(tc.poolCoins)
+				denoms := tc.poolCoins.Denoms()
 				denomPairs := types.GetAllUniqueDenomPairs(denoms)
 				expectedRecords := []types.TwapRecord{}
 				for _, denomPair := range denomPairs {
@@ -197,14 +197,15 @@ func (s *TestSuite) TestEndBlock() {
 					s.Require().Equal(twapAfterPoolCreation.Time, baseTime)
 
 					// accumulators should not have increased, as they are going through the first epoch
-					s.Require().Equal(sdk.ZeroDec(), twapAfterBlock1.P0ArithmeticTwapAccumulator)
-					s.Require().Equal(sdk.ZeroDec(), twapAfterBlock1.P1ArithmeticTwapAccumulator)
+					s.Require().Equal(osmomath.ZeroDec(), twapAfterBlock1.P0ArithmeticTwapAccumulator)
+					s.Require().Equal(osmomath.ZeroDec(), twapAfterBlock1.P1ArithmeticTwapAccumulator)
 				}
 
 				// check if spot price has been correctly updated in twap record
 				asset0sp, err := s.App.PoolManagerKeeper.RouteCalculateSpotPrice(s.Ctx, poolId, twapAfterBlock1.Asset0Denom, twapAfterBlock1.Asset1Denom)
 				s.Require().NoError(err)
-				s.Require().Equal(asset0sp, twapAfterBlock1.P0LastSpotPrice)
+				// Note: twap only supports decimal precision of 18. Thus, truncation.
+				s.Require().Equal(asset0sp.Dec(), twapAfterBlock1.P0LastSpotPrice)
 
 				// run basic swap on block two for price change
 				if tc.block2Swap {
@@ -232,7 +233,8 @@ func (s *TestSuite) TestEndBlock() {
 				// check if spot price has been correctly updated in twap record
 				asset0sp, err = s.App.PoolManagerKeeper.RouteCalculateSpotPrice(s.Ctx, poolId, twapAfterBlock1.Asset0Denom, twapAfterBlock2.Asset1Denom)
 				s.Require().NoError(err)
-				s.Require().Equal(asset0sp, twapAfterBlock2.P0LastSpotPrice)
+				// Note: twap only supports decimal precision of 18. Thus, truncation.
+				s.Require().Equal(asset0sp.Dec(), twapAfterBlock2.P0LastSpotPrice)
 			})
 		}
 	}
@@ -255,7 +257,7 @@ func (s *TestSuite) TestAfterEpochEnd() {
 
 	s.twapkeeper.StoreNewRecord(s.Ctx, newestRecord)
 
-	twapsBeforeEpoch, err := s.twapkeeper.GetAllHistoricalTimeIndexedTWAPs(s.Ctx)
+	twapsBeforeEpoch, err := s.twapkeeper.GetAllHistoricalPoolIndexedTWAPs(s.Ctx)
 	s.Require().NoError(err)
 	s.Require().Equal(2, len(twapsBeforeEpoch))
 
@@ -273,20 +275,20 @@ func (s *TestSuite) TestAfterEpochEnd() {
 		err = s.App.TwapKeeper.EpochHooks().AfterEpochEnd(s.Ctx, allEpochs[i].Identifier, int64(1))
 		s.Require().NoError(err)
 
-		recordsAfterEpoch, err := s.twapkeeper.GetAllHistoricalTimeIndexedTWAPs(s.Ctx)
+		lastKeptTime := s.Ctx.BlockTime().Add(-s.twapkeeper.RecordHistoryKeepPeriod(s.Ctx))
+		pruneState := s.twapkeeper.GetPruningState(s.Ctx)
 
-		// old record should have been pruned here
-		// however, the newest younger than the prune threshold
-		// is kept.
+		// state entry should be set for pruning state
 		if allEpochs[i].Identifier == pruneEpochIdentifier {
-			s.Require().Equal(1, len(recordsAfterEpoch))
-			s.Require().Equal(newestRecord, recordsAfterEpoch[0])
+			s.Require().Equal(true, pruneState.IsPruning)
+			s.Require().Equal(lastKeptTime, pruneState.LastKeptTime)
 
-			// quit test once the record has been pruned
-			return
+			// reset pruning state to make sure other epochs do not modify it
+			s.twapkeeper.SetPruningState(s.Ctx, types.PruningState{})
 		} else { // pruning should not be triggered at first, not pruning epoch
 			s.Require().NoError(err)
-			s.Require().Equal(twapsBeforeEpoch, recordsAfterEpoch)
+			s.Require().Equal(false, pruneState.IsPruning)
+			s.Require().Equal(time.Time{}, pruneState.LastKeptTime)
 		}
 	}
 }
@@ -340,7 +342,6 @@ func (s *TestSuite) TestPoolStateChange() {
 	}
 
 	for name, tc := range tests {
-		s.SetupTest()
 		s.Run(name, func() {
 			poolId := s.PrepareBalancerPoolWithCoins(tc.poolCoins...)
 

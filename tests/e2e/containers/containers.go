@@ -3,42 +3,55 @@ package containers
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	"github.com/osmosis-labs/osmosis/v16/tests/e2e/initialization"
-	txfeestypes "github.com/osmosis-labs/osmosis/v16/x/txfees/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	"github.com/osmosis-labs/osmosis/v24/tests/e2e/initialization"
+	txfeestypes "github.com/osmosis-labs/osmosis/v24/x/txfees/types"
 )
 
-const (
-	hermesContainerName = "hermes-relayer"
-	// The maximum number of times debug logs are printed to console
-	// per CLI command.
-	maxDebugLogsPerCommand = 3
+type TxResponse struct {
+	Code      int      `yaml:"code" json:"code"`
+	Codespace string   `yaml:"codespace" json:"codespace"`
+	Data      string   `yaml:"data" json:"data"`
+	GasUsed   string   `yaml:"gas_used" json:"gas_used"`
+	GasWanted string   `yaml:"gas_wanted" json:"gas_wanted"`
+	Height    string   `yaml:"height" json:"height"`
+	Info      string   `yaml:"info" json:"info"`
+	Logs      []string `yaml:"logs" json:"logs"`
+	Timestamp string   `yaml:"timestamp" json:"timestamp"`
+	Tx        string   `yaml:"tx" json:"tx"`
+	TxHash    string   `yaml:"txhash" json:"txhash"`
+	RawLog    string   `yaml:"raw_log" json:"raw_log"`
+	Events    []string `yaml:"events" json:"events"`
+}
 
-	GasLimit = 400000
+const (
+	hermesContainerName    = "hermes-relayer"
+	maxDebugLogsPerCommand = 3 // The maximum number of times debug logs are printed to console per CLI command.
+	GasLimit               = 400000
 )
 
 var (
-	// We set consensus min fee = .0025 uosmo / gas * 400000 gas = 1000
-	Fees = txfeestypes.ConsensusMinFee.Mul(sdk.NewDec(GasLimit)).Ceil().TruncateInt64()
-
-	defaultErrRegex = regexp.MustCompile(`(E|e)rror`)
-
-	txArgs = []string{"-b=block", "--yes", "--keyring-backend=test", "--log_format=json"}
-
-	// See ConsensusMinFee in x/txfees/types/constants.go
-	txDefaultGasArgs = []string{fmt.Sprintf("--gas=%d", GasLimit), fmt.Sprintf("--fees=%d", Fees) + initialization.E2EFeeToken}
+	Fees                 = txfeestypes.ConsensusMinFee.Mul(osmomath.NewDec(GasLimit)).Ceil().TruncateInt64() // We set consensus min fee = .0025 uosmo / gas * 400000 gas = 1000
+	defaultErrRegex      = regexp.MustCompile(`(E|e)rror`)
+	txArgs               = []string{"--yes", "--keyring-backend=test", "--log_format=json"}
+	txDefaultGasArgs     = []string{fmt.Sprintf("--gas=%d", GasLimit), fmt.Sprintf("--fees=%d", Fees) + initialization.E2EFeeToken} // See ConsensusMinFee in x/txfees/types/constants.go
+	memoCounter      int = 1
+	counterLock          = sync.Mutex{}
 )
 
 // Manager is a wrapper around all Docker instances, and the Docker API.
@@ -48,11 +61,12 @@ type Manager struct {
 	pool              *dockertest.Pool
 	network           *dockertest.Network
 	resources         map[string]*dockertest.Resource
+	resourcesMutex    sync.RWMutex
 	isDebugLogEnabled bool
 }
 
 // NewManager creates a new Manager instance and initializes
-// all Docker specific utilies. Returns an error if initialiation fails.
+// all Docker specific utilities. Returns an error if initialisation fails.
 func NewManager(isUpgrade bool, isFork bool, isDebugLogEnabled bool) (docker *Manager, err error) {
 	docker = &Manager{
 		ImageConfig:       NewImageConfig(isUpgrade, isFork),
@@ -73,16 +87,19 @@ func NewManager(isUpgrade bool, isFork bool, isDebugLogEnabled bool) (docker *Ma
 // ExecTxCmd Runs ExecTxCmdWithSuccessString searching for `code: 0`
 func (m *Manager) ExecTxCmd(t *testing.T, chainId string, containerName string, command []string) (bytes.Buffer, bytes.Buffer, error) {
 	t.Helper()
-	return m.ExecTxCmdWithSuccessString(t, chainId, containerName, command, "code: 0")
+	outBuf, errBuf, err := m.ExecTxCmdWithSuccessString(t, chainId, containerName, command, "code: 0")
+	require.NoError(t, err)
+	return outBuf, errBuf, nil
 }
 
 // ExecTxCmdWithSuccessString Runs ExecCmd, with flags for txs added.
-// namely adding flags `--chain-id={chain-id} -b=block --yes --keyring-backend=test "--log_format=json" --gas=400000`,
+// namely adding flags `--chain-id={chain-id} --yes --keyring-backend=test "--log_format=json" --gas=400000`,
 // and searching for `successStr`
 func (m *Manager) ExecTxCmdWithSuccessString(t *testing.T, chainId string, containerName string, command []string, successStr string) (bytes.Buffer, bytes.Buffer, error) {
 	t.Helper()
 	allTxArgs := []string{fmt.Sprintf("--chain-id=%s", chainId)}
 	allTxArgs = append(allTxArgs, txArgs...)
+
 	// parse to see if command has gas flags. If not, add default gas flags.
 	addGasFlags := true
 	for _, cmd := range command {
@@ -93,14 +110,78 @@ func (m *Manager) ExecTxCmdWithSuccessString(t *testing.T, chainId string, conta
 	if addGasFlags {
 		allTxArgs = append(allTxArgs, txDefaultGasArgs...)
 	}
+
+	// Add memo field to every tx
+	// This is done because in E2E, we remove the sequence number ante handler.
+	// This allows for quick throughput of txs, but if two txs are the same (i.e. two CL claims, two bank sends with the same amount),
+	// the sdk treats them as the same tx and errors with code 19 (tx already in mempool). By changing the memo field on every tx,
+	// we ensure that every tx is unique and can be submitted.
+	counterLock.Lock()
+	memo := fmt.Sprintf("--note=%d", memoCounter)
+	allTxArgs = append(allTxArgs, memo)
+
+	// Increment the counter for the next tx
+	memoCounter++
+	counterLock.Unlock()
+
 	txCommand := append(command, allTxArgs...)
-	return m.ExecCmd(t, containerName, txCommand, successStr)
+	return m.ExecCmd(t, containerName, txCommand, successStr, true, false)
+}
+
+// UNFORKINGNOTE: Figure out a better way to do this instead of copying the same method for JSON and YAML
+func (m *Manager) ExecTxCmdWithSuccessStringJSON(t *testing.T, chainId string, containerName string, command []string, successStr string) (bytes.Buffer, bytes.Buffer, error) {
+	t.Helper()
+	allTxArgs := []string{fmt.Sprintf("--chain-id=%s", chainId)}
+	allTxArgs = append(allTxArgs, txArgs...)
+
+	// parse to see if command has gas flags. If not, add default gas flags.
+	addGasFlags := true
+	for _, cmd := range command {
+		if strings.HasPrefix(cmd, "--gas") || strings.HasPrefix(cmd, "--fees") {
+			addGasFlags = false
+		}
+	}
+	if addGasFlags {
+		allTxArgs = append(allTxArgs, txDefaultGasArgs...)
+	}
+
+	txCommand := append(command, allTxArgs...)
+	return m.ExecCmd(t, containerName, txCommand, successStr, true, true)
+}
+
+func parseTxResponse(outStr string) (txResponse TxResponse, err error) {
+	if strings.Contains(outStr, "{\"height\":\"") {
+		startIdx := strings.Index(outStr, "{\"height\":\"")
+		if startIdx == -1 {
+			return txResponse, fmt.Errorf("Start of JSON data not found")
+		}
+		// Trim the string to start from the identified index
+		outStrTrimmed := outStr[startIdx:]
+		// JSON format
+		err = json.Unmarshal([]byte(outStrTrimmed), &txResponse)
+		if err != nil {
+			return txResponse, fmt.Errorf("JSON Unmarshal error: %v", err)
+		}
+	} else {
+		// Find the start of the YAML data
+		startIdx := strings.Index(outStr, "code: ")
+		if startIdx == -1 {
+			return txResponse, fmt.Errorf("Start of YAML data not found")
+		}
+		// Trim the string to start from the identified index
+		outStrTrimmed := outStr[startIdx:]
+		err = yaml.Unmarshal([]byte(outStrTrimmed), &txResponse)
+		if err != nil {
+			return txResponse, fmt.Errorf("YAML Unmarshal error: %v", err)
+		}
+	}
+	return txResponse, err
 }
 
 // ExecHermesCmd executes command on the hermes relaer container.
 func (m *Manager) ExecHermesCmd(t *testing.T, command []string, success string) (bytes.Buffer, bytes.Buffer, error) {
 	t.Helper()
-	return m.ExecCmd(t, hermesContainerName, command, success)
+	return m.ExecCmd(t, hermesContainerName, command, success, false, false)
 }
 
 // ExecCmd executes command by running it on the node container (specified by containerName)
@@ -108,7 +189,7 @@ func (m *Manager) ExecHermesCmd(t *testing.T, command []string, success string) 
 // It is found by checking if stdout or stderr contains the success string anywhere within it.
 // returns container std out, container std err, and error if any.
 // An error is returned if the command fails to execute or if the success string is not found in the output.
-func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string, success string) (bytes.Buffer, bytes.Buffer, error) {
+func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string, success string, checkTxHash, returnTxHashInfoAsJSON bool) (bytes.Buffer, bytes.Buffer, error) {
 	t.Helper()
 	if _, ok := m.resources[containerName]; !ok {
 		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("no resource %s found", containerName)
@@ -116,11 +197,13 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string, 
 	containerId := m.resources[containerName].Container.ID
 
 	var (
+		exec   *docker.Exec
 		outBuf bytes.Buffer
 		errBuf bytes.Buffer
+		err    error
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	if m.isDebugLogEnabled {
@@ -128,12 +211,14 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string, 
 	}
 	maxDebugLogTriesLeft := maxDebugLogsPerCommand
 
-	// We use the `require.Eventually` function because it is only allowed to do one transaction per block without
-	// sequence numbers. For simplicity, we avoid keeping track of the sequence number and just use the `require.Eventually`.
-	require.Eventually(
+	var lastErr error
+	successConditionMet := assert.Eventually(
 		t,
 		func() bool {
-			exec, err := m.pool.Client.CreateExec(docker.CreateExecOptions{
+			outBuf.Reset()
+			errBuf.Reset()
+
+			exec, err = m.pool.Client.CreateExec(docker.CreateExecOptions{
 				Context:      ctx,
 				AttachStdout: true,
 				AttachStderr: true,
@@ -150,19 +235,25 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string, 
 				ErrorStream:  &errBuf,
 			})
 			if err != nil {
+				lastErr = err
 				return false
 			}
 
-			errBufString := errBuf.String()
+			// Sometimes a node hangs and doesn't vote in time, as long as it passes that is all we care about
+			if strings.Contains(outBuf.String(), "inactive proposal") || strings.Contains(errBuf.String(), "inactive proposal") {
+				return true
+			}
+
 			// Note that this does not match all errors.
 			// This only works if CLI outpurs "Error" or "error"
 			// to stderr.
-			if (defaultErrRegex.MatchString(errBufString) || m.isDebugLogEnabled) && maxDebugLogTriesLeft > 0 {
+			if (defaultErrRegex.MatchString(outBuf.String()) || m.isDebugLogEnabled) && maxDebugLogTriesLeft > 0 &&
+				!strings.Contains(outBuf.String(), "not found") {
 				t.Log("\nstderr:")
-				t.Log(errBufString)
+				t.Log(outBuf.String())
 
 				t.Log("\nstdout:")
-				t.Log(outBuf.String())
+				t.Log(errBuf.String())
 				// N.B: We should not be returning false here
 				// because some applications such as Hermes might log
 				// "error" to stderr when they function correctly,
@@ -171,17 +262,132 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string, 
 				maxDebugLogTriesLeft--
 			}
 
-			if success != "" {
-				return strings.Contains(outBuf.String(), success) || strings.Contains(errBufString, success)
+			// If the success string is not empty and we are not checking the tx hash, check if the output or error string contains the success string
+			if success != "" && !checkTxHash {
+				return strings.Contains(outBuf.String(), success) || strings.Contains(errBuf.String(), success)
+			}
+
+			// If the success string is not empty and we are checking the tx hash, check if the output or error string contains the success string
+			if success != "" && checkTxHash {
+				// Now that sdk got rid of block.. we need to query the txhash to get the result
+				var txResponse TxResponse
+				txResponse, err = parseTxResponse(outBuf.String())
+				if err != nil {
+					lastErr = err
+					return false
+				}
+
+				// Don't even attempt to query the tx hash if the initial response code is not 0
+				if txResponse.Code != 0 {
+					return false
+				}
+
+				// This method attempts to query the txhash until the block is committed, at which point it returns an error here,
+				// causing the tx to be submitted again.
+				outBuf, errBuf, err = m.ExecQueryTxHash(t, containerName, txResponse.TxHash, returnTxHashInfoAsJSON)
+				if err != nil {
+					lastErr = err
+					return false
+				}
+
+				return strings.Contains(outBuf.String(), success) || strings.Contains(errBuf.String(), success)
 			}
 
 			return true
 		},
 		time.Minute,
-		50*time.Millisecond,
-		fmt.Sprintf("success condition (%s) was not met.\nstdout:\n %s\nstderr:\n %s\n",
-			success, outBuf.String(), errBuf.String()),
+		10*time.Millisecond,
 	)
+
+	// If the success condition is not met, log the failure and stop the test suite.
+	if !successConditionMet {
+		t.Logf(fmt.Sprintf("success condition (%s) command %s was not met.\nstdout:\n %s\nstderr:\n %s\n \nerror: %v\n",
+			success, command, outBuf.String(), errBuf.String(), lastErr))
+		t.FailNow()
+	}
+
+	return outBuf, errBuf, err
+}
+
+func (m *Manager) ExecQueryTxHash(t *testing.T, containerName, txHash string, returnAsJson bool) (bytes.Buffer, bytes.Buffer, error) {
+	t.Helper()
+	if _, ok := m.resources[containerName]; !ok {
+		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("no resource %s found", containerName)
+	}
+	containerId := m.resources[containerName].Container.ID
+
+	var (
+		exec   *docker.Exec
+		outBuf bytes.Buffer
+		errBuf bytes.Buffer
+		err    error
+	)
+
+	var command []string
+	if returnAsJson {
+		command = []string{"osmosisd", "query", "tx", txHash, "-o=json"}
+	} else {
+		command = []string{"osmosisd", "query", "tx", txHash}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	if m.isDebugLogEnabled {
+		t.Logf("\n\nRunning: \"%s\", success condition is \"code: 0\"", txHash)
+	}
+	maxDebugLogTriesLeft := maxDebugLogsPerCommand
+
+	successConditionMet := false
+	startTime := time.Now()
+	for time.Since(startTime) < time.Second*5 {
+		outBuf.Reset()
+		errBuf.Reset()
+
+		exec, err = m.pool.Client.CreateExec(docker.CreateExecOptions{
+			Context:      ctx,
+			AttachStdout: true,
+			AttachStderr: true,
+			Container:    containerId,
+			User:         "root",
+			Cmd:          command,
+		})
+		if err != nil {
+			return outBuf, errBuf, err
+		}
+
+		err = m.pool.Client.StartExec(exec.ID, docker.StartExecOptions{
+			Context:      ctx,
+			Detach:       false,
+			OutputStream: &outBuf,
+			ErrorStream:  &errBuf,
+		})
+		if err != nil {
+			return outBuf, errBuf, err
+		}
+
+		if (defaultErrRegex.MatchString(errBuf.String()) || m.isDebugLogEnabled) && maxDebugLogTriesLeft > 0 &&
+			!strings.Contains(errBuf.String(), "not found") {
+			t.Log("\nstderr:")
+			t.Log(errBuf.String())
+
+			t.Log("\nstdout:")
+			t.Log(outBuf.String())
+			maxDebugLogTriesLeft--
+		}
+
+		successConditionMet = strings.Contains(outBuf.String(), "code: 0") || strings.Contains(errBuf.String(), "code: 0") || strings.Contains(outBuf.String(), "code\":0") || strings.Contains(errBuf.String(), "code\":0")
+		if successConditionMet {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if !successConditionMet {
+		return outBuf, errBuf, fmt.Errorf("success condition for txhash %s \"code: 0\" command %s was not met.\nstdout:\n %s\nstderr:\n %s\n",
+			txHash, command, outBuf.String(), errBuf.String())
+	}
 
 	return outBuf, errBuf, nil
 }
@@ -231,12 +437,17 @@ func (m *Manager) RunHermesResource(chainAID, osmoARelayerNodeName, osmoAValMnem
 	return hermesResource, nil
 }
 
-// RunNodeResource runs a node container. Assings containerName to the container.
+// RunNodeResource runs a node container. Assigns containerName to the container.
 // Mounts the container on valConfigDir volume on the running host. Returns the container resource and error if any.
-func (m *Manager) RunNodeResource(chainId string, containerName, valCondifDir string) (*dockertest.Resource, error) {
+func (m *Manager) RunNodeResource(chainId string, containerName, valCondifDir string, rejectConfigDefaults bool) (*dockertest.Resource, error) {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
+	}
+
+	cmd := []string{"start"}
+	if rejectConfigDefaults {
+		cmd = append(cmd, "--reject-config-defaults=true")
 	}
 
 	runOpts := &dockertest.RunOptions{
@@ -245,7 +456,7 @@ func (m *Manager) RunNodeResource(chainId string, containerName, valCondifDir st
 		Tag:        m.OsmosisTag,
 		NetworkID:  m.network.Network.ID,
 		User:       "root:root",
-		Cmd:        []string{"start"},
+		Cmd:        cmd,
 		Mounts: []string{
 			fmt.Sprintf("%s/:/osmosis/.osmosisd", valCondifDir),
 			fmt.Sprintf("%s/scripts:/osmosis", pwd),
@@ -257,7 +468,9 @@ func (m *Manager) RunNodeResource(chainId string, containerName, valCondifDir st
 		return nil, err
 	}
 
+	m.resourcesMutex.Lock()
 	m.resources[containerName] = resource
+	m.resourcesMutex.Unlock()
 
 	return resource, nil
 }

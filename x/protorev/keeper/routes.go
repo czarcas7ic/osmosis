@@ -5,8 +5,9 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	poolmanagertypes "github.com/osmosis-labs/osmosis/v16/x/poolmanager/types"
-	"github.com/osmosis-labs/osmosis/v16/x/protorev/types"
+	"github.com/osmosis-labs/osmosis/osmomath"
+	poolmanagertypes "github.com/osmosis-labs/osmosis/v24/x/poolmanager/types"
+	"github.com/osmosis-labs/osmosis/v24/x/protorev/types"
 )
 
 type RouteMetaData struct {
@@ -15,7 +16,7 @@ type RouteMetaData struct {
 	// The number of pool points that were consumed to build the route
 	PoolPoints uint64
 	// The step size that should be used in the binary search for the optimal swap amount
-	StepSize sdk.Int
+	StepSize osmomath.Int
 }
 
 // BuildRoutes builds all of the possible arbitrage routes given the tokenIn, tokenOut and poolId that were used in the swap.
@@ -102,6 +103,10 @@ func (k Keeper) BuildHighestLiquidityRoutes(ctx sdk.Context, tokenIn, tokenOut s
 		if newRoute, err := k.BuildHighestLiquidityRoute(ctx, baseDenom, tokenIn, tokenOut, poolId); err == nil {
 			routes = append(routes, newRoute)
 		}
+
+		if newRoute, err := k.BuildTwoPoolRoute(ctx, baseDenom, tokenIn, tokenOut, poolId); err == nil {
+			routes = append(routes, newRoute)
+		}
 	}
 
 	return routes, nil
@@ -149,31 +154,109 @@ func (k Keeper) BuildHighestLiquidityRoute(ctx sdk.Context, swapDenom types.Base
 	}, nil
 }
 
+// BuildTwoPoolRoute will attempt to create a two pool route that will rebalance pools that are paired
+// with the base denom. This is useful for pools that contain the same assets but are imbalanced.
+func (k Keeper) BuildTwoPoolRoute(
+	ctx sdk.Context,
+	baseDenom types.BaseDenom,
+	tokenInDenom, tokenOutDenom string,
+	poolId uint64,
+) (RouteMetaData, error) {
+	if baseDenom.Denom != tokenInDenom && baseDenom.Denom != tokenOutDenom {
+		return RouteMetaData{}, fmt.Errorf("base denom (%s) must be either tokenIn (%s) or tokenOut (%s)", baseDenom.Denom, tokenInDenom, tokenOutDenom)
+	}
+
+	var (
+		pool1, pool2 uint64
+	)
+
+	// In the case where the base denom is the swap out, the base denom becomes more ~expensive~ on the current pool id
+	// and potentially cheaper on the highest liquidity pool. So we swap first on the current pool id and then on the
+	// highest liquidity pool.
+	if tokenOutDenom == baseDenom.Denom {
+		highestLiquidityPool, err := k.GetPoolForDenomPair(ctx, baseDenom.Denom, tokenInDenom)
+		if err != nil {
+			return RouteMetaData{}, err
+		}
+
+		pool1, pool2 = poolId, highestLiquidityPool
+		tokenOutDenom = tokenInDenom
+	} else {
+		highestLiquidityPool, err := k.GetPoolForDenomPair(ctx, baseDenom.Denom, tokenOutDenom)
+		if err != nil {
+			return RouteMetaData{}, err
+		}
+
+		pool1, pool2 = highestLiquidityPool, poolId
+	}
+
+	if pool1 == pool2 {
+		return RouteMetaData{}, types.ErrRouteDoubleContainsPool
+	}
+
+	newRoute := poolmanagertypes.SwapAmountInRoutes{
+		poolmanagertypes.SwapAmountInRoute{
+			TokenOutDenom: tokenOutDenom,
+			PoolId:        pool1,
+		},
+		poolmanagertypes.SwapAmountInRoute{
+			TokenOutDenom: baseDenom.Denom,
+			PoolId:        pool2,
+		},
+	}
+
+	// Check that the route is valid and update the number of pool points that this route will consume when simulating and executing trades
+	routePoolPoints, err := k.CalculateRoutePoolPoints(ctx, newRoute)
+	if err != nil {
+		return RouteMetaData{}, err
+	}
+
+	return RouteMetaData{
+		Route:      newRoute,
+		PoolPoints: routePoolPoints,
+		StepSize:   baseDenom.StepSize,
+	}, nil
+}
+
 // CalculateRoutePoolPoints calculates the number of pool points that will be consumed by a route when simulating and executing trades. This
 // is only added to the global pool point counter if the route simulated is minimally profitable i.e. it will make a profit.
 func (k Keeper) CalculateRoutePoolPoints(ctx sdk.Context, route poolmanagertypes.SwapAmountInRoutes) (uint64, error) {
 	// Calculate the number of pool points this route will consume
-	poolWeights := k.GetPoolWeights(ctx)
+	infoByPoolType := k.GetInfoByPoolType(ctx)
 	totalWeight := uint64(0)
 
 	for _, poolId := range route.PoolIds() {
-		// Ensure that all of the pools in the route exist and are active
-		if err := k.IsValidPool(ctx, poolId); err != nil {
-			return 0, err
-		}
-
-		pool, err := k.poolmanagerKeeper.GetPool(ctx, poolId)
+		poolType, err := k.poolmanagerKeeper.GetPoolType(ctx, poolId)
 		if err != nil {
 			return 0, err
 		}
 
-		switch pool.GetType() {
+		switch poolType {
 		case poolmanagertypes.Balancer:
-			totalWeight += poolWeights.BalancerWeight
+			totalWeight += infoByPoolType.Balancer.Weight
 		case poolmanagertypes.Stableswap:
-			totalWeight += poolWeights.StableWeight
+			totalWeight += infoByPoolType.Stable.Weight
 		case poolmanagertypes.Concentrated:
-			totalWeight += poolWeights.ConcentratedWeight
+			totalWeight += infoByPoolType.Concentrated.Weight
+		case poolmanagertypes.CosmWasm:
+			weight, ok := uint64(0), false
+			pool, err := k.poolmanagerKeeper.GetPool(ctx, poolId)
+			if err != nil {
+				return 0, err
+			}
+			poolAddrString := pool.GetAddress().String()
+			for _, weightMap := range infoByPoolType.Cosmwasm.WeightMaps {
+				if weightMap.ContractAddress == poolAddrString {
+					weight = weightMap.Weight
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return 0, fmt.Errorf("cosmwasm pool %d does not have a weight", poolId)
+			}
+
+			totalWeight += weight
 		default:
 			return 0, fmt.Errorf("invalid pool type")
 		}
@@ -193,14 +276,9 @@ func (k Keeper) CalculateRoutePoolPoints(ctx sdk.Context, route poolmanagertypes
 }
 
 // IsValidPool checks if the pool is active and exists
-func (k Keeper) IsValidPool(ctx sdk.Context, poolID uint64) error {
-	pool, err := k.poolmanagerKeeper.GetPool(ctx, poolID)
-	if err != nil {
-		return err
-	}
-
+func (k Keeper) IsValidPool(ctx sdk.Context, pool poolmanagertypes.PoolI) error {
 	if !pool.IsActive(ctx) {
-		return fmt.Errorf("pool %d is not active", poolID)
+		return fmt.Errorf("pool %d is not active", pool.GetId())
 	}
 
 	return nil

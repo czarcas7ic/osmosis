@@ -9,15 +9,15 @@ import (
 	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
 	types1 "github.com/cosmos/cosmos-sdk/types"
 	_ "github.com/cosmos/cosmos-sdk/types/tx/amino"
-	_ "github.com/gogo/protobuf/gogoproto"
-	grpc1 "github.com/gogo/protobuf/grpc"
-	proto "github.com/gogo/protobuf/proto"
-	_ "github.com/gogo/protobuf/types"
-	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	types "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
+	_ "github.com/cosmos/gogoproto/gogoproto"
+	grpc1 "github.com/cosmos/gogoproto/grpc"
+	proto "github.com/cosmos/gogoproto/proto"
+	github_com_cosmos_gogoproto_types "github.com/cosmos/gogoproto/types"
+	types "github.com/osmosis-labs/osmosis/v24/x/lockup/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	_ "google.golang.org/protobuf/types/known/timestamppb"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -284,58 +284,184 @@ func (m *MsgAddToGaugeResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgAddToGaugeResponse proto.InternalMessageInfo
 
+// MsgCreateGroup creates a group to distribute rewards to a group of pools
+type MsgCreateGroup struct {
+	// coins are the provided coins that the group will distribute
+	Coins github_com_cosmos_cosmos_sdk_types.Coins `protobuf:"bytes,1,rep,name=coins,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"coins"`
+	// num_epochs_paid_over is the number of epochs distribution will be completed
+	// in. 0 means it's perpetual
+	NumEpochsPaidOver uint64 `protobuf:"varint,2,opt,name=num_epochs_paid_over,json=numEpochsPaidOver,proto3" json:"num_epochs_paid_over,omitempty"`
+	// owner is the group owner's address
+	Owner string `protobuf:"bytes,3,opt,name=owner,proto3" json:"owner,omitempty" yaml:"owner"`
+	// pool_ids are the IDs of pools that the group is comprised of
+	PoolIds []uint64 `protobuf:"varint,4,rep,packed,name=pool_ids,json=poolIds,proto3" json:"pool_ids,omitempty"`
+}
+
+func (m *MsgCreateGroup) Reset()         { *m = MsgCreateGroup{} }
+func (m *MsgCreateGroup) String() string { return proto.CompactTextString(m) }
+func (*MsgCreateGroup) ProtoMessage()    {}
+func (*MsgCreateGroup) Descriptor() ([]byte, []int) {
+	return fileDescriptor_8ea120e22291556e, []int{4}
+}
+func (m *MsgCreateGroup) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgCreateGroup) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgCreateGroup.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgCreateGroup) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgCreateGroup.Merge(m, src)
+}
+func (m *MsgCreateGroup) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgCreateGroup) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgCreateGroup.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgCreateGroup proto.InternalMessageInfo
+
+func (m *MsgCreateGroup) GetCoins() github_com_cosmos_cosmos_sdk_types.Coins {
+	if m != nil {
+		return m.Coins
+	}
+	return nil
+}
+
+func (m *MsgCreateGroup) GetNumEpochsPaidOver() uint64 {
+	if m != nil {
+		return m.NumEpochsPaidOver
+	}
+	return 0
+}
+
+func (m *MsgCreateGroup) GetOwner() string {
+	if m != nil {
+		return m.Owner
+	}
+	return ""
+}
+
+func (m *MsgCreateGroup) GetPoolIds() []uint64 {
+	if m != nil {
+		return m.PoolIds
+	}
+	return nil
+}
+
+type MsgCreateGroupResponse struct {
+	// group_id is the ID of the group that is created from this msg
+	GroupId uint64 `protobuf:"varint,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+}
+
+func (m *MsgCreateGroupResponse) Reset()         { *m = MsgCreateGroupResponse{} }
+func (m *MsgCreateGroupResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgCreateGroupResponse) ProtoMessage()    {}
+func (*MsgCreateGroupResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_8ea120e22291556e, []int{5}
+}
+func (m *MsgCreateGroupResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgCreateGroupResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgCreateGroupResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgCreateGroupResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgCreateGroupResponse.Merge(m, src)
+}
+func (m *MsgCreateGroupResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgCreateGroupResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgCreateGroupResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgCreateGroupResponse proto.InternalMessageInfo
+
+func (m *MsgCreateGroupResponse) GetGroupId() uint64 {
+	if m != nil {
+		return m.GroupId
+	}
+	return 0
+}
+
 func init() {
 	proto.RegisterType((*MsgCreateGauge)(nil), "osmosis.incentives.MsgCreateGauge")
 	proto.RegisterType((*MsgCreateGaugeResponse)(nil), "osmosis.incentives.MsgCreateGaugeResponse")
 	proto.RegisterType((*MsgAddToGauge)(nil), "osmosis.incentives.MsgAddToGauge")
 	proto.RegisterType((*MsgAddToGaugeResponse)(nil), "osmosis.incentives.MsgAddToGaugeResponse")
+	proto.RegisterType((*MsgCreateGroup)(nil), "osmosis.incentives.MsgCreateGroup")
+	proto.RegisterType((*MsgCreateGroupResponse)(nil), "osmosis.incentives.MsgCreateGroupResponse")
 }
 
 func init() { proto.RegisterFile("osmosis/incentives/tx.proto", fileDescriptor_8ea120e22291556e) }
 
 var fileDescriptor_8ea120e22291556e = []byte{
-	// 642 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x54, 0x41, 0x4f, 0xd4, 0x40,
-	0x14, 0xde, 0xb2, 0xc0, 0xc2, 0x2c, 0x18, 0x68, 0x50, 0xca, 0x6a, 0xda, 0xa5, 0x31, 0x66, 0x25,
-	0xd9, 0x19, 0xc1, 0x84, 0x03, 0x37, 0x97, 0x18, 0xc3, 0x81, 0x88, 0x0d, 0x89, 0x09, 0x89, 0x69,
-	0xa6, 0xed, 0x58, 0x26, 0x6c, 0xfb, 0x9a, 0xce, 0x74, 0x81, 0xbf, 0xe0, 0x89, 0xdf, 0xe1, 0xc9,
-	0x9f, 0xe0, 0x91, 0x23, 0xf1, 0xe4, 0x09, 0x0c, 0x1c, 0xbc, 0xf3, 0x0b, 0x4c, 0xa7, 0x2d, 0xec,
-	0x46, 0x90, 0x8b, 0x97, 0x4e, 0xdf, 0x7c, 0xef, 0x7d, 0xf3, 0xde, 0xf7, 0x4d, 0x8b, 0x9e, 0x82,
-	0x88, 0x40, 0x70, 0x41, 0x78, 0xec, 0xb3, 0x58, 0xf2, 0x01, 0x13, 0x44, 0x1e, 0xe1, 0x24, 0x05,
-	0x09, 0xba, 0x5e, 0x82, 0xf8, 0x16, 0x6c, 0x2d, 0x84, 0x10, 0x82, 0x82, 0x49, 0xfe, 0x56, 0x64,
-	0xb6, 0xe6, 0x69, 0xc4, 0x63, 0x20, 0xea, 0x59, 0x6e, 0x59, 0x21, 0x40, 0xd8, 0x67, 0x44, 0x45,
-	0x5e, 0xf6, 0x99, 0x48, 0x1e, 0x31, 0x21, 0x69, 0x94, 0x94, 0x09, 0xa6, 0xaf, 0xe8, 0x89, 0x47,
-	0x05, 0x23, 0x83, 0x55, 0x8f, 0x49, 0xba, 0x4a, 0x7c, 0xe0, 0x71, 0x85, 0xdf, 0xd1, 0x5a, 0x48,
-	0xb3, 0x90, 0x95, 0xf8, 0x52, 0x85, 0xf7, 0xc1, 0x3f, 0xc8, 0x12, 0xb5, 0x14, 0x90, 0xfd, 0xa3,
-	0x8e, 0x1e, 0x6d, 0x8b, 0x70, 0x33, 0x65, 0x54, 0xb2, 0x77, 0x79, 0x8d, 0xbe, 0x8c, 0x66, 0xb8,
-	0x70, 0x13, 0x96, 0x26, 0x4c, 0x66, 0xb4, 0x6f, 0x68, 0x6d, 0xad, 0x33, 0xe5, 0x34, 0xb9, 0xd8,
-	0xa9, 0xb6, 0xf4, 0x17, 0x68, 0x02, 0x0e, 0x63, 0x96, 0x1a, 0x63, 0x6d, 0xad, 0x33, 0xdd, 0x9b,
-	0xbb, 0x3e, 0xb7, 0x66, 0x8e, 0x69, 0xd4, 0xdf, 0xb0, 0xd5, 0xb6, 0xed, 0x14, 0xb0, 0xbe, 0x85,
-	0x66, 0x03, 0x2e, 0x64, 0xca, 0xbd, 0x4c, 0x32, 0x57, 0x82, 0x51, 0x6f, 0x6b, 0x9d, 0xe6, 0x9a,
-	0x89, 0x2b, 0xb9, 0x8a, 0x86, 0xf0, 0x87, 0x8c, 0xa5, 0xc7, 0x9b, 0x10, 0x07, 0x5c, 0x72, 0x88,
-	0x7b, 0xe3, 0xa7, 0xe7, 0x56, 0xcd, 0x99, 0xb9, 0x2d, 0xdd, 0x05, 0x9d, 0xa2, 0x89, 0x7c, 0x62,
-	0x61, 0x8c, 0xb7, 0xeb, 0x9d, 0xe6, 0xda, 0x12, 0x2e, 0x34, 0xc1, 0xb9, 0x26, 0xb8, 0xd4, 0x04,
-	0x6f, 0x02, 0x8f, 0x7b, 0xaf, 0xf2, 0xea, 0xaf, 0x17, 0x56, 0x27, 0xe4, 0x72, 0x3f, 0xf3, 0xb0,
-	0x0f, 0x11, 0x29, 0x05, 0x2c, 0x96, 0xae, 0x08, 0x0e, 0x88, 0x3c, 0x4e, 0x98, 0x50, 0x05, 0xc2,
-	0x29, 0x98, 0xf5, 0x8f, 0x08, 0x09, 0x49, 0x53, 0xe9, 0xe6, 0xfa, 0x1b, 0x13, 0xaa, 0xd5, 0x16,
-	0x2e, 0xcc, 0xc1, 0x95, 0x39, 0x78, 0xb7, 0x32, 0xa7, 0xf7, 0x2c, 0x3f, 0xe8, 0xfa, 0xdc, 0x9a,
-	0x2b, 0x46, 0xbf, 0x71, 0xcd, 0x3e, 0xb9, 0xb0, 0x34, 0x67, 0x5a, 0x71, 0xe5, 0xd9, 0x3a, 0x41,
-	0x0b, 0x71, 0x16, 0xb9, 0x2c, 0x01, 0x7f, 0x5f, 0xb8, 0x09, 0xe5, 0x81, 0x0b, 0x03, 0x96, 0x1a,
-	0x93, 0x6d, 0xad, 0x33, 0xee, 0xcc, 0xc7, 0x59, 0xf4, 0x56, 0x41, 0x3b, 0x94, 0x07, 0xef, 0x07,
-	0x2c, 0xd5, 0x17, 0x51, 0x23, 0x01, 0xe8, 0xbb, 0x3c, 0x30, 0x1a, 0x2a, 0x67, 0x32, 0x0f, 0xb7,
-	0x82, 0x8d, 0xe7, 0x5f, 0x7e, 0x7f, 0x5b, 0xb1, 0xee, 0xb0, 0xdb, 0x57, 0x06, 0x76, 0x95, 0xeb,
-	0xb6, 0x81, 0x9e, 0x8c, 0x7a, 0xea, 0x30, 0x91, 0x40, 0x2c, 0x98, 0x7d, 0xa1, 0xa1, 0xd9, 0x6d,
-	0x11, 0xbe, 0x09, 0x82, 0x5d, 0x28, 0xdc, 0xbe, 0xb1, 0x52, 0xfb, 0xb7, 0x95, 0x4b, 0x68, 0x4a,
-	0x91, 0xe7, 0x3d, 0x8d, 0xa9, 0x9e, 0x1a, 0x2a, 0xde, 0x0a, 0x74, 0x86, 0x1a, 0x29, 0x3b, 0xa4,
-	0x69, 0x20, 0x8c, 0xfa, 0xff, 0x37, 0xa7, 0xe2, 0xbe, 0x7f, 0x76, 0x1a, 0x04, 0x5d, 0x09, 0xe5,
-	0xec, 0x8b, 0xe8, 0xf1, 0xc8, 0x80, 0xd5, 0xe8, 0x6b, 0xdf, 0x35, 0x54, 0xdf, 0x16, 0xa1, 0xfe,
-	0x09, 0x35, 0x87, 0x6f, 0xbb, 0x8d, 0xff, 0xfe, 0x74, 0xf1, 0xa8, 0x7a, 0xad, 0x95, 0x87, 0x73,
-	0xaa, 0x63, 0xf4, 0x3d, 0x84, 0x86, 0xd4, 0x5d, 0xbe, 0xa7, 0xf2, 0x36, 0xa5, 0xf5, 0xf2, 0xc1,
-	0x94, 0x8a, 0xbb, 0xb7, 0x73, 0x7a, 0x69, 0x6a, 0x67, 0x97, 0xa6, 0xf6, 0xeb, 0xd2, 0xd4, 0x4e,
-	0xae, 0xcc, 0xda, 0xd9, 0x95, 0x59, 0xfb, 0x79, 0x65, 0xd6, 0xf6, 0xd6, 0x87, 0xe4, 0x2c, 0xe9,
-	0xba, 0x7d, 0xea, 0x89, 0x2a, 0x20, 0x83, 0xd5, 0x75, 0x72, 0x34, 0xf2, 0xeb, 0xca, 0x25, 0xf6,
-	0x26, 0xd5, 0xb5, 0x7e, 0xfd, 0x27, 0x00, 0x00, 0xff, 0xff, 0xa4, 0x41, 0x82, 0x0e, 0xdd, 0x04,
-	0x00, 0x00,
+	// 721 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x95, 0xcd, 0x4e, 0xdb, 0x4a,
+	0x14, 0xc7, 0xe3, 0x24, 0x10, 0x98, 0xc0, 0x15, 0x58, 0xdc, 0x8b, 0xc9, 0xbd, 0x72, 0x82, 0x75,
+	0x55, 0xa5, 0x48, 0x99, 0x29, 0xa1, 0xea, 0x82, 0x5d, 0x83, 0xaa, 0x2a, 0x0b, 0x54, 0x6a, 0x21,
+	0x55, 0x42, 0xaa, 0xa2, 0x49, 0x66, 0x6a, 0x46, 0xc4, 0x1e, 0xcb, 0x33, 0x0e, 0xf0, 0x0a, 0x95,
+	0x2a, 0xf1, 0x06, 0xdd, 0x77, 0xd5, 0xc7, 0x60, 0x89, 0xba, 0xea, 0x0a, 0x2a, 0x58, 0x74, 0xcf,
+	0x13, 0x54, 0x33, 0xb6, 0xf3, 0xa1, 0x92, 0x66, 0xd3, 0x6e, 0xe2, 0xcc, 0xf9, 0xca, 0x39, 0xe7,
+	0xf7, 0xcf, 0x18, 0xfc, 0xcb, 0x85, 0xcf, 0x05, 0x13, 0x88, 0x05, 0x3d, 0x1a, 0x48, 0x36, 0xa0,
+	0x02, 0xc9, 0x33, 0x18, 0x46, 0x5c, 0x72, 0xd3, 0x4c, 0x9d, 0x70, 0xe4, 0xac, 0xac, 0x79, 0xdc,
+	0xe3, 0xda, 0x8d, 0xd4, 0xb7, 0x24, 0xb2, 0xb2, 0x8a, 0x7d, 0x16, 0x70, 0xa4, 0x3f, 0x53, 0x53,
+	0xd5, 0xe3, 0xdc, 0xeb, 0x53, 0xa4, 0x4f, 0xdd, 0xf8, 0x1d, 0x92, 0xcc, 0xa7, 0x42, 0x62, 0x3f,
+	0x4c, 0x03, 0xec, 0x9e, 0x2e, 0x8f, 0xba, 0x58, 0x50, 0x34, 0xd8, 0xee, 0x52, 0x89, 0xb7, 0x51,
+	0x8f, 0xb3, 0x20, 0xf3, 0x3f, 0xd0, 0x9a, 0x87, 0x63, 0x8f, 0xa6, 0xfe, 0x8d, 0xcc, 0xdf, 0xe7,
+	0xbd, 0x93, 0x38, 0xd4, 0x8f, 0xc4, 0xe5, 0x7c, 0x29, 0x80, 0xbf, 0xf6, 0x85, 0xb7, 0x17, 0x51,
+	0x2c, 0xe9, 0x4b, 0x95, 0x63, 0x6e, 0x82, 0x25, 0x26, 0x3a, 0x21, 0x8d, 0x42, 0x2a, 0x63, 0xdc,
+	0xb7, 0x8c, 0x9a, 0x51, 0x5f, 0x70, 0xcb, 0x4c, 0x1c, 0x64, 0x26, 0xf3, 0x11, 0x98, 0xe3, 0xa7,
+	0x01, 0x8d, 0xac, 0x7c, 0xcd, 0xa8, 0x2f, 0xb6, 0x56, 0xee, 0xaf, 0xab, 0x4b, 0xe7, 0xd8, 0xef,
+	0xef, 0x3a, 0xda, 0xec, 0xb8, 0x89, 0xdb, 0x6c, 0x83, 0x65, 0xc2, 0x84, 0x8c, 0x58, 0x37, 0x96,
+	0xb4, 0x23, 0xb9, 0x55, 0xa8, 0x19, 0xf5, 0x72, 0xd3, 0x86, 0xd9, 0xba, 0x92, 0x86, 0xe0, 0xeb,
+	0x98, 0x46, 0xe7, 0x7b, 0x3c, 0x20, 0x4c, 0x32, 0x1e, 0xb4, 0x8a, 0x97, 0xd7, 0xd5, 0x9c, 0xbb,
+	0x34, 0x4a, 0x3d, 0xe4, 0x26, 0x06, 0x73, 0x6a, 0x62, 0x61, 0x15, 0x6b, 0x85, 0x7a, 0xb9, 0xb9,
+	0x01, 0x93, 0x9d, 0x40, 0xb5, 0x13, 0x98, 0xee, 0x04, 0xee, 0x71, 0x16, 0xb4, 0x9e, 0xa8, 0xec,
+	0x4f, 0x37, 0xd5, 0xba, 0xc7, 0xe4, 0x71, 0xdc, 0x85, 0x3d, 0xee, 0xa3, 0x74, 0x81, 0xc9, 0xa3,
+	0x21, 0xc8, 0x09, 0x92, 0xe7, 0x21, 0x15, 0x3a, 0x41, 0xb8, 0x49, 0x65, 0xf3, 0x0d, 0x00, 0x42,
+	0xe2, 0x48, 0x76, 0xd4, 0xfe, 0xad, 0x39, 0xdd, 0x6a, 0x05, 0x26, 0x70, 0x60, 0x06, 0x07, 0x1e,
+	0x66, 0x70, 0x5a, 0xff, 0xa9, 0x1f, 0xba, 0xbf, 0xae, 0xae, 0x24, 0xa3, 0x0f, 0xa9, 0x39, 0x17,
+	0x37, 0x55, 0xc3, 0x5d, 0xd4, 0xb5, 0x54, 0xb4, 0x89, 0xc0, 0x5a, 0x10, 0xfb, 0x1d, 0x1a, 0xf2,
+	0xde, 0xb1, 0xe8, 0x84, 0x98, 0x91, 0x0e, 0x1f, 0xd0, 0xc8, 0x9a, 0xaf, 0x19, 0xf5, 0xa2, 0xbb,
+	0x1a, 0xc4, 0xfe, 0x0b, 0xed, 0x3a, 0xc0, 0x8c, 0xbc, 0x1a, 0xd0, 0xc8, 0x5c, 0x07, 0xa5, 0x90,
+	0xf3, 0x7e, 0x87, 0x11, 0xab, 0xa4, 0x63, 0xe6, 0xd5, 0xb1, 0x4d, 0x76, 0xff, 0x7f, 0xff, 0xfd,
+	0xf3, 0x56, 0xf5, 0x01, 0xdc, 0x3d, 0x0d, 0xb0, 0xa1, 0xa9, 0x3b, 0x16, 0xf8, 0x67, 0x92, 0xa9,
+	0x4b, 0x45, 0xc8, 0x03, 0x41, 0x9d, 0x1b, 0x03, 0x2c, 0xef, 0x0b, 0xef, 0x39, 0x21, 0x87, 0x3c,
+	0xa1, 0x3d, 0x44, 0x69, 0xfc, 0x1a, 0xe5, 0x06, 0x58, 0xd0, 0xc5, 0x55, 0x4f, 0x79, 0xdd, 0x53,
+	0x49, 0x9f, 0xdb, 0xc4, 0xa4, 0xa0, 0x14, 0xd1, 0x53, 0x1c, 0x11, 0x61, 0x15, 0x7e, 0x3f, 0x9c,
+	0xac, 0xf6, 0xf4, 0xd9, 0x31, 0x21, 0x0d, 0xc9, 0xd3, 0xd9, 0xd7, 0xc1, 0xdf, 0x13, 0x03, 0x0e,
+	0x47, 0xff, 0x90, 0x1f, 0x57, 0x7a, 0xc4, 0xe3, 0x70, 0xa4, 0x29, 0xe3, 0x8f, 0x69, 0x6a, 0x1a,
+	0xfa, 0xfc, 0x34, 0xf4, 0x43, 0x1e, 0x85, 0x99, 0x3c, 0x52, 0x89, 0x24, 0x7f, 0x89, 0xa2, 0x5b,
+	0x4a, 0x34, 0x22, 0x66, 0x8b, 0x44, 0x0d, 0xef, 0xec, 0x8c, 0x8b, 0x44, 0x59, 0xb2, 0x4d, 0x69,
+	0xd4, 0xca, 0xa0, 0x50, 0x1b, 0x29, 0x6a, 0x75, 0x6e, 0x93, 0xe6, 0xc7, 0x3c, 0x28, 0xec, 0x0b,
+	0xcf, 0x7c, 0x0b, 0xca, 0xe3, 0x57, 0x86, 0x03, 0x7f, 0xbe, 0xff, 0xe0, 0xa4, 0x04, 0x2b, 0x5b,
+	0xb3, 0x63, 0x86, 0x1d, 0x1c, 0x01, 0x30, 0x26, 0xd1, 0xcd, 0x29, 0x99, 0xa3, 0x90, 0xca, 0xe3,
+	0x99, 0x21, 0xc3, 0xda, 0xa3, 0xd6, 0xb5, 0x06, 0x66, 0xb4, 0xae, 0x62, 0x66, 0xb5, 0x3e, 0xbe,
+	0xbc, 0xd6, 0xc1, 0xe5, 0xad, 0x6d, 0x5c, 0xdd, 0xda, 0xc6, 0xb7, 0x5b, 0xdb, 0xb8, 0xb8, 0xb3,
+	0x73, 0x57, 0x77, 0x76, 0xee, 0xeb, 0x9d, 0x9d, 0x3b, 0x7a, 0x36, 0xa6, 0x9d, 0xb4, 0x5e, 0xa3,
+	0x8f, 0xbb, 0x22, 0x3b, 0xa0, 0x41, 0xf3, 0x29, 0x3a, 0x9b, 0x78, 0xbd, 0x28, 0x3d, 0x75, 0xe7,
+	0xf5, 0xd5, 0xb3, 0xf3, 0x23, 0x00, 0x00, 0xff, 0xff, 0x99, 0x85, 0x16, 0x72, 0x81, 0x06, 0x00,
+	0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -352,6 +478,7 @@ const _ = grpc.SupportPackageIsVersion4
 type MsgClient interface {
 	CreateGauge(ctx context.Context, in *MsgCreateGauge, opts ...grpc.CallOption) (*MsgCreateGaugeResponse, error)
 	AddToGauge(ctx context.Context, in *MsgAddToGauge, opts ...grpc.CallOption) (*MsgAddToGaugeResponse, error)
+	CreateGroup(ctx context.Context, in *MsgCreateGroup, opts ...grpc.CallOption) (*MsgCreateGroupResponse, error)
 }
 
 type msgClient struct {
@@ -380,10 +507,20 @@ func (c *msgClient) AddToGauge(ctx context.Context, in *MsgAddToGauge, opts ...g
 	return out, nil
 }
 
+func (c *msgClient) CreateGroup(ctx context.Context, in *MsgCreateGroup, opts ...grpc.CallOption) (*MsgCreateGroupResponse, error) {
+	out := new(MsgCreateGroupResponse)
+	err := c.cc.Invoke(ctx, "/osmosis.incentives.Msg/CreateGroup", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 type MsgServer interface {
 	CreateGauge(context.Context, *MsgCreateGauge) (*MsgCreateGaugeResponse, error)
 	AddToGauge(context.Context, *MsgAddToGauge) (*MsgAddToGaugeResponse, error)
+	CreateGroup(context.Context, *MsgCreateGroup) (*MsgCreateGroupResponse, error)
 }
 
 // UnimplementedMsgServer can be embedded to have forward compatible implementations.
@@ -395,6 +532,9 @@ func (*UnimplementedMsgServer) CreateGauge(ctx context.Context, req *MsgCreateGa
 }
 func (*UnimplementedMsgServer) AddToGauge(ctx context.Context, req *MsgAddToGauge) (*MsgAddToGaugeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddToGauge not implemented")
+}
+func (*UnimplementedMsgServer) CreateGroup(ctx context.Context, req *MsgCreateGroup) (*MsgCreateGroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateGroup not implemented")
 }
 
 func RegisterMsgServer(s grpc1.Server, srv MsgServer) {
@@ -437,6 +577,24 @@ func _Msg_AddToGauge_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_CreateGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgCreateGroup)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).CreateGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/osmosis.incentives.Msg/CreateGroup",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).CreateGroup(ctx, req.(*MsgCreateGroup))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Msg_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "osmosis.incentives.Msg",
 	HandlerType: (*MsgServer)(nil),
@@ -448,6 +606,10 @@ var _Msg_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddToGauge",
 			Handler:    _Msg_AddToGauge_Handler,
+		},
+		{
+			MethodName: "CreateGroup",
+			Handler:    _Msg_CreateGroup_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -484,7 +646,7 @@ func (m *MsgCreateGauge) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x30
 	}
-	n1, err1 := github_com_gogo_protobuf_types.StdTimeMarshalTo(m.StartTime, dAtA[i-github_com_gogo_protobuf_types.SizeOfStdTime(m.StartTime):])
+	n1, err1 := github_com_cosmos_gogoproto_types.StdTimeMarshalTo(m.StartTime, dAtA[i-github_com_cosmos_gogoproto_types.SizeOfStdTime(m.StartTime):])
 	if err1 != nil {
 		return 0, err1
 	}
@@ -631,6 +793,101 @@ func (m *MsgAddToGaugeResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *MsgCreateGroup) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgCreateGroup) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgCreateGroup) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.PoolIds) > 0 {
+		dAtA4 := make([]byte, len(m.PoolIds)*10)
+		var j3 int
+		for _, num := range m.PoolIds {
+			for num >= 1<<7 {
+				dAtA4[j3] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j3++
+			}
+			dAtA4[j3] = uint8(num)
+			j3++
+		}
+		i -= j3
+		copy(dAtA[i:], dAtA4[:j3])
+		i = encodeVarintTx(dAtA, i, uint64(j3))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Owner) > 0 {
+		i -= len(m.Owner)
+		copy(dAtA[i:], m.Owner)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Owner)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.NumEpochsPaidOver != 0 {
+		i = encodeVarintTx(dAtA, i, uint64(m.NumEpochsPaidOver))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Coins) > 0 {
+		for iNdEx := len(m.Coins) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Coins[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintTx(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MsgCreateGroupResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgCreateGroupResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgCreateGroupResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.GroupId != 0 {
+		i = encodeVarintTx(dAtA, i, uint64(m.GroupId))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintTx(dAtA []byte, offset int, v uint64) int {
 	offset -= sovTx(v)
 	base := offset
@@ -663,7 +920,7 @@ func (m *MsgCreateGauge) Size() (n int) {
 			n += 1 + l + sovTx(uint64(l))
 		}
 	}
-	l = github_com_gogo_protobuf_types.SizeOfStdTime(m.StartTime)
+	l = github_com_cosmos_gogoproto_types.SizeOfStdTime(m.StartTime)
 	n += 1 + l + sovTx(uint64(l))
 	if m.NumEpochsPaidOver != 0 {
 		n += 1 + sovTx(uint64(m.NumEpochsPaidOver))
@@ -711,6 +968,47 @@ func (m *MsgAddToGaugeResponse) Size() (n int) {
 	}
 	var l int
 	_ = l
+	return n
+}
+
+func (m *MsgCreateGroup) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Coins) > 0 {
+		for _, e := range m.Coins {
+			l = e.Size()
+			n += 1 + l + sovTx(uint64(l))
+		}
+	}
+	if m.NumEpochsPaidOver != 0 {
+		n += 1 + sovTx(uint64(m.NumEpochsPaidOver))
+	}
+	l = len(m.Owner)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	if len(m.PoolIds) > 0 {
+		l = 0
+		for _, e := range m.PoolIds {
+			l += sovTx(uint64(e))
+		}
+		n += 1 + sovTx(uint64(l)) + l
+	}
+	return n
+}
+
+func (m *MsgCreateGroupResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.GroupId != 0 {
+		n += 1 + sovTx(uint64(m.GroupId))
+	}
 	return n
 }
 
@@ -897,7 +1195,7 @@ func (m *MsgCreateGauge) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if err := github_com_gogo_protobuf_types.StdTimeUnmarshal(&m.StartTime, dAtA[iNdEx:postIndex]); err != nil {
+			if err := github_com_cosmos_gogoproto_types.StdTimeUnmarshal(&m.StartTime, dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -1174,6 +1472,286 @@ func (m *MsgAddToGaugeResponse) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: MsgAddToGaugeResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgCreateGroup) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgCreateGroup: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgCreateGroup: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Coins", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Coins = append(m.Coins, types1.Coin{})
+			if err := m.Coins[len(m.Coins)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NumEpochsPaidOver", wireType)
+			}
+			m.NumEpochsPaidOver = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.NumEpochsPaidOver |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Owner", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Owner = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType == 0 {
+				var v uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowTx
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.PoolIds = append(m.PoolIds, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowTx
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthTx
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthTx
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.PoolIds) == 0 {
+					m.PoolIds = make([]uint64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowTx
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.PoolIds = append(m.PoolIds, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field PoolIds", wireType)
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgCreateGroupResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgCreateGroupResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgCreateGroupResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field GroupId", wireType)
+			}
+			m.GroupId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.GroupId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipTx(dAtA[iNdEx:])

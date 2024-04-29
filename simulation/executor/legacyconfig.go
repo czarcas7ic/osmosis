@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"os"
 
+	cometbftdb "github.com/cometbft/cometbft-db"
+	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/simapp/helpers"
 	"github.com/cosmos/cosmos-sdk/store"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/tendermint/tendermint/libs/log"
-	dbm "github.com/tendermint/tm-db"
 
-	"github.com/osmosis-labs/osmosis/v16/simulation/executor/internal/stats"
-	"github.com/osmosis-labs/osmosis/v16/simulation/simtypes/simlogger"
+	"github.com/osmosis-labs/osmosis/v24/simulation/executor/internal/stats"
+	"github.com/osmosis-labs/osmosis/v24/simulation/simtypes/simlogger"
 )
+
+const SimAppChainID = "osmosis-test"
 
 // List of available flags for the simulator
 var (
@@ -114,14 +114,15 @@ func NewExecutionDbConfigFromFlags() ExecutionDbConfig {
 
 // SetupSimulation creates the config, db (levelDB), temporary directory and logger for
 // the simulation tests. If `FlagEnabledValue` is false it skips the current test.
-// Returns error on an invalid db intantiation or temp dir creation.
-func SetupSimulation(dirPrefix, dbName string) (cfg Config, db dbm.DB, logger log.Logger, cleanup func(), err error) {
+// Returns error on an invalid db instantiation or temp dir creation.
+// nolint: revive
+func SetupSimulation(dirPrefix, dbName string) (cfg Config, db cometbftdb.DB, logger log.Logger, cleanup func(), err error) {
 	if !FlagEnabledValue {
 		return Config{}, nil, nil, func() {}, nil
 	}
 
 	config := NewConfigFromFlags()
-	config.InitializationConfig.ChainID = helpers.SimAppChainID
+	config.InitializationConfig.ChainID = SimAppChainID
 
 	if FlagVerboseValue {
 		logger = log.TestingLogger()
@@ -135,7 +136,7 @@ func SetupSimulation(dirPrefix, dbName string) (cfg Config, db dbm.DB, logger lo
 		return Config{}, nil, nil, func() {}, err
 	}
 
-	db, err = sdk.NewLevelDB(dbName, dir)
+	db, err = cometbftdb.NewGoLevelDB(dbName, dir)
 	if err != nil {
 		return Config{}, nil, nil, func() {}, err
 	}
@@ -149,7 +150,7 @@ func SetupSimulation(dirPrefix, dbName string) (cfg Config, db dbm.DB, logger lo
 }
 
 // PrintStats prints the corresponding statistics from the app DB.
-func PrintStats(db dbm.DB) {
+func PrintStats(db cometbftdb.DB) {
 	fmt.Println("\nLevelDB Stats")
 	fmt.Println(db.Stats()["leveldb.stats"])
 	fmt.Println("LevelDB cached block size", db.Stats()["leveldb.cachedblock"])
