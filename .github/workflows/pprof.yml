@@ -45,10 +45,9 @@ jobs:
              sleep 10
           done
 
-      - name: Run Script on Droplet
+      - name: Copy and Run Script on Droplet
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/ssh_key
-          chmod 600 /tmp/ssh_key
-          ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key root@${{ env.DROPLET_IP }} "bash /root/scripts/join.sh"
+          scp -o StrictHostKeyChecking=no -i /tmp/ssh_key scripts/join_and_profile.sh root@${{ env.DROPLET_IP }}:/root/join_and_profile.sh
+          ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key root@${{ env.DROPLET_IP }} "bash /root/join_and_profile.sh"
