@@ -26,6 +26,7 @@ if [ "$profile_type" == "head" ]; then
 else
     # TODO: Add support for other profile types
     # MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
+    :
 fi
 MAINNET_RPC_URL=https://rpc.osmosis.zone
 MAINNET_ADDRBOOK_URL="https://rpc.osmosis.zone/addrbook"
