@@ -184,6 +184,54 @@ if ! ps -p $PID > /dev/null; then
 fi
 done
 
+if [ "$profile_type" == "head" ]; then
+    echo -n "Waiting for catching_up to be false and block height to change"
+    until [ $(curl -s http://localhost:26657/status | jq -r '.result.sync_info.catching_up') == "false" ]; do
+        printf '.'
+        sleep 1
+        if ! ps -p $PID > /dev/null; then
+            echo "Osmosis process is no longer running. Exiting."
+            exit 1
+        fi
+    done
+
+    # Get the current block height
+    current_block_height=$(curl -s http://localhost:26657/status | jq -r '.result.sync_info.latest_block_height')
+
+    # Wait for 5 seconds
+    sleep 5
+
+    # Get the new block height
+    new_block_height=$(curl -s http://localhost:26657/status | jq -r '.result.sync_info.latest_block_height')
+
+    # Check if the block height has changed
+    if [ "$current_block_height" == "$new_block_height" ]; then
+        echo "Block height has not changed after 5 seconds. Exiting."
+        exit 1
+    fi
+
+    echo "Block height has changed. Success."
+
+    # Curl the CPU and heap endpoints simultaneously and store the profiles
+    curl -X GET localhost:6060/debug/pprof/profile?seconds=60s > cpu.prof &
+    curl -X GET localhost:6060/debug/pprof/heap?seconds=60 > heap.prof &
+
+    # Wait for both curl commands to finish
+    wait
+
+    # Upload the profiles to bashupload.com and get the file links
+    cpu_prof_link=$(curl bashupload.com -T cpu.prof | grep -o 'http://bashupload.com/[^ ]*')
+    heap_prof_link=$(curl bashupload.com -T heap.prof | grep -o 'http://bashupload.com/[^ ]*')
+
+    # Print the file links as output parameters
+    echo "::set-output name=cpu_prof_link::$cpu_prof_link"
+    echo "::set-output name=heap_prof_link::$heap_prof_link"
+
+else
+    # TODO: Add support for other profile types
+    :
+fi
+
 echo -e "\n\n✅ Osmosis node has started successfully. (PID: $PURPLE$PID$RESET)\n"
 
 echo "-------------------------------------------------"
