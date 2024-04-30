@@ -1,11 +1,32 @@
 #!/bin/bash
 set -e
 
+# Parse command line arguments for the 'profile-type' flag
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --profile-type) profile_type="$2"; shift ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+# Default to a specific profile type if none is provided
+if [ -z "$profile_type" ]; then
+    echo "No profile type specified, defaulting to 'head'"
+    profile_type="head"
+fi
+
 MONIKER=osmosis
 OSMOSIS_HOME=/root/.osmosisd
 
 MAINNET_DEFAULT_VERSION="22.0.5"
-MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
+# Determine the MAINNET_SNAPSHOT_URL based on the profile type
+if [ "$profile_type" == "head" ]; then
+    MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
+else
+    # TODO: Add support for other profile types
+    # MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
+fi
 MAINNET_RPC_URL=https://rpc.osmosis.zone
 MAINNET_ADDRBOOK_URL="https://rpc.osmosis.zone/addrbook"
 MAINNET_GENESIS_URL=https://github.com/osmosis-labs/osmosis/raw/main/networks/osmosis-1/genesis.json
