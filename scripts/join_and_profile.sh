@@ -108,7 +108,7 @@ if [ ! -f /usr/local/bin/osmosisd-$VERSION ] || [[ "$(/usr/local/bin/osmosisd-$V
 
     BINARY_URL="https://osmosis.fra1.digitaloceanspaces.com/binaries/v$VERSION/osmosisd-$VERSION-linux-amd64"
     echo "🔽 Downloading Osmosis binary from $BINARY_URL..."
-    wget $BINARY_URL -O /usr/local/bin/osmosisd-$VERSION 
+    wget -q $BINARY_URL -O /usr/local/bin/osmosisd-$VERSION 
 
     chmod +x /usr/local/bin/osmosisd-$VERSION
     echo "✅ Osmosis binary downloaded successfully."
@@ -151,19 +151,19 @@ cp /etc/osmosis/app.toml $OSMOSIS_HOME/config/app.toml
 
 # Copy genesis
 echo -e "\n$YELLOW🔽 Downloading genesis file...$RESET"
-wget $GENESIS_URL -O $OSMOSIS_HOME/config/genesis.json
+wget -q $GENESIS_URL -O $OSMOSIS_HOME/config/genesis.json
 echo ✅ Genesis file downloaded successfully.
 
 
 # Download addrbook
 echo -e "\n$YELLOW🔽 Downloading addrbook...$RESET"
-wget $ADDRBOOK_URL -O $OSMOSIS_HOME/config/addrbook.json
+wget -q $ADDRBOOK_URL -O $OSMOSIS_HOME/config/addrbook.json
 echo ✅ Addrbook downloaded successfully.
 
 
 # Download latest snapshot
 echo -e "\n$YELLOW🔽 Downloading latest snapshot...$RESET"
-wget -O - $SNAPSHOT_URL | lz4 -d | tar -C $OSMOSIS_HOME/ -xf -
+wget -q -O - $SNAPSHOT_URL | lz4 -d | tar -C $OSMOSIS_HOME/ -xf -
 echo -e ✅ Snapshot downloaded successfully.
 
 
