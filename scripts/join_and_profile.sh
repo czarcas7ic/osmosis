@@ -104,6 +104,9 @@ else
 
     if [ -z "$NETWORK_VERSION" ]; then
         echo "Can't contact $RPC_URL, using default version: $VERSION"
+    elif [ ! -z "$binary_version" ]; then
+        echo "Setting version to $binary_version"
+        VERSION=$binary_version
     else
         echo "Setting version to $NETWORK_VERSION"
         VERSION=$NETWORK_VERSION
@@ -121,10 +124,10 @@ if [ -z "$binary_version" ]; then
 else
     git clone https://github.com/osmosis-labs/osmosis.git
     cd /root/osmosis
-    git checkout $binary_version
+    git checkout $VERSION
     make build
-    cp build/osmosisd /usr/local/bin/osmosisd-$binary_version
-    chmod +x /usr/local/bin/osmosisd-$binary_version
+    cp build/osmosisd /usr/local/bin/osmosisd-$VERSION
+    chmod +x /usr/local/bin/osmosisd-$VERSION
     echo "✅ Osmosis binary built and copied successfully."
     cd /root
 fi
