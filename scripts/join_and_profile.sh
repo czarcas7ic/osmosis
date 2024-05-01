@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
 
-# Parse command line arguments for the 'profile-type' flag
+# Parse command line arguments for the 'profile-type' and 'binary-version' flags
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --profile-type) profile_type="$2"; shift ;;
+        --binary-version) binary_version="$2"; shift ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
@@ -14,6 +15,12 @@ done
 if [ -z "$profile_type" ]; then
     echo "No profile type specified, defaulting to 'head'"
     profile_type="head"
+fi
+
+# Default to a specific binary version if none is provided
+if [ -z "$binary_version" ]; then
+    echo "No binary version specified, defaulting to '22.0.5'"
+    binary_version="22.0.5"
 fi
 
 MONIKER=osmosis
@@ -103,16 +110,35 @@ else
     fi
 fi
 
-echo -e "\n$YELLOW📜 Checking that /usr/local/bin/osmosisd-$VERSION exists$RESET"
-if [ ! -f /usr/local/bin/osmosisd-$VERSION ] || [[ "$(/usr/local/bin/osmosisd-$VERSION version --home /tmp/.osmosisd 2>&1)" != $VERSION ]]; then
-
+if [ -z "$binary_version" ]; then
+    echo "No binary version specified, defaulting to RPC version: $VERSION"
     BINARY_URL="https://osmosis.fra1.digitaloceanspaces.com/binaries/v$VERSION/osmosisd-$VERSION-linux-amd64"
     echo "🔽 Downloading Osmosis binary from $BINARY_URL..."
     wget -q $BINARY_URL -O /usr/local/bin/osmosisd-$VERSION 
 
     chmod +x /usr/local/bin/osmosisd-$VERSION
     echo "✅ Osmosis binary downloaded successfully."
+else
+    cd ~/github.com/osmosis-labs/osmosis
+    git checkout $binary_version
+    make build
+    cp build/osmosisd /usr/local/bin/osmosisd-$binary_version
+    chmod +x /usr/local/bin/osmosisd-$binary_version
+    echo "✅ Osmosis binary built and copied successfully."
+    cd ~
 fi
+
+
+# echo -e "\n$YELLOW📜 Checking that /usr/local/bin/osmosisd-$VERSION exists$RESET"
+# if [ ! -f /usr/local/bin/osmosisd-$VERSION ] || [[ "$(/usr/local/bin/osmosisd-$VERSION version --home /tmp/.osmosisd 2>&1)" != $VERSION ]]; then
+
+#     BINARY_URL="https://osmosis.fra1.digitaloceanspaces.com/binaries/v$VERSION/osmosisd-$VERSION-linux-amd64"
+#     echo "🔽 Downloading Osmosis binary from $BINARY_URL..."
+#     wget -q $BINARY_URL -O /usr/local/bin/osmosisd-$VERSION 
+
+#     chmod +x /usr/local/bin/osmosisd-$VERSION
+#     echo "✅ Osmosis binary downloaded successfully."
+# fi
 
 
 echo -e "\n$YELLOW📜 Checking that /usr/local/bin/osmosisd is a symlink to /usr/local/bin/osmosisd-$VERSION otherwise create it$RESET"
