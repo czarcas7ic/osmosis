@@ -69,9 +69,9 @@ jobs:
           echo "CPU profile link: ${{ steps.script.outputs.cpu_prof_link }}"
           echo "Heap profile link: ${{ steps.script.outputs.heap_prof_link }}"
 
-    #   - name: Delete Droplet
-    #     if: always()
-    #     env:
-    #       DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-    #     run: |
-    #       doctl compute droplet delete ${{ env.DROPLET_ID }} --force
+      - name: Delete Droplet
+        if: always()
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          doctl compute droplet delete ${{ env.DROPLET_ID }} --force
