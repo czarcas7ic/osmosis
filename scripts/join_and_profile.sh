@@ -213,13 +213,14 @@ if [ "$profile_type" == "head" ]; then
     echo "Block height has changed. Success."
 
     # Curl the CPU and heap endpoints simultaneously and store the profiles
-    curl -X GET localhost:6060/debug/pprof/profile?seconds=60s > cpu.prof &
+    curl -X GET localhost:6060/debug/pprof/profile?seconds=60 > cpu.prof &
     curl -X GET localhost:6060/debug/pprof/heap?seconds=60 > heap.prof &
 
     # Wait for both curl commands to finish
     wait
 
     # Upload the profiles to bashupload.com and get the file links
+     echo "Uploading profiles to bashupload.com..."
     cpu_prof_link=$(curl bashupload.com -T cpu.prof | grep -o 'http://bashupload.com/[^ ]*')
     heap_prof_link=$(curl bashupload.com -T heap.prof | grep -o 'http://bashupload.com/[^ ]*')
 
