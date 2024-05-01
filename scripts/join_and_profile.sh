@@ -216,8 +216,8 @@ if [ "$profile_type" == "head" ]; then
     curl -X GET localhost:6060/debug/pprof/profile?seconds=60 > cpu.prof
     curl -X GET localhost:6060/debug/pprof/heap?seconds=60 > heap.prof
 
-    # Wait for both curl commands to finish
-    wait
+    # # Wait for both curl commands to finish
+    # wait
 
     # Upload the profiles to bashupload.com and get the file links
      echo "Uploading profiles to bashupload.com..."
