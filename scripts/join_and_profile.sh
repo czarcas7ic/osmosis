@@ -17,11 +17,11 @@ if [ -z "$profile_type" ]; then
     profile_type="head"
 fi
 
-# Default to a specific binary version if none is provided
-if [ -z "$binary_version" ]; then
-    echo "No binary version specified, defaulting to '22.0.5'"
-    binary_version="22.0.5"
-fi
+# # Default to a specific binary version if none is provided
+# if [ -z "$binary_version" ]; then
+#     echo "No binary version specified, defaulting to '22.0.5'"
+#     binary_version="22.0.5"
+# fi
 
 MONIKER=osmosis
 OSMOSIS_HOME=/root/.osmosisd
