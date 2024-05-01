@@ -119,8 +119,8 @@ if [ -z "$binary_version" ]; then
     chmod +x /usr/local/bin/osmosisd-$VERSION
     echo "✅ Osmosis binary downloaded successfully."
 else
-    ls
-    cd /root/github.com/osmosis-labs/osmosis
+    git clone https://github.com/osmosis-labs/osmosis.git
+    cd /root/osmosis
     git checkout $binary_version
     make build
     cp build/osmosisd /usr/local/bin/osmosisd-$binary_version

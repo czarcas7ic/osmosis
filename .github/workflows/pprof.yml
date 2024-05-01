@@ -11,7 +11,7 @@ on:
         options:
           - head
       binary_version:
-        description: "Binary Version (if empty, will use RPC version)"
+        description: "Binary Version (if empty, will use mainnet RPC version) e.g.: v24.0.1"
         required: false
 
 jobs:
