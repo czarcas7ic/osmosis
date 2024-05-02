@@ -243,9 +243,9 @@ if [ "$profile_type" == "head" ]; then
     echo "Block height has changed. Success."
 
     # Curl the CPU and heap endpoints simultaneously and store the profiles
-    curl -m 120 -X GET "localhost:6060/debug/pprof/profile?seconds=60" > cpu.prof &
+    curl -m 3610 -X GET "localhost:6060/debug/pprof/profile?seconds=3600" > cpu.prof &
     pid_cpu=$!
-    curl -m 120 -X GET "localhost:6060/debug/pprof/heap?seconds=60" > heap.prof &
+    curl -m 3610 -X GET "localhost:6060/debug/pprof/heap?seconds=3600" > heap.prof &
     pid_heap=$!
 
     wait $pid_cpu
