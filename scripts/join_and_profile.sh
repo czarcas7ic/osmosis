@@ -127,8 +127,8 @@ else
     git checkout $VERSION
     VERSION=${VERSION//\//-}
     make build
-    cp build/osmosisd /usr/local/bin/osmosisd-$safe_version
-    chmod +x /usr/local/bin/osmosisd-$safe_version
+    cp build/osmosisd /usr/local/bin/osmosisd-$VERSION
+    chmod +x /usr/local/bin/osmosisd-$VERSION
     echo "✅ Osmosis binary built and copied successfully."
     cd /root
 fi
