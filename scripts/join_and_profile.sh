@@ -105,10 +105,8 @@ else
     if [ -z "$NETWORK_VERSION" ]; then
         echo "Can't contact $RPC_URL, using default version: $VERSION"
     elif [ ! -z "$binary_version" ]; then
-        # Replace forward slashes in the version string
-        safe_version=${binary_version//\//-}
-        echo "Setting version to $safe_version"
-        VERSION=$safe_version
+        echo "Setting version to $binary_version"
+        VERSION=$binary_version
     else
         echo "Setting version to $NETWORK_VERSION"
         VERSION=$NETWORK_VERSION
@@ -127,9 +125,10 @@ else
     git clone https://github.com/osmosis-labs/osmosis.git
     cd /root/osmosis
     git checkout $VERSION
+    VERSION=${VERSION//\//-}
     make build
-    cp build/osmosisd /usr/local/bin/osmosisd-$VERSION
-    chmod +x /usr/local/bin/osmosisd-$VERSION
+    cp build/osmosisd /usr/local/bin/osmosisd-$safe_version
+    chmod +x /usr/local/bin/osmosisd-$safe_version
     echo "✅ Osmosis binary built and copied successfully."
     cd /root
 fi
