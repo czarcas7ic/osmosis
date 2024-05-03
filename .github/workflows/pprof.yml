@@ -75,6 +75,8 @@ jobs:
         run: |
           echo "CPU profile link: ${{ steps.script.outputs.cpu_prof_link }}"
           echo "Heap profile link: ${{ steps.script.outputs.heap_prof_link }}"
+          echo "Block profile link: ${{ steps.script.outputs.block_prof_link }}"
+          echo "Mutex profile link: ${{ steps.script.outputs.mutex_prof_link }}"
 
       - name: Delete Droplet
         if: always()

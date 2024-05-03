@@ -257,6 +257,10 @@ if [ "$profile_type" == "head" ]; then
     pid_cpu=$!
     curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/heap?seconds=$profile_duration" > heap.prof &
     pid_heap=$!
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/block?seconds=$profile_duration" > block.prof &
+    pid_block=$!
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/mutex?seconds=$profile_duration" > mutex.prof &
+    pid_mutex=$!
 
     wait $pid_cpu
     echo "CPU profiling completed."
@@ -264,14 +268,24 @@ if [ "$profile_type" == "head" ]; then
     wait $pid_heap
     echo "Heap profiling completed."
 
+    wait $pid_block
+    echo "Block profiling completed."
+
+    wait $pid_mutex
+    echo "Mutex profiling completed."
+
     # Upload the profiles to bashupload.com and get the file links
      echo "Uploading profiles to bashupload.com..."
     cpu_prof_link=$(curl bashupload.com -T cpu.prof | grep -o 'http://bashupload.com/[^ ]*')
     heap_prof_link=$(curl bashupload.com -T heap.prof | grep -o 'http://bashupload.com/[^ ]*')
+    block_prof_link=$(curl bashupload.com -T block.prof | grep -o 'http://bashupload.com/[^ ]*')
+    mutex_prof_link=$(curl bashupload.com -T mutex.prof | grep -o 'http://bashupload.com/[^ ]*')
 
     # Print the file links as output parameters
     echo "::set-output name=cpu_prof_link::$cpu_prof_link"
     echo "::set-output name=heap_prof_link::$heap_prof_link"
+    echo "::set-output name=block_prof_link::$block_prof_link"
+    echo "::set-output name=mutex_prof_link::$mutex_prof_link"
 
 else
     # TODO: Add support for other profile types
