@@ -11,7 +11,10 @@ on:
         options:
           - head
       binary_version:
-        description: "Binary Version e.g.: v24.0.1 (if empty, will use mainnet RPC version)"
+        description: "Binary Version e.g: v24.0.1 (If empty, will use mainnet RPC version. Also can be branch name)"
+        required: false
+      profile_duration:
+        description: "Profile Duration in Seconds e.g: 3600 (Only used if Profile Type is 'head')"
         required: false
 
 jobs:
@@ -62,7 +65,11 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           scp -o StrictHostKeyChecking=no -i /tmp/ssh_key scripts/join_and_profile.sh root@${{ env.DROPLET_IP }}:/root/join_and_profile.sh
-          ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key root@${{ env.DROPLET_IP }} "bash /root/join_and_profile.sh --profile-type ${{ github.event.inputs.profile_type }} --binary-version '${{ github.event.inputs.binary_version }}'"
+          ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key root@${{ env.DROPLET_IP }} \
+          "bash /root/join_and_profile.sh \
+          --profile-type ${{ github.event.inputs.profile_type }} \
+          --binary-version '${{ github.event.inputs.binary_version }}' \
+          --profile-duration '${{ github.event.inputs.profile_duration }}'"
 
       - name: Return pprof download links
         run: |

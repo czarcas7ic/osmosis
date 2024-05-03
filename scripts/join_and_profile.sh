@@ -1,11 +1,12 @@
 #!/bin/bash
 set -e
 
-# Parse command line arguments for the 'profile-type' and 'binary-version' flags
+# Parse command line arguments for the 'profile-type', 'binary-version', and 'profile-duration' flags
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --profile-type) profile_type="$2"; shift ;;
         --binary-version) binary_version="$2"; shift ;;
+        --profile-duration) profile_duration="$2"; shift ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
@@ -17,6 +18,11 @@ if [ -z "$profile_type" ]; then
     profile_type="head"
 fi
 
+# Default to a specific profile duration if none is provided and profile type is 'head'
+if [ "$profile_type" == "head" ] && [ -z "$profile_duration" ]; then
+    echo "No profile duration specified, defaulting to '60'"
+    profile_duration="60"
+fi
 # # Default to a specific binary version if none is provided
 # if [ -z "$binary_version" ]; then
 #     echo "No binary version specified, defaulting to '22.0.5'"
@@ -243,10 +249,13 @@ if [ "$profile_type" == "head" ]; then
 
     echo "Block height has changed. Success."
 
+    # Calculate the curl maximum time
+    curl_max_time=$((profile_duration + 10))
+
     # Curl the CPU and heap endpoints simultaneously and store the profiles
-    curl -m 3610 -X GET "localhost:6060/debug/pprof/profile?seconds=3600" > cpu.prof &
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/profile?seconds=$profile_duration" > cpu.prof &
     pid_cpu=$!
-    curl -m 3610 -X GET "localhost:6060/debug/pprof/heap?seconds=3600" > heap.prof &
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/heap?seconds=$profile_duration" > heap.prof &
     pid_heap=$!
 
     wait $pid_cpu
