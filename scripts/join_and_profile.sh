@@ -105,8 +105,10 @@ else
     if [ -z "$NETWORK_VERSION" ]; then
         echo "Can't contact $RPC_URL, using default version: $VERSION"
     elif [ ! -z "$binary_version" ]; then
-        echo "Setting version to $binary_version"
-        VERSION=$binary_version
+        # Replace forward slashes in the version string
+        safe_version=${binary_version//\//-}
+        echo "Setting version to $safe_version"
+        VERSION=$safe_version
     else
         echo "Setting version to $NETWORK_VERSION"
         VERSION=$NETWORK_VERSION
