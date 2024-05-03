@@ -128,7 +128,7 @@ if [ -z "$binary_version" ]; then
     echo "No binary version specified, defaulting to RPC version: $VERSION"
     BINARY_URL="https://osmosis.fra1.digitaloceanspaces.com/binaries/v$VERSION/osmosisd-$VERSION-linux-amd64"
     echo "🔽 Downloading Osmosis binary from $BINARY_URL..."
-    wget -q $BINARY_URL -O /usr/local/bin/osmosisd-$VERSION 
+    wget -q $BINARY_URL -O /usr/local/bin/osmosisd-$VERSION
 
     chmod +x /usr/local/bin/osmosisd-$VERSION
     echo "✅ Osmosis binary downloaded successfully."
@@ -155,8 +155,8 @@ fi
 echo -e "\n$YELLOW🗑️ Removing existing Osmosis home directory...$RESET"
 if [ -d "$OSMOSIS_HOME" ]; then
     read -p "Are you sure you want to delete $OSMOSIS_HOME? (y/n): " choice
-    case "$choice" in 
-        y|Y ) 
+    case "$choice" in
+        y|Y )
             rm -rf $OSMOSIS_HOME;;
         * ) echo "Osmosis home directory deletion canceled."
             exit 1
@@ -245,20 +245,30 @@ if [ "$profile_type" == "head" ]; then
     curl_max_time=$((profile_duration + 10))
 
     # Curl the CPU and heap endpoints simultaneously and store the profiles
-    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/profile?seconds=$profile_duration" > cpu.prof &
-    pid_cpu=$!
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/goroutine?seconds=$profile_duration" > goroutine.prof &
+    pid_goroutine=$!
     curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/heap?seconds=$profile_duration" > heap.prof &
     pid_heap=$!
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/threadcreate?seconds=$profile_duration" > threadcreate.prof &
+    pid_threadcreate=$!
     curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/block?seconds=$profile_duration" > block.prof &
     pid_block=$!
     curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/mutex?seconds=$profile_duration" > mutex.prof &
     pid_mutex=$!
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/profile?seconds=$profile_duration" > cpu.prof &
+    pid_cpu=$!
+    curl -m $curl_max_time -X GET "localhost:6060/debug/pprof/trace?trace=$profile_duration" > trace.prof &
+    pid_trace=$!
 
-    wait $pid_cpu
-    echo "CPU profiling completed."
+    # Wait for the profiles to be downloaded
+    wait $pid_goroutine
+    echo "Goroutine profiling completed."
 
     wait $pid_heap
     echo "Heap profiling completed."
+
+    wait $pid_threadcreate
+    echo "Threadcreate profiling completed."
 
     wait $pid_block
     echo "Block profiling completed."
@@ -266,19 +276,30 @@ if [ "$profile_type" == "head" ]; then
     wait $pid_mutex
     echo "Mutex profiling completed."
 
+    wait $pid_cpu
+    echo "CPU profiling completed."
+
+    wait $pid_trace # go tool trace must be used instead of go tool pprof
+    echo "Trace profiling completed."
+
     # Upload the profiles to bashupload.com and get the file links
      echo "Uploading profiles to bashupload.com..."
-    cpu_prof_link=$(curl bashupload.com -T cpu.prof | grep -o 'http://bashupload.com/[^ ]*')
+    goroutine_prof_link=$(curl bashupload.com -T goroutine.prof | grep -o 'http://bashupload.com/[^ ]*')
     heap_prof_link=$(curl bashupload.com -T heap.prof | grep -o 'http://bashupload.com/[^ ]*')
+    threadcreate_prof_link=$(curl bashupload.com -T threadcreate.prof | grep -o 'http://bashupload.com/[^ ]*')
     block_prof_link=$(curl bashupload.com -T block.prof | grep -o 'http://bashupload.com/[^ ]*')
     mutex_prof_link=$(curl bashupload.com -T mutex.prof | grep -o 'http://bashupload.com/[^ ]*')
+    cpu_prof_link=$(curl bashupload.com -T cpu.prof | grep -o 'http://bashupload.com/[^ ]*')
+    trace_prof_link=$(curl bashupload.com -T trace.prof | grep -o 'http://bashupload.com/[^ ]*')
 
     # Print the file links as output parameters
-    echo "::set-output name=cpu_prof_link::$cpu_prof_link"
+    echo "::set-output name=goroutine_prof_link::$goroutine_prof_link"
     echo "::set-output name=heap_prof_link::$heap_prof_link"
+    echo "::set-output name=threadcreate_prof_link::$threadcreate_prof_link"
     echo "::set-output name=block_prof_link::$block_prof_link"
     echo "::set-output name=mutex_prof_link::$mutex_prof_link"
-
+    echo "::set-output name=cpu_prof_link::$cpu_prof_link"
+    echo "::set-output name=trace_prof_link::$trace_prof_link"
 else
     # TODO: Add support for other profile types
     :
