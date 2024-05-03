@@ -12,6 +12,44 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+# Define defaults and constants
+YELLOW='\033[33m'
+RESET='\033[0m'
+PURPLE='\033[35m'
+
+MONIKER=osmosis
+OSMOSIS_HOME=/root/.osmosisd
+
+MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
+MAINNET_DEFAULT_VERSION="24.0.1" # Used if we can't contact the RPC node
+MAINNET_RPC_URL=https://rpc.osmosis.zone
+MAINNET_ADDRBOOK_URL="https://rpc.osmosis.zone/addrbook"
+MAINNET_GENESIS_URL=https://github.com/osmosis-labs/osmosis/raw/main/networks/osmosis-1/genesis.json
+
+TESTNET_DEFAULT_VERSION="24.0.1"
+TESTNET_SNAPSHOT_URL=$(curl -sL https://snapshots.testnet.osmosis.zone/latest)
+TESTNET_RPC_URL=https://rpc.testnet.osmosis.zone
+TESTNET_ADDRBOOK_URL="https://rpc.testnet.osmosis.zone/addrbook"
+TESTNET_GENESIS_URL="https://genesis.testnet.osmosis.zone/genesis.json"
+
+CHAIN_ID=${1:-osmosis-1}
+
+VERSION=$MAINNET_DEFAULT_VERSION
+SNAPSHOT_URL=$MAINNET_SNAPSHOT_URL
+ADDRBOOK_URL=$MAINNET_ADDRBOOK_URL
+GENESIS_URL=$MAINNET_GENESIS_URL
+RPC_URL=$MAINNET_RPC_URL
+
+
+# Set some defaults based on flags
+
+if [ "$profile_type" == "head" ]; then
+    MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
+else
+    # TODO: Determine URL for other profile types
+    :
+fi
+
 # Default to a specific profile type if none is provided
 if [ -z "$profile_type" ]; then
     echo "No profile type specified, defaulting to 'head'"
@@ -23,47 +61,7 @@ if [ "$profile_type" == "head" ] && [ -z "$profile_duration" ]; then
     echo "No profile duration specified, defaulting to '60'"
     profile_duration="60"
 fi
-# # Default to a specific binary version if none is provided
-# if [ -z "$binary_version" ]; then
-#     echo "No binary version specified, defaulting to '22.0.5'"
-#     binary_version="22.0.5"
-# fi
 
-MONIKER=osmosis
-OSMOSIS_HOME=/root/.osmosisd
-
-MAINNET_DEFAULT_VERSION="22.0.5"
-# Determine the MAINNET_SNAPSHOT_URL based on the profile type
-if [ "$profile_type" == "head" ]; then
-    MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
-else
-    # TODO: Add support for other profile types
-    # MAINNET_SNAPSHOT_URL=$(curl -sL https://snapshots.osmosis.zone/latest)
-    :
-fi
-MAINNET_RPC_URL=https://rpc.osmosis.zone
-MAINNET_ADDRBOOK_URL="https://rpc.osmosis.zone/addrbook"
-MAINNET_GENESIS_URL=https://github.com/osmosis-labs/osmosis/raw/main/networks/osmosis-1/genesis.json
-
-TESTNET_DEFAULT_VERSION="22.0.0-rc0"
-TESTNET_SNAPSHOT_URL=$(curl -sL https://snapshots.testnet.osmosis.zone/latest)
-TESTNET_RPC_URL=https://rpc.testnet.osmosis.zone
-TESTNET_ADDRBOOK_URL="https://rpc.testnet.osmosis.zone/addrbook"
-TESTNET_GENESIS_URL="https://genesis.testnet.osmosis.zone/genesis.json"
-
-# Set mainnet as default
-CHAIN_ID=${1:-osmosis-1}
-
-VERSION=$MAINNET_DEFAULT_VERSION
-SNAPSHOT_URL=$MAINNET_SNAPSHOT_URL
-ADDRBOOK_URL=$MAINNET_ADDRBOOK_URL
-GENESIS_URL=$MAINNET_GENESIS_URL
-RPC_URL=$MAINNET_RPC_URL
-
-# Define color environment variables
-YELLOW='\033[33m'
-RESET='\033[0m'
-PURPLE='\033[35m'
 
 case "$CHAIN_ID" in
     osmosis-1)
@@ -83,6 +81,7 @@ case "$CHAIN_ID" in
         ;;
 esac
 
+# Stop any running osmosisd process
 echo -e "\n$YELLOW🚨 Ensuring that no osmosisd process is running$RESET"
 if pgrep -f "osmosisd start" >/dev/null; then
     echo "An 'osmosisd' process is already running."
@@ -100,25 +99,31 @@ if pgrep -f "osmosisd start" >/dev/null; then
     esac
 fi
 
-echo -e "\n$YELLOW🔎 Getting current network version from $RPC_URL...$RESET"
-RPC_ABCI_INFO=$(curl -s --retry 5 --retry-delay 1 --connect-timeout 3 -H "Accept: application/json" $RPC_URL/abci_info) || true
-
-if [ -z "$RPC_ABCI_INFO" ]; then
-    echo "Can't contact $RPC_URL, using default version: $VERSION"
+# Set the version based on the binary version flag or the RPC node version
+if [ ! -z "$binary_version" ]; then
+    # If the binary version is specified, use it
+    echo "Setting version to $binary_version"
+    VERSION=$binary_version
 else
-    NETWORK_VERSION=$(echo $RPC_ABCI_INFO | dasel --plain -r json  'result.response.version') || true
-
-    if [ -z "$NETWORK_VERSION" ]; then
+    echo -e "\n$YELLOW🔎 Getting current network version from $RPC_URL...$RESET"
+    RPC_ABCI_INFO=$(curl -s --retry 5 --retry-delay 1 --connect-timeout 3 -H "Accept: application/json" $RPC_URL/abci_info) || true
+    RPC_ABCI_INFO=$(curl -s --retry 5 --retry-delay 1 --connect-timeout 3 -H "Accept: application/json" $RPC_URL/abci_info) || true
+    if [ -z "$RPC_ABCI_INFO" ]; then
         echo "Can't contact $RPC_URL, using default version: $VERSION"
-    elif [ ! -z "$binary_version" ]; then
-        echo "Setting version to $binary_version"
-        VERSION=$binary_version
     else
-        echo "Setting version to $NETWORK_VERSION"
-        VERSION=$NETWORK_VERSION
+        NETWORK_VERSION=$(echo $RPC_ABCI_INFO | dasel --plain -r json  'result.response.version') || true
+        if [ -z "$NETWORK_VERSION" ]; then
+            # We couldn't get the version from the RPC node, use the default version
+            echo "Can't contact $RPC_URL, using default version: $VERSION"
+        else
+            # Use the version from the RPC node
+            echo "Setting version to $NETWORK_VERSION"
+            VERSION=$NETWORK_VERSION
+        fi
     fi
 fi
 
+# Set up the binary
 if [ -z "$binary_version" ]; then
     echo "No binary version specified, defaulting to RPC version: $VERSION"
     BINARY_URL="https://osmosis.fra1.digitaloceanspaces.com/binaries/v$VERSION/osmosisd-$VERSION-linux-amd64"
@@ -138,20 +143,6 @@ else
     echo "✅ Osmosis binary built and copied successfully."
     cd /root
 fi
-
-
-# echo -e "\n$YELLOW📜 Checking that /usr/local/bin/osmosisd-$VERSION exists$RESET"
-# if [ ! -f /usr/local/bin/osmosisd-$VERSION ] || [[ "$(/usr/local/bin/osmosisd-$VERSION version --home /tmp/.osmosisd 2>&1)" != $VERSION ]]; then
-
-#     BINARY_URL="https://osmosis.fra1.digitaloceanspaces.com/binaries/v$VERSION/osmosisd-$VERSION-linux-amd64"
-#     echo "🔽 Downloading Osmosis binary from $BINARY_URL..."
-#     wget -q $BINARY_URL -O /usr/local/bin/osmosisd-$VERSION 
-
-#     chmod +x /usr/local/bin/osmosisd-$VERSION
-#     echo "✅ Osmosis binary downloaded successfully."
-# fi
-
-
 echo -e "\n$YELLOW📜 Checking that /usr/local/bin/osmosisd is a symlink to /usr/local/bin/osmosisd-$VERSION otherwise create it$RESET"
 if [ ! -L /usr/local/bin/osmosisd ] || [ "$(readlink /usr/local/bin/osmosisd)" != "/usr/local/bin/osmosisd-$VERSION" ]; then
     ln -sf /usr/local/bin/osmosisd-$VERSION /usr/local/bin/osmosisd
@@ -221,6 +212,7 @@ if ! ps -p $PID > /dev/null; then
 fi
 done
 
+# Take the profiles and upload them to bashupload.com
 if [ "$profile_type" == "head" ]; then
     echo -n "Waiting for catching_up to be false and block height to change"
     until [ $(curl -s http://localhost:26657/status | jq -r '.result.sync_info.catching_up') == "false" ]; do
